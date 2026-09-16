@@ -10,6 +10,14 @@ import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { t } from '@/utils/i18n';
 import { ActionSequence } from '@/actions/ActionSequence';
 import { NameInput, IconInput, ConditionEditor } from '@/components/input';
+import { renderPaletteLayerNotice } from '@/components/modal/ButtonCreateModal';
+import {
+    BASE_LAYER_ID,
+    findButtonLayerId,
+    isPaletteCategory,
+    replaceButtonInPalette,
+} from '@/utils/paletteLayers';
+import { findStoredCategory, replaceStoredCategory } from '@/utils/categoryStore';
 
 /**
  * ButtonEditModal 按钮编辑模态框类。
@@ -132,6 +140,20 @@ export class ButtonEditModal extends Modal {
         // 设置初始值
         this.nameInput.setValue(this.tempButton.name || '');
         this.iconInput.setValue(this.tempButton.icon || '');
+
+        // OCAP: inside a palette the layer decides contextuality, so the
+        // per-button condition editor is replaced by the layer statement.
+        if (isPaletteCategory(this.parentCategory)) {
+            const stored =
+                findStoredCategory(this.plugin, this.parentCategory.id) ??
+                this.parentCategory;
+            renderPaletteLayerNotice(
+                container,
+                stored,
+                findButtonLayerId(stored, this.button.id) ?? BASE_LAYER_ID
+            );
+            return;
+        }
 
         // OCAP: visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(container, this.tempButton.conditions);
@@ -270,11 +292,23 @@ export class ButtonEditModal extends Modal {
         // React.memo comparisons rely on a changed object identity to detect
         // edited button content (see areButtonItemPropsEqual in ButtonItem).
         const updatedButton: ButtonConfig = { ...this.button, ...this.tempButton };
-        const index = this.parentCategory.buttons.findIndex(
-            (b: ButtonConfig) => b.id === this.button.id
-        );
-        if (index > -1) {
-            this.parentCategory.buttons[index] = updatedButton;
+
+        // Write into the stored category — the modal may have been opened with
+        // a projection copy — and, in a palette, into whichever layer holds
+        // the button.
+        const stored =
+            findStoredCategory(this.plugin, this.parentCategory.id) ?? this.parentCategory;
+        if (isPaletteCategory(stored)) {
+            replaceStoredCategory(this.plugin, replaceButtonInPalette(stored, updatedButton));
+        } else {
+            const index = stored.buttons.findIndex(
+                (b: ButtonConfig) => b.id === this.button.id
+            );
+            if (index > -1) {
+                const buttons = [...stored.buttons];
+                buttons[index] = updatedButton;
+                replaceStoredCategory(this.plugin, { ...stored, buttons });
+            }
         }
 
         await this.plugin.saveSettings();

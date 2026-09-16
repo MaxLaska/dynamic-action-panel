@@ -7,6 +7,7 @@ import type { App } from 'obsidian';
 import { SimpleButton } from './Button';
 import { useButtonClickHandler } from '@/hooks/useButtonClickHandler';
 import { useButtonDragOptional } from '@/contexts/ButtonDragContext';
+import type { ContextStatus } from '@/components/shared/ContextStatusBadge';
 
 interface SortableButtonItemProps {
     button: ButtonConfig;
@@ -22,6 +23,8 @@ interface SortableButtonItemProps {
      * to preview a list reorder. Positions only change on drop.
      */
     positional?: boolean;
+    /** Palette grid: marker derived from the tool's layer (see SimpleButton). */
+    contextStatus?: ContextStatus;
 }
 
 export const SortableButtonItem: React.FC<SortableButtonItemProps> = React.memo(
@@ -35,6 +38,7 @@ export const SortableButtonItem: React.FC<SortableButtonItemProps> = React.memo(
         plugin,
         app,
         positional = false,
+        contextStatus,
     }) => {
         const buttonDrag = useButtonDragOptional();
         const handleButtonClick = useButtonClickHandler(button);
@@ -85,6 +89,7 @@ export const SortableButtonItem: React.FC<SortableButtonItemProps> = React.memo(
                             enableEditMode={false}
                             plugin={plugin}
                             app={app}
+                            contextStatus={contextStatus}
                         />
                     </div>
                 ) : (
@@ -97,6 +102,7 @@ export const SortableButtonItem: React.FC<SortableButtonItemProps> = React.memo(
                         plugin={plugin}
                         app={app}
                         onClick={handleClick}
+                        contextStatus={contextStatus}
                     />
                 )}
             </div>

@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
-    collectContextHiddenButtonIds,
-    collectContextHiddenCategoryIds,
     evaluateCondition,
-    filterCategoriesByContext,
     isButtonVisibleInContext,
     isCategoryVisibleInContext,
     isValidCondition,
-    projectCategoriesForContext,
 } from '@/context/conditions';
+import {
+    collectContextHiddenButtonIds,
+    collectContextHiddenCategoryIds,
+    filterCategoriesByContext,
+    projectCategoriesForContext,
+} from '@/context/panelProjection';
 import { buildContextSnapshot, EMPTY_OCAP_CONTEXT } from '@/context/OCAPContext';
 import type { ButtonCondition } from '@/types/conditions';
 import type { ButtonConfig, CategoryConfig } from '@/types/settings';

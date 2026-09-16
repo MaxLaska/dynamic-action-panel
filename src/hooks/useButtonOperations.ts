@@ -1,14 +1,28 @@
 import { useCallback } from 'react';
+import { Notice } from 'obsidian';
 import { usePluginContext } from '@/contexts/PluginContext';
 import { useRefresh } from './useRefresh';
 import { ButtonDeleteModal } from '@/components/modal/ButtonDeleteModal';
+import { findStoredCategory, replaceStoredCategory } from '@/utils/categoryStore';
+import {
+    BASE_LAYER_ID,
+    addButtonToLayer,
+    findButtonLayerId,
+    isPaletteCategory,
+    removeButtonFromPalette,
+} from '@/utils/paletteLayers';
+import { t } from '@/utils/i18n';
 import type { ButtonConfig, CategoryConfig } from '@/types';
 
 /**
  * useButtonOperations Hook
- * 
+ *
  * 封装按钮操作（复制、删除等）的业务逻辑，提供统一的操作接口。
- * 
+ *
+ * OCAP: in a grid palette every operation works on the layer the tool actually
+ * lives in — a copy stays in its own context profile, and a delete removes it
+ * from there instead of from the base layer.
+ *
  * @returns 按钮操作函数对象
  */
 export function useButtonOperations() {
@@ -22,13 +36,37 @@ export function useButtonOperations() {
      */
     const copyButton = useCallback(
         async (button: ButtonConfig, category: CategoryConfig) => {
+            const stored = findStoredCategory(plugin, category.id);
+            if (!stored) return;
+
             const newButton: ButtonConfig = {
                 ...button,
                 actions: button.actions?.map((action) => ({ ...action })) ?? [],
                 id: Date.now().toString(),
-                order: Math.max(...category.buttons.map(b => b.order), -1) + 1,
             };
-            category.buttons.push(newButton);
+
+            if (isPaletteCategory(stored)) {
+                const layerId = findButtonLayerId(stored, button.id) ?? BASE_LAYER_ID;
+                const next = addButtonToLayer(stored, layerId, newButton);
+                if (!next) {
+                    new Notice(t('palette_layer_full'));
+                    return;
+                }
+                replaceStoredCategory(plugin, next);
+            } else {
+                const { slot: _slot, ...rest } = newButton;
+                replaceStoredCategory(plugin, {
+                    ...stored,
+                    buttons: [
+                        ...stored.buttons,
+                        {
+                            ...(rest as ButtonConfig),
+                            order: Math.max(...stored.buttons.map((b) => b.order), -1) + 1,
+                        },
+                    ],
+                });
+            }
+
             await plugin.saveSettings();
             refresh();
         },
@@ -45,13 +83,32 @@ export function useButtonOperations() {
         (button: ButtonConfig, category: CategoryConfig, onDelete?: () => void) => {
             new ButtonDeleteModal(app, plugin, button, category, () => {
                 void (async () => {
-                    const index = category.buttons.findIndex((b) => b.id === button.id);
-                    if (index !== -1) {
-                        category.buttons.splice(index, 1);
-                        // 删除后重排所有按钮的 order 为 0,1,2...
-                        category.buttons.forEach((b, i) => { b.order = i; });
-                        await plugin.saveSettings();
-                        refresh();
+                    const stored = findStoredCategory(plugin, category.id);
+                    if (stored) {
+                        if (isPaletteCategory(stored)) {
+                            replaceStoredCategory(
+                                plugin,
+                                removeButtonFromPalette(stored, button.id)
+                            );
+                            await plugin.saveSettings();
+                            refresh();
+                        } else {
+                            const index = stored.buttons.findIndex(
+                                (b) => b.id === button.id
+                            );
+                            if (index !== -1) {
+                                const buttons = stored.buttons.filter(
+                                    (b) => b.id !== button.id
+                                );
+                                replaceStoredCategory(plugin, {
+                                    ...stored,
+                                    // 删除后重排所有按钮的 order 为 0,1,2...
+                                    buttons: buttons.map((b, i) => ({ ...b, order: i })),
+                                });
+                                await plugin.saveSettings();
+                                refresh();
+                            }
+                        }
                     }
                     if (onDelete) {
                         onDelete();
@@ -67,4 +124,3 @@ export function useButtonOperations() {
         deleteButton,
     };
 }
-

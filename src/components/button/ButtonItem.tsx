@@ -5,6 +5,7 @@ import type { App } from 'obsidian';
 import { SimpleButton } from './Button';
 import { useButtonClickHandler } from '@/hooks/useButtonClickHandler';
 import { shallowEqualExcept } from '@/utils/shallowEqual';
+import type { ContextStatus } from '@/components/shared/ContextStatusBadge';
 
 interface ButtonItemProps {
     button: ButtonConfig;
@@ -15,6 +16,10 @@ interface ButtonItemProps {
     enableEditMode: boolean;
     plugin: ButtonsPanelPlugin;
     app: App;
+    /** Palette grid: marker derived from the tool's layer (see SimpleButton). */
+    contextStatus?: ContextStatus;
+    /** Palette grid: base tool rendered inside a context-profile layer. */
+    layerLocked?: boolean;
 }
 
 /**
@@ -42,6 +47,8 @@ export const ButtonItem: React.FC<ButtonItemProps> = React.memo(
         enableEditMode,
         plugin,
         app,
+        contextStatus,
+        layerLocked,
     }) => {
         const handleButtonClick = useButtonClickHandler(button);
 
@@ -55,6 +62,8 @@ export const ButtonItem: React.FC<ButtonItemProps> = React.memo(
                 plugin={plugin}
                 app={app}
                 onClick={handleButtonClick}
+                contextStatus={contextStatus}
+                layerLocked={layerLocked}
             />
         );
     },

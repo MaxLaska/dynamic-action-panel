@@ -3,8 +3,11 @@ import type { CategoryConfig } from '@/types';
 import { useConfigContext } from '@/contexts/ConfigContext';
 import { ButtonDragProvider } from '@/contexts/ButtonDragContext';
 import { useOCAPContext } from '@/hooks/useOCAPContext';
-import { projectCategoriesForContext } from '@/context/conditions';
+import { projectCategoriesForContext } from '@/context/panelProjection';
 import { OCAPVisibilityProvider } from '@/contexts/OCAPVisibilityContext';
+import { PaletteLayerProvider, selectedLayerOf } from '@/contexts/PaletteLayerContext';
+import { filterPaletteButtons, isPaletteCategory } from '@/utils/paletteLayers';
+import type { PaletteLayerId, PaletteLayerSelection } from '@/utils/paletteLayers';
 import { TabsModeContent } from '@/components/buttons-panel/TabsModeContent';
 import { ListModeContent } from '@/components/buttons-panel/ListModeContent';
 import { FolderModeContent } from '@/components/buttons-panel/FolderModeContent';
@@ -48,26 +51,61 @@ export const PanelContent: React.FC<PanelContentProps> = ({
             return sorted;
         }
 
+        const matches = (button: { name?: string }) =>
+            (button.name ?? '').toLowerCase().includes(normalizedQuery);
+
         return sorted
             .map((category) => {
                 const nameMatched = category.name.toLowerCase().includes(normalizedQuery);
-
-                const filteredButtons = category.buttons.filter((button) => {
-                    const buttonName = button.name ?? '';
-                    return buttonName.toLowerCase().includes(normalizedQuery);
-                });
-
-                if (!nameMatched && filteredButtons.length === 0) {
-                    return null;
+                if (nameMatched) {
+                    return category;
                 }
 
-                return {
-                    ...category,
-                    buttons: nameMatched ? category.buttons : filteredButtons,
-                };
+                // A palette's tools can live in any of its layers, so the
+                // search filters every layer instead of `buttons` alone.
+                if (isPaletteCategory(category)) {
+                    const filtered = filterPaletteButtons(category, matches);
+                    const hasMatch =
+                        filtered.buttons.length > 0 ||
+                        (filtered.contextProfiles ?? []).some(
+                            (profile) => profile.buttons.length > 0
+                        );
+                    return hasMatch ? filtered : null;
+                }
+
+                const filteredButtons = category.buttons.filter(matches);
+                if (filteredButtons.length === 0) {
+                    return null;
+                }
+                return { ...category, buttons: filteredButtons };
             })
             .filter((c): c is CategoryConfig => c !== null);
     }, [categories, normalizedQuery]);
+
+    /**
+     * Management modes: which layer of each palette the user is editing.
+     * Locked mode ignores this entirely — there the context decides.
+     */
+    const [layerSelection, setLayerSelection] = React.useState<
+        Record<string, PaletteLayerId>
+    >({});
+
+    const selectLayer = React.useCallback((categoryId: string, layerId: PaletteLayerId) => {
+        setLayerSelection((prev) =>
+            prev[categoryId] === layerId ? prev : { ...prev, [categoryId]: layerId }
+        );
+    }, []);
+
+    // A selection pointing at a deleted profile must never survive: normalize
+    // it against the categories that actually exist.
+    const normalizedSelection = React.useMemo<PaletteLayerSelection>(() => {
+        const next: Record<string, PaletteLayerId> = {};
+        for (const category of searchFilteredCategories) {
+            if (!isPaletteCategory(category)) continue;
+            next[category.id] = selectedLayerOf(category, layerSelection);
+        }
+        return next;
+    }, [searchFilteredCategories, layerSelection]);
 
     // Central context projection: in locked mode categories/buttons hidden by
     // their conditions are filtered out (a category also disappears when no
@@ -80,9 +118,10 @@ export const PanelContent: React.FC<PanelContentProps> = ({
             projectCategoriesForContext(
                 searchFilteredCategories,
                 ocapContext,
-                interactionMode
+                interactionMode,
+                { selectedLayers: normalizedSelection }
             ),
-        [searchFilteredCategories, ocapContext, interactionMode]
+        [searchFilteredCategories, ocapContext, interactionMode, normalizedSelection]
     );
     const filteredCategories = projection.categories;
 
@@ -140,8 +179,16 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 hiddenCategoryIds={projection.hiddenCategoryIds}
                 interactionMode={interactionMode}
             >
+            <PaletteLayerProvider
+                palettes={projection.palettes}
+                selection={normalizedSelection}
+                selectLayer={selectLayer}
+                manageable={interactionMode !== 'locked'}
+            >
             <ButtonDragProvider
                 categories={filteredCategories}
+                palettes={projection.palettes}
+                layerSelection={normalizedSelection}
                 enabled={dragReorderEnabled}
                 displayStyle={effectiveDisplayStyle}
                 enableAnimation={enableAnimation}
@@ -161,6 +208,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
             >
                 {panelContent}
             </ButtonDragProvider>
+            </PaletteLayerProvider>
             </OCAPVisibilityProvider>
         </div>
     );

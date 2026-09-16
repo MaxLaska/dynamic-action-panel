@@ -12,11 +12,15 @@
 //   migrate it correctly later.
 
 import {
+    ButtonConfig,
     ButtonsPanelPluginSettings,
     CategoryConfig,
+    ContextProfile,
     CURRENT_SETTINGS_VERSION,
     DEFAULT_SETTINGS,
 } from '@/types/settings';
+import { placeButtonsOnGrid } from '@/utils/categoryGrid';
+import { liftButtonConditionsToProfiles } from '@/utils/paletteLayers';
 
 /** How the raw persisted data was handled by migrateSettings. */
 export type MigrationStatus =
@@ -109,7 +113,97 @@ function migrateV0toV1(data: Record<string, unknown>): Record<string, unknown> {
     };
 }
 
-const MIGRATION_STEPS: readonly MigrationStep[] = [{ from: 0, apply: migrateV0toV1 }];
+function withNormalizedOrder(buttons: ButtonConfig[]): ButtonConfig[] {
+    return buttons.map((button, index) => ({ ...button, order: index }));
+}
+
+/**
+ * 1 -> 2 for ONE grid category: lift per-button conditions into context
+ * profiles.
+ *
+ * Version 1 let every grid button carry its own condition, which meant five
+ * tools belonging to the same context needed five independent rules and two
+ * unrelated context systems (button conditions and, from now on, profiles)
+ * could drive the same slots. Version 2 models palette contextuality with
+ * context profiles only.
+ *
+ * The split rule itself lives in liftButtonConditionsToProfiles
+ * (src/utils/paletteLayers.ts) so the flow -> palette conversion produces
+ * exactly the same shape. Nothing is dropped, and slots are preserved exactly.
+ */
+function migrateGridCategoryToLayers(
+    category: Record<string, unknown>
+): Record<string, unknown> {
+    const rawButtons = Array.isArray(category['buttons'])
+        ? (category['buttons'] as ButtonConfig[])
+        : [];
+    if (rawButtons.length === 0) {
+        return category;
+    }
+
+    // Freeze the arrangement the user currently sees before splitting layers,
+    // so materializing missing/duplicate slots cannot move anything.
+    const placement = placeButtonsOnGrid(rawButtons);
+    const positioned: ButtonConfig[] = [];
+    placement.slots.forEach((button, slot) => {
+        if (button) positioned.push({ ...button, slot });
+    });
+    positioned.push(...placement.overflow.map((button) => ({ ...button })));
+
+    const categoryId = typeof category['id'] === 'string' ? category['id'] : 'category';
+    const { base, profiles } = liftButtonConditionsToProfiles(positioned, categoryId);
+
+    if (profiles.length === 0) {
+        return { ...category, buttons: withNormalizedOrder(positioned) };
+    }
+
+    const existing = Array.isArray(category['contextProfiles'])
+        ? (category['contextProfiles'] as ContextProfile[])
+        : [];
+
+    return {
+        ...category,
+        buttons: base,
+        contextProfiles: [...existing, ...profiles],
+    };
+}
+
+/**
+ * 1 -> 2: palette context layers.
+ * Only `layout: 'grid'` categories are transformed; flow categories (including
+ * their per-button conditions, which keep working exactly as before) and every
+ * other setting are passed through untouched.
+ */
+function migrateV1toV2(data: Record<string, unknown>): Record<string, unknown> {
+    const categories = Array.isArray(data['categories'])
+        ? (data['categories'] as unknown[])
+        : [];
+
+    let anyChanged = false;
+    const migrated = categories.map((category) => {
+        if (!isRecord(category) || category['layout'] !== 'grid') {
+            return category;
+        }
+        const next = migrateGridCategoryToLayers(category);
+        if (next !== category) {
+            anyChanged = true;
+        }
+        return next;
+    });
+
+    return {
+        ...data,
+        // Keep the original array when no palette needed transforming, so
+        // untouched data really stays untouched (identity included).
+        categories: anyChanged ? migrated : (data['categories'] ?? categories),
+        settingsVersion: 2,
+    };
+}
+
+const MIGRATION_STEPS: readonly MigrationStep[] = [
+    { from: 0, apply: migrateV0toV1 },
+    { from: 1, apply: migrateV1toV2 },
+];
 
 /**
  * Migrate raw persisted plugin data to the current settings schema.
@@ -155,7 +249,11 @@ export function migrateSettings(raw: unknown): MigrationResult {
     }
 
     return {
-        settings: data as unknown as ButtonsPanelPluginSettings,
+        // Normalize once at the end of the chain, exactly like the 'current'
+        // branch does: a migrated document must also receive nested defaults
+        // that were added since it was written, and normalizing here keeps
+        // migrateSettings idempotent over its own output.
+        settings: normalizeSettings(data) as unknown as ButtonsPanelPluginSettings,
         changed: true,
         status: 'migrated',
         fromVersion,

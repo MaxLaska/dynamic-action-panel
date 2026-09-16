@@ -29,6 +29,12 @@ interface ContextStatusBadgeProps {
     notMatching?: boolean;
     /** Locked mode uses a quieter variant (see PaletteGrid.css). */
     subtle?: boolean;
+    /**
+     * Palette grid: a base/pinned tool shown while a context profile is being
+     * edited. The slot is reserved by the base layer and cannot be taken here,
+     * which the label has to state explicitly.
+     */
+    locked?: boolean;
     className?: string;
 }
 
@@ -41,6 +47,7 @@ export const ContextStatusBadge: React.FC<ContextStatusBadgeProps> = ({
     status,
     notMatching = false,
     subtle = false,
+    locked = false,
     className,
 }) => {
     const iconName = STATUS_ICON[status];
@@ -53,18 +60,20 @@ export const ContextStatusBadge: React.FC<ContextStatusBadgeProps> = ({
         [iconName]
     );
 
-    const label =
-        status === 'persistent'
-            ? t('context_status_persistent')
-            : notMatching
-              ? t('context_status_contextual_inactive')
-              : t('context_status_contextual_active');
+    const label = locked
+        ? t('palette_slot_pinned_locked')
+        : status === 'persistent'
+          ? t('context_status_persistent')
+          : notMatching
+            ? t('context_status_contextual_inactive')
+            : t('context_status_contextual_active');
 
     const classNames = [
         'ocap-context-badge',
         `ocap-context-badge--${status}`,
         notMatching && 'ocap-context-badge--inactive',
         subtle && 'ocap-context-badge--subtle',
+        locked && 'ocap-context-badge--locked',
         className,
     ]
         .filter(Boolean)

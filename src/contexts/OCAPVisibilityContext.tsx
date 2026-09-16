@@ -8,7 +8,7 @@
 // lets SimpleButton and the category renderers mark them visually.
 
 import React, { createContext, useContext } from 'react';
-import { EMPTY_ID_SET } from '@/context/conditions';
+import { EMPTY_ID_SET } from '@/context/panelProjection';
 import type { InteractionMode } from '@/types/settings';
 
 const EMPTY_HIDDEN_IDS: ReadonlySet<string> = EMPTY_ID_SET;

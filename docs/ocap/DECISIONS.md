@@ -151,6 +151,10 @@ Area zones (category container / tab / title) carry no position in a grid and ar
 
 ## 2026-09-17 – Button-level conditions stay, and a hidden button leaves its slot empty
 
+> **Superseded for grid palettes** by "Contextuality of a palette lives in its
+> layers, not in its buttons" (2026-09-17, below). It still describes the
+> unchanged behavior of flow categories.
+
 **Decision:** Categories and buttons keep independent conditions (Phase 3 semantics unchanged, fail-open included). In a grid, a button hidden by its own condition leaves its slot empty and no other button moves. A category hidden by its own condition still disappears entirely in locked mode, exactly as before. This falls out of the model rather than being special-cased: `filterCategoriesByContext` removes the button from `category.buttons`, and the remaining buttons keep their slots.
 
 **Reason:** Category-level and button-level dynamics answer different questions ("is this toolset relevant at all?" vs. "is this one tool applicable?"). Collapsing them into one level would force users to split categories just to make one button conditional.
@@ -169,11 +173,150 @@ Icons are chosen so the two differ in silhouette; color only reinforces them. Ea
 
 ## 2026-09-17 – Grid layout needs no settings migration
 
+> **Superseded** by "Palette context layers bump the settings version to 2"
+> (2026-09-17, below): the layer model is a real data transformation, so it
+> does get a version. The reasoning about *reflexive* bumps still stands.
+
 **Decision:** `settingsVersion` stays at 1. `CategoryConfig.layout` and `ButtonConfig.slot` are purely additive optional fields: an absent layout means the historical flow behavior and an absent slot is only consulted inside a grid category, so no stored data needs transforming and version-1 data written today stays loadable by pre-palette builds. Categories created as flow do not persist a `layout` field at all.
 
 Converting a category with more than 16 buttons to the grid is **refused** with an explaining Notice instead of truncating, overflowing or silently dropping buttons; the modal stays open so the user can fix it.
 
 **Reason:** Same rule as category conditions (2026-09-16): version bumps are reserved for actual data transformations. Reflexive bumps force no-op migrations on every synced device and create artificial "future version" states in mixed-version vaults.
+
+## 2026-09-17 – A palette is a layered surface: base/pinned plus context profiles
+
+**Decision:** A `layout: 'grid'` category is a layered palette.
+
+- `CategoryConfig.buttons` is the **base / pinned layer**: present in every
+  context.
+- `CategoryConfig.contextProfiles?: ContextProfile[]` are named alternative
+  layers, each with a stable id, a name, **exactly one** condition (the same
+  `ButtonCondition` model, edited with the same `ConditionEditor`) and its own
+  buttons carrying their own slots.
+
+At runtime: load the base layer, take the **first** profile whose condition
+matches, apply its slots only where the base layer leaves them free. The result
+is a pure value (`resolvePaletteForContext`, `src/utils/paletteLayers.ts`); no
+stored configuration is mutated. Flow categories are untouched by all of this.
+
+**Reason:** Five tools that belong to the same context needed five independent
+per-button rules, which is neither writable nor readable. A profile states the
+context once and owns the tools that belong to it.
+
+## 2026-09-17 – Base slots are reserved in every context profile
+
+**Decision:** A slot occupied by the base layer is blocked in **all** context
+profiles: it cannot be taken, overwritten or swapped from there. The reverse
+also holds while the base layer is being edited — slots that context profiles
+occupy are reserved against base edits, because taking one would make that
+profile's tool unplaceable.
+
+Blocked slots are never silently overwritten and never silently displace
+anything: the drop is refused, the cell says why (pinned badge / reserved
+marker + tooltip), and a release on a blocked cell reverts the whole drag with
+an explaining Notice rather than committing the drag's last intermediate
+position (`resolveGridDropOutcome`). Blocked cells register a real but refusing
+droppable so the palette's background container cannot absorb such a drop.
+
+**Reason:** The pinned layer is the part of the palette the user memorizes.
+A rule that "base always wins, everywhere" is the only one that keeps that
+promise without exceptions, and refusing beats inventing a displacement rule the
+user cannot predict.
+
+## 2026-09-17 – First matching profile wins; profiles are never merged
+
+**Decision:** Context profiles are ordered, and order **is** priority: the first
+profile whose condition matches becomes active and the rest are ignored. Merging
+several matching profiles is explicitly rejected. The user reorders profiles
+(and thereby the priority) from the palette's layer selector.
+
+A profile **without** a condition always matches — a deliberate fallback layer,
+useful as the last entry. A profile whose condition is structurally **invalid**
+does **not** match. This is the one place where OCAP does not fail open: a
+corrupt always-matching profile would shadow every profile below it and make
+their tools permanently unreachable, whereas a skipped profile only loses its
+own tools in locked mode and stays fully visible and editable in the management
+modes, where it can be repaired (and is marked as broken in the selector).
+
+**Reason:** Merging would make a slot's content depend on an unpredictable
+combination of rules. One winner keeps every filled slot attributable to exactly
+one layer, which is what makes the palette explainable at all.
+
+## 2026-09-17 – Contextuality of a palette lives in its layers, not in its buttons
+
+**Decision:** Inside a grid palette, `ButtonConfig.conditions` is **ignored at
+runtime**. Contextuality is modelled by context profiles only, so a palette
+never has two independent context systems driving the same slots. Flow
+categories keep the Phase-3 per-button conditions unchanged — that is the
+dividing line.
+
+The retired model is converted rather than dropped, by one shared rule
+(`liftButtonConditionsToProfiles`): buttons without a condition stay in the base
+layer; buttons sharing the same **valid** condition become one profile, named
+from the rule itself, losing the now-redundant per-button copy; a button with a
+**structurally invalid** condition stays in the base layer and keeps that
+condition untouched, because it failed open in version 1 (it was always visible)
+— base is the behavior-preserving home and nothing is discarded. The same rule
+runs in the settings migration and in the flow → palette conversion, so
+palette → flow → palette is lossless. The button modals hide the per-button
+condition editor inside a palette and state the target layer instead.
+
+**Reason:** Two context systems on one slot cannot be reasoned about, and the
+UI must not be able to express the retired one.
+
+## 2026-09-17 – Palette visibility and context profiles are different questions
+
+**Decision:** `CategoryConfig.conditions` keeps exactly one meaning: whether the
+**whole palette** is shown. It is not the profile mechanism and is documented as
+such in the field, the editor description and the i18n strings.
+
+A palette carrying pinned base tools therefore stays visible no matter which
+profile matches, or whether any does. It disappears only when its own visibility
+condition fails, or when it has nothing at all to offer in the current context
+(the Phase-3 "no visible buttons" rule, unchanged).
+
+**Reason:** "Is this toolset relevant at all?" and "which tools belong to this
+context?" are different questions; collapsing them would make a pinned tool
+disappear because an unrelated profile did not match.
+
+## 2026-09-17 – The selected layer is the management context
+
+**Decision:** In sort and edit mode a palette shows a layer selector
+(`[Base / Pinned] [Type A] … [+ Context]`), and the selected layer decides what
+the grid shows, what a drag operates on and where a newly created tool lands.
+There is no separate "pinned" or "contextual" switch anywhere: pinned means "it
+is in the base layer", contextual means "it is in a profile".
+
+Base tools stay **visible** inside a context layer for orientation, but are
+locked there: not draggable, no context menu, dimmed, marked with a pin. Sort
+mode uses the same selector, so sorting never touches a layer the user is not
+looking at. The layer selection is UI state, never persisted; a selection
+pointing at a deleted profile falls back to the base layer.
+
+**Reason:** A checkbox would let the two facts (where a tool is stored, what the
+user is editing) drift apart. Deriving both from one visible selection makes the
+question "which layer am I changing?" impossible to get wrong.
+
+## 2026-09-17 – Palette context layers bump the settings version to 2
+
+**Decision:** `CURRENT_SETTINGS_VERSION = 2`, with a forward-only `1 → 2`
+migration that transforms grid categories as described above. This is a real
+semantic transformation of stored data, not an additive field, so the reflexive
+"keep version 1 because the fields are optional" rule from 2026-09-16 does not
+apply here.
+
+The migration is deterministic and reproducible — profile ids are derived from
+the category id (`<categoryId>-ctx-<n>`), never from a clock or a random source
+— materializes the current arrangement before splitting layers so nothing moves,
+and loses no button. The chain now normalizes its result against the current
+defaults, which makes `migrateSettings` idempotent over its own output.
+
+**Consequence, accepted:** a version-2 document opened by a pre-version-2 build
+shows only the base layer of a palette. Forward-only migration remains the
+policy; this is simply the first release where it is user-visible in a
+mixed-version vault.
+
+**Reason:** Version bumps are for actual data transformations, and this is one.
 
 ## Open decisions
 

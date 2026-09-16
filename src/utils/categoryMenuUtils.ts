@@ -2,6 +2,7 @@ import { Menu, MenuItem, App } from 'obsidian';
 import { CategoryEditModal } from '@/components/modal/CategoryEditModal';
 import { CategoryDeleteModal } from '@/components/modal/CategoryDeleteModal';
 import { t } from '@/utils/i18n';
+import { duplicateCategoryConfig } from '@/utils/categoryStore';
 import type { CategoryConfig, ButtonsPanelPlugin } from '@/types';
 
 /**
@@ -35,17 +36,11 @@ export function createCategoryMenuHandler(
                 .setIcon('copy')
                 .onClick(() => {
                     void (async () => {
-                        const newCategory: CategoryConfig = {
-                            ...category,
-                            id: Date.now().toString(),
-                            name: `${category.name}`,
-                            order: categories.length,
-                            buttons: category.buttons.map((btn) => ({
-                                ...btn,
-                                id: Date.now().toString() + Math.random(),
-                                actions: btn.actions?.map((action) => ({ ...action })) ?? [],
-                            })),
-                        };
+                        // Copies every palette layer, not just `buttons`.
+                        const newCategory = duplicateCategoryConfig(
+                            category,
+                            categories.length
+                        );
                         plugin.settings.categories.push(newCategory);
                         await plugin.saveSettings();
                         activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));

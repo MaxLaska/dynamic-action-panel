@@ -3,12 +3,9 @@ import { ButtonsPanelPlugin } from '@/types/plugin';
 import { CategoryConfig } from '@/types';
 import { t, tWithParams } from '@/utils/i18n';
 import { ConditionEditor } from '@/components/input';
-import {
-    GRID_SLOT_COUNT,
-    applyCategoryLayout,
-    getCategoryLayout,
-    type CategoryLayout,
-} from '@/utils/categoryGrid';
+import { GRID_SLOT_COUNT, getCategoryLayout, type CategoryLayout } from '@/utils/categoryGrid';
+import { applyCategoryLayout, getContextProfiles } from '@/utils/paletteLayers';
+import { isValidCondition } from '@/context/conditions';
 
 /**
  * CategoryEditModal 分类编辑模态框类。
@@ -81,6 +78,62 @@ export class CategoryEditModal extends Modal {
         this.updateLayoutHint();
     }
 
+    /**
+     * Read-only overview of the palette's context profiles, in priority order.
+     * Creating, editing, reordering and deleting them happens on the palette's
+     * own layer selector (one place, right next to the grid they affect); this
+     * section exists so the priority order is visible while the palette itself
+     * is being configured.
+     */
+    private renderContextProfiles(contentEl: HTMLElement): void {
+        const category = this.plugin.settings.categories.find(
+            (c) => c.id === this.categoryId
+        );
+        if (!category || getCategoryLayout(category) !== 'grid') {
+            return;
+        }
+
+        const section = new Setting(contentEl)
+            .setName(t('palette_profiles_section'))
+            .setDesc(t('palette_profiles_desc'));
+        section.settingEl.addClass('ocap-context-profiles-heading');
+
+        const profiles = getContextProfiles(category);
+        const list = contentEl.createDiv('ocap-context-profiles-list');
+        if (profiles.length === 0) {
+            list.createDiv({
+                cls: 'ocap-context-profiles-empty',
+                text: t('palette_profiles_empty'),
+            });
+            return;
+        }
+
+        profiles.forEach((profile, index) => {
+            const row = list.createDiv('ocap-context-profiles-row');
+            row.createSpan({
+                cls: 'ocap-context-profiles-priority',
+                text: tWithParams('palette_profiles_priority', { index: index + 1 }),
+            });
+            row.createSpan({ cls: 'ocap-context-profiles-name', text: profile.name });
+            const conditions = profile.conditions;
+            row.createSpan({
+                cls: 'ocap-context-profiles-condition',
+                text:
+                    conditions === undefined || conditions === null
+                        ? t('palette_profiles_no_condition')
+                        : !isValidCondition(conditions)
+                          ? t('palette_profiles_invalid_condition')
+                          : JSON.stringify(conditions),
+            });
+            row.createSpan({
+                cls: 'ocap-context-profiles-count',
+                text: tWithParams('palette_profiles_tools', {
+                    count: profile.buttons.length,
+                }),
+            });
+        });
+    }
+
     private updateLayoutHint(): void {
         if (!this.layoutHintEl) return;
         this.layoutHintEl.setText(
@@ -122,6 +175,9 @@ export class CategoryEditModal extends Modal {
 
         // OCAP palette: button layout of this category
         this.renderLayoutSetting(contentEl);
+
+        // OCAP palette: priority overview of the context profiles
+        this.renderContextProfiles(contentEl);
 
         // OCAP: visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(contentEl, this.oldConditions, {

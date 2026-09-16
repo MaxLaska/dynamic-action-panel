@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { usePluginContext } from '@/contexts/PluginContext';
 import { useRefresh } from './useRefresh';
 import { CategoryDeleteModal } from '@/components/modal/CategoryDeleteModal';
+import { duplicateCategoryConfig } from '@/utils/categoryStore';
 import type { CategoryConfig } from '@/types';
 
 /**
@@ -22,17 +23,9 @@ export function useCategoryOperations() {
      */
     const copyCategory = useCallback(
         async (category: CategoryConfig, categories: CategoryConfig[]) => {
-            const newCategory: CategoryConfig = {
-                ...category,
-                id: Date.now().toString(),
-                name: `${category.name}`,
-                order: categories.length,
-                buttons: category.buttons.map((btn) => ({
-                    ...btn,
-                    id: Date.now().toString() + Math.random(),
-                    actions: btn.actions?.map((action) => ({ ...action })) ?? [],
-                })),
-            };
+            // Copies every palette layer, not just `buttons` — see
+            // duplicateCategoryConfig.
+            const newCategory = duplicateCategoryConfig(category, categories.length);
             plugin.settings.categories.push(newCategory);
             await plugin.saveSettings();
             refresh();

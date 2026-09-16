@@ -9,6 +9,7 @@ import {
     moveIdToSlotWithinGrid,
     type CategoryLayout,
 } from '@/utils/categoryGrid';
+import { allPaletteButtons, type ResolvedPalette } from '@/utils/paletteLayers';
 
 /**
  * Live drag state per category.
@@ -25,6 +26,25 @@ export type ButtonDragItems = Record<string, (string | null)[]>;
 
 /** Layout of each drag container, needed to interpret the index. */
 export type ContainerLayouts = Record<string, CategoryLayout>;
+
+/**
+ * Slots a drag may not land on, per grid container.
+ *
+ * This is what enforces the palette's hard layer rule: a slot occupied by the
+ * base/pinned layer is reserved in every context profile, and while the base
+ * layer itself is being edited the slots other context profiles occupy are
+ * reserved the other way round. A blocked slot simply rejects the drop — no
+ * swap, no silent overwrite, no data loss.
+ */
+export type BlockedSlots = Record<string, readonly boolean[]>;
+
+function isSlotBlocked(
+    blocked: BlockedSlots | undefined,
+    containerId: string,
+    slot: number
+): boolean {
+    return blocked?.[containerId]?.[slot] === true;
+}
 
 export const CONTAINER_PREFIX = 'container:';
 export const TAB_PREFIX = 'tab:';
@@ -102,11 +122,26 @@ export function buildContainerLayouts(categories: CategoryConfig[]): ContainerLa
     return layouts;
 }
 
-export function buildButtonDragItems(categories: CategoryConfig[]): ButtonDragItems {
+/**
+ * Live drag state for every container.
+ *
+ * For a grid palette the state describes the layer view currently on screen,
+ * so it is taken from the resolved palette (base/pinned + the selected or
+ * active context profile) rather than from `category.buttons` alone. Layers
+ * that are not on screen are simply absent from the drag state, which is what
+ * keeps a drag in "Type A" from touching "Type B".
+ */
+export function buildButtonDragItems(
+    categories: CategoryConfig[],
+    palettes?: ReadonlyMap<string, ResolvedPalette>
+): ButtonDragItems {
     const items: ButtonDragItems = {};
     for (const category of categories) {
         if (isGridCategory(category)) {
-            items[category.id] = buildGridSlotIds(category.buttons);
+            const resolved = palettes?.get(category.id);
+            items[category.id] = resolved
+                ? resolved.slots.map((slot) => slot.button?.id ?? null)
+                : buildGridSlotIds(category.buttons);
             continue;
         }
         const sorted = [...category.buttons].sort((a, b) => a.order - b.order);
@@ -179,10 +214,17 @@ export function getGridSlotButtonsFromAllCategories(
     return slots;
 }
 
-function collectButtonsById(categories: CategoryConfig[]): Map<string, ButtonConfig> {
+/**
+ * Every button reachable from the given categories, context-profile layers
+ * included — a drag state may legitimately reference a button that lives in a
+ * profile rather than in `category.buttons`.
+ */
+export function collectButtonsById(
+    categories: CategoryConfig[]
+): Map<string, ButtonConfig> {
     const allButtons = new Map<string, ButtonConfig>();
     for (const cat of categories) {
-        for (const button of cat.buttons) {
+        for (const button of allPaletteButtons(cat)) {
             allButtons.set(button.id, button);
         }
     }
@@ -231,6 +273,56 @@ function resolveGridTargetSlot(
 }
 
 /**
+ * What releasing on `overId` means for a grid target.
+ *
+ * - `accept`: an ordinary drop (also every flow target);
+ * - `blocked`: a slot another palette layer reserves, or a flow tool aimed at
+ *   an occupied slot — the palette rules refuse it;
+ * - `no-cell`: the pointer is over the palette but not over an addressable
+ *   cell (the container/tab/title area), which carries no position in a
+ *   positional grid.
+ *
+ * Both non-accepting outcomes must revert the whole drag. The live drag state
+ * follows the pointer, so by the time it reaches such a target it may already
+ * show the tool on the last accepted cell it crossed; committing that would
+ * drop the tool somewhere the user never aimed at.
+ */
+export type GridDropOutcome = 'accept' | 'blocked' | 'no-cell';
+
+export function resolveGridDropOutcome(
+    items: ButtonDragItems,
+    activeId: string,
+    overId: string,
+    layouts: ContainerLayouts = {},
+    blocked?: BlockedSlots
+): GridDropOutcome {
+    const overContainer = resolveOverContainerId(overId, items);
+    if (!overContainer || layouts[overContainer] !== 'grid') {
+        return 'accept';
+    }
+    const overSlots = items[overContainer];
+    if (!overSlots) return 'accept';
+
+    const targetSlot = resolveGridTargetSlot(overId, overContainer, overSlots);
+    if (targetSlot === null) {
+        return 'no-cell';
+    }
+    if (isSlotBlocked(blocked, overContainer, targetSlot)) {
+        return 'blocked';
+    }
+
+    const activeContainer = findContainerForButtonId(activeId, items);
+    if (!activeContainer || activeContainer === overContainer) {
+        return 'accept';
+    }
+    // flow -> grid accepts empty slots only.
+    const occupant = overSlots[targetSlot] ?? null;
+    return layouts[activeContainer] !== 'grid' && occupant !== null && occupant !== activeId
+        ? 'blocked'
+        : 'accept';
+}
+
+/**
  * Drop semantics when the target container is a grid.
  *
  * - within one grid: move onto an empty slot, swap with an occupied one; the
@@ -240,6 +332,11 @@ function resolveGridTargetSlot(
  * - flow -> grid: only empty slots accept the button. An occupied slot is
  *   rejected rather than inventing a cross-layout swap, because there is no
  *   well-defined position for the displaced button in a flow list.
+ *
+ * On top of that, a slot blocked by another palette layer rejects the drop
+ * outright (see BlockedSlots): pinned base slots are reserved in every context
+ * profile, and slots other profiles use are reserved while the base layer is
+ * being edited.
  */
 function applyGridDragOver(
     prev: ButtonDragItems,
@@ -247,11 +344,15 @@ function applyGridDragOver(
     activeContainer: string,
     overContainer: string,
     overId: string,
-    activeIsGrid: boolean
+    activeIsGrid: boolean,
+    blocked?: BlockedSlots
 ): ButtonDragItems {
     const overSlots = prev[overContainer]!;
     const targetSlot = resolveGridTargetSlot(overId, overContainer, overSlots);
     if (targetSlot === null) {
+        return prev;
+    }
+    if (isSlotBlocked(blocked, overContainer, targetSlot)) {
         return prev;
     }
 
@@ -312,7 +413,8 @@ export function applyDragOverToItems(
     prev: ButtonDragItems,
     activeId: string,
     overId: string,
-    layouts: ContainerLayouts = {}
+    layouts: ContainerLayouts = {},
+    blocked?: BlockedSlots
 ): ButtonDragItems {
     const activeContainer = findContainerForButtonId(activeId, prev);
     const overContainer = resolveOverContainerId(overId, prev);
@@ -330,7 +432,8 @@ export function applyDragOverToItems(
             activeContainer,
             overContainer,
             overId,
-            activeIsGrid
+            activeIsGrid,
+            blocked
         );
     }
 

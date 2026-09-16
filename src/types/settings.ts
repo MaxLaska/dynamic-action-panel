@@ -18,8 +18,14 @@ import type { ButtonCondition } from '@/types/conditions';
  *      historical flow behavior and an absent slot is only consulted inside a
  *      grid category, so no stored data needs transforming and version 1 data
  *      written today stays loadable by earlier builds.
+ * - 2: palette context layers. A grid category is now a layered palette: its
+ *      own `buttons` array is the base/pinned layer and `contextProfiles`
+ *      carries named alternative layers, each with exactly one condition.
+ *      This is a real data transformation — per-button conditions inside grid
+ *      categories are lifted into context profiles — so it needs a version
+ *      bump and a migration step. Flow categories are untouched by it.
  */
-export const CURRENT_SETTINGS_VERSION = 1;
+export const CURRENT_SETTINGS_VERSION = 2;
 
 /**
  * ButtonConfig 按钮配置对象类型。
@@ -50,6 +56,14 @@ export interface ButtonConfig {
      * button and is always visible. Conditions are applied against the
      * current OCAPContext snapshot in locked interaction mode only; in
      * sort/edit mode the button stays manageable (visually marked).
+     *
+     * **Flow categories only.** Inside a `layout: 'grid'` palette this field is
+     * ignored at runtime: contextuality there is modelled by the palette's
+     * context profiles (see CategoryConfig.contextProfiles), so a palette never
+     * has two independent context systems driving the same slots. The
+     * version-2 migration lifts valid grid-button conditions into profiles;
+     * structurally invalid ones (which failed open, i.e. never hid anything)
+     * stay on the button as inert data rather than being discarded.
      */
     conditions?: ButtonCondition;
     /**
@@ -66,6 +80,37 @@ export interface ButtonConfig {
 }
 
 /**
+ * A named context layer of a grid palette (OCAP palette context layers).
+ *
+ * A profile owns exactly one condition and a set of buttons carrying their own
+ * slots. At runtime the FIRST profile whose condition matches becomes active
+ * and its buttons fill the slots the base layer leaves free; profiles are never
+ * merged, so a slot's content is always attributable to exactly one layer.
+ *
+ * Fully JSON-serializable: no functions, no runtime references. A category is
+ * therefore a self-contained tree (base layer + profiles), which is what a
+ * later palette export/import needs.
+ */
+export interface ContextProfile {
+    /** Stable id, independent of the name and of the profile's position. */
+    id: string;
+    /** User-facing name shown in the layer selector (e.g. "Type A"). */
+    name: string;
+    /**
+     * The profile's single context condition, same model as everywhere else.
+     * Absent = always matches (a deliberate fallback layer, useful as the last
+     * entry). Structurally invalid data does NOT match, so one corrupt profile
+     * can never shadow every profile below it; it is surfaced in the editor.
+     */
+    conditions?: ButtonCondition;
+    /**
+     * Buttons of this layer, each carrying its own `slot`. Slots reserved by
+     * the base layer are never occupied here — base wins in every profile.
+     */
+    buttons: ButtonConfig[];
+}
+
+/**
  * CategoryConfig 分类配置对象类型。
  * 包含分类信息和该分类下的所有按钮。
  */
@@ -76,16 +121,35 @@ export interface CategoryConfig {
     name: string;
     /** 分类在全局的排序值 */
     order: number;
-    /** 分类下的按钮数组 */
+    /**
+     * 分类下的按钮数组。
+     * In a `layout: 'grid'` palette this array is the **base / pinned layer**:
+     * its buttons are present in every context, and the slots they occupy are
+     * reserved in every context profile.
+     */
     buttons: ButtonConfig[];
     /**
-     * Optional declarative visibility condition (OCAP Context Engine), same
-     * model as ButtonConfig.conditions. Absent/undefined = always visible.
-     * In locked mode a category is rendered only when this condition holds
-     * AND at least one of its buttons is context-visible; in sort/edit mode
-     * the category stays rendered and manageable (visually marked).
-     * Optional additive field: existing version-1 settings stay valid, so no
-     * settingsVersion bump / migration step is required.
+     * Named context layers of a grid palette, in priority order — the first
+     * profile whose condition matches wins and no others are applied.
+     * Absent/empty = the palette has only its base layer (the Phase 4a
+     * behavior). Ignored by flow categories.
+     *
+     * Deliberately distinct from `conditions` below: profiles decide WHICH
+     * TOOLS fill the free slots, `conditions` decides whether the palette is
+     * shown at all.
+     */
+    contextProfiles?: ContextProfile[];
+    /**
+     * Optional declarative **palette visibility** condition (OCAP Context
+     * Engine), same model as ButtonConfig.conditions. Absent/undefined =
+     * always visible. In locked mode a category is rendered only when this
+     * condition holds AND at least one button is effectively visible; in
+     * sort/edit mode the category stays rendered and manageable (visually
+     * marked).
+     *
+     * This is NOT the context-profile mechanism: a palette with pinned base
+     * tools stays visible no matter which profile matches (or whether any
+     * does). Use this field only to hide a whole palette.
      */
     conditions?: ButtonCondition;
     /**

@@ -1,20 +1,24 @@
 // Slot stability under dynamic visibility.
 //
-// This is the load-bearing product guarantee of the palette: a button hidden
-// by its context rule must leave its slot EMPTY, and every other button must
-// stay on exactly the slot it had. These tests drive the real projection
-// (projectCategoriesForContext) and the real placement (placeButtonsOnGrid)
-// together, because that pair is what the renderer actually uses.
+// This is the load-bearing product guarantee of the palette: a tool that is
+// not part of the layer resolved for the current context leaves its slot
+// EMPTY, and every other tool stays on exactly the slot it had. These tests
+// drive the real projection (projectCategoriesForContext) and the real
+// placement (placeButtonsOnGrid) together, because that pair is what the
+// renderer actually uses.
+//
+// Since version 2 a palette expresses contextuality through its context
+// profiles, not through per-button conditions — the guarantee is unchanged,
+// the mechanism is the layer.
 
 import { describe, expect, it } from 'vitest';
-import type { ButtonConfig, CategoryConfig } from '@/types/settings';
+import type { ButtonConfig, CategoryConfig, ContextProfile } from '@/types/settings';
 import type { ButtonCondition } from '@/types/conditions';
 import type { OCAPContextSnapshot } from '@/context/OCAPContext';
-import {
-    hasConditions,
-    projectCategoriesForContext,
-} from '@/context/conditions';
+import { hasConditions } from '@/context/conditions';
+import { projectCategoriesForContext } from '@/context/panelProjection';
 import { placeButtonsOnGrid } from '@/utils/categoryGrid';
+import { BASE_LAYER_ID } from '@/utils/paletteLayers';
 
 function context(overrides: Partial<OCAPContextSnapshot> = {}): OCAPContextSnapshot {
     return {
@@ -43,7 +47,21 @@ function button(
 const MARKDOWN_ONLY: ButtonCondition = { rule: 'viewType', value: 'markdown' };
 const PDF_ONLY: ButtonCondition = { rule: 'viewType', value: 'pdf' };
 
-function gridCategory(buttons: ButtonConfig[], conditions?: ButtonCondition): CategoryConfig {
+function profile(
+    id: string,
+    conditions: ButtonCondition | undefined,
+    buttons: ButtonConfig[]
+): ContextProfile {
+    const p: ContextProfile = { id, name: id, buttons };
+    if (conditions) p.conditions = conditions;
+    return p;
+}
+
+function gridCategory(
+    buttons: ButtonConfig[],
+    conditions?: ButtonCondition,
+    contextProfiles?: ContextProfile[]
+): CategoryConfig {
     const c: CategoryConfig = {
         id: 'palette',
         name: 'Palette',
@@ -52,6 +70,7 @@ function gridCategory(buttons: ButtonConfig[], conditions?: ButtonCondition): Ca
         layout: 'grid',
     };
     if (conditions) c.conditions = conditions;
+    if (contextProfiles) c.contextProfiles = contextProfiles;
     return c;
 }
 
@@ -62,15 +81,15 @@ function renderedSlots(categories: CategoryConfig[], categoryId = 'palette'): (s
     return placeButtonsOnGrid(category.buttons).slots.map((b) => b?.id ?? null);
 }
 
-describe('Case A: static category, one dynamic button among static ones', () => {
-    // Slot 0 static, slot 1 dynamic, slot 2 static.
-    const category = gridCategory([
-        button('static-1', 0, 0),
-        button('dynamic', 1, 1, MARKDOWN_ONLY),
-        button('static-2', 2, 2),
-    ]);
+describe('Case A: pinned base tools plus one context profile', () => {
+    // Base holds slots 0 and 2; the profile contributes slot 1.
+    const category = gridCategory(
+        [button('static-1', 0, 0), button('static-2', 1, 2)],
+        undefined,
+        [profile('md', MARKDOWN_ONLY, [button('dynamic', 0, 1)])]
+    );
 
-    it('shows all three when the rule matches', () => {
+    it('shows all three when the profile matches', () => {
         const projection = projectCategoriesForContext([category], context(), 'locked');
         expect(renderedSlots(projection.categories).slice(0, 3)).toEqual([
             'static-1',
@@ -79,7 +98,7 @@ describe('Case A: static category, one dynamic button among static ones', () => 
         ]);
     });
 
-    it('leaves the dynamic button slot EMPTY when the rule fails', () => {
+    it('leaves the contextual slot EMPTY when no profile matches', () => {
         const projection = projectCategoriesForContext(
             [category],
             context({ viewType: 'pdf' }),
@@ -92,7 +111,7 @@ describe('Case A: static category, one dynamic button among static ones', () => 
         ]);
     });
 
-    it('does not move the neighbours when the dynamic button disappears', () => {
+    it('does not move the pinned neighbours when the profile stops matching', () => {
         const visible = renderedSlots(
             projectCategoriesForContext([category], context(), 'locked').categories
         );
@@ -105,13 +124,11 @@ describe('Case A: static category, one dynamic button among static ones', () => 
         expect(hidden.indexOf('static-2')).toBe(visible.indexOf('static-2'));
     });
 
-    it('restores the button to its exact original slot when the context returns', () => {
+    it('restores the tool to its exact original slot when the context returns', () => {
         const before = renderedSlots(
             projectCategoriesForContext([category], context(), 'locked').categories
         );
-        // hide ...
         projectCategoriesForContext([category], context({ viewType: 'pdf' }), 'locked');
-        // ... and come back
         const after = renderedSlots(
             projectCategoriesForContext([category], context(), 'locked').categories
         );
@@ -120,7 +137,7 @@ describe('Case A: static category, one dynamic button among static ones', () => 
         expect(after.indexOf('dynamic')).toBe(1);
     });
 
-    it('keeps the grid at 16 cells regardless of how many buttons are hidden', () => {
+    it('keeps the grid at 16 cells regardless of which profile matches', () => {
         for (const view of ['markdown', 'pdf', 'canvas']) {
             const projection = projectCategoriesForContext(
                 [category],
@@ -131,52 +148,73 @@ describe('Case A: static category, one dynamic button among static ones', () => 
         }
     });
 
-    it('keeps holes stable with several dynamic buttons', () => {
-        const mixed = gridCategory([
-            button('a', 0, 0),
-            button('md', 1, 1, MARKDOWN_ONLY),
-            button('b', 2, 2),
-            button('pdf', 3, 3, PDF_ONLY),
-            button('c', 4, 4),
-        ]);
+    it('keeps holes stable across two competing profiles', () => {
+        const mixed = gridCategory(
+            [button('a', 0, 0), button('b', 1, 2), button('c', 2, 4)],
+            undefined,
+            [
+                profile('md', MARKDOWN_ONLY, [button('md', 0, 1)]),
+                profile('pdf', PDF_ONLY, [button('pdf', 0, 3)]),
+            ]
+        );
 
-        const projection = projectCategoriesForContext([mixed], context(), 'locked');
-        expect(renderedSlots(projection.categories).slice(0, 5)).toEqual([
-            'a',
-            'md',
-            'b',
-            null,
-            'c',
-        ]);
+        expect(
+            renderedSlots(
+                projectCategoriesForContext([mixed], context(), 'locked').categories
+            ).slice(0, 5)
+        ).toEqual(['a', 'md', 'b', null, 'c']);
+
+        expect(
+            renderedSlots(
+                projectCategoriesForContext([mixed], context({ viewType: 'pdf' }), 'locked')
+                    .categories
+            ).slice(0, 5)
+        ).toEqual(['a', null, 'b', 'pdf', 'c']);
     });
 });
 
-describe('Case B: dynamic category', () => {
-    it('removes the whole category in locked mode when its rule fails', () => {
+describe('Case B: palette visibility condition', () => {
+    it('removes the whole palette in locked mode when its rule fails', () => {
         const category = gridCategory([button('a', 0, 0)], PDF_ONLY);
         const projection = projectCategoriesForContext([category], context(), 'locked');
         expect(projection.categories).toEqual([]);
     });
 
-    it('renders the category when its rule matches', () => {
+    it('renders the palette when its rule matches', () => {
         const category = gridCategory([button('a', 0, 0)], MARKDOWN_ONLY);
         const projection = projectCategoriesForContext([category], context(), 'locked');
         expect(projection.categories).toHaveLength(1);
         expect(renderedSlots(projection.categories)[0]).toBe('a');
     });
+
+    it('keeps a palette with pinned base tools visible when NO profile matches', () => {
+        // The core §10 guarantee: profiles decide the contextual slots, never
+        // whether the palette itself exists.
+        const category = gridCategory([button('home', 0, 0)], undefined, [
+            profile('pdf', PDF_ONLY, [button('pdf-tool', 0, 1)]),
+        ]);
+        const projection = projectCategoriesForContext([category], context(), 'locked');
+        expect(projection.categories).toHaveLength(1);
+        expect(renderedSlots(projection.categories).slice(0, 2)).toEqual(['home', null]);
+    });
+
+    it('hides a palette that has nothing at all to offer right now', () => {
+        const category = gridCategory([], undefined, [
+            profile('pdf', PDF_ONLY, [button('pdf-tool', 0, 1)]),
+        ]);
+        expect(
+            projectCategoriesForContext([category], context(), 'locked').categories
+        ).toEqual([]);
+    });
 });
 
-describe('Case C: dynamic category plus dynamic buttons', () => {
-    const category = gridCategory(
-        [
-            button('always', 0, 0),
-            button('md-only', 1, 2, MARKDOWN_ONLY),
-            button('pdf-only', 2, 3, PDF_ONLY),
-        ],
-        MARKDOWN_ONLY
-    );
+describe('Case C: palette condition plus context profiles', () => {
+    const category = gridCategory([button('always', 0, 0)], MARKDOWN_ONLY, [
+        profile('md', MARKDOWN_ONLY, [button('md-only', 0, 2)]),
+        profile('pdf', PDF_ONLY, [button('pdf-only', 0, 3)]),
+    ]);
 
-    it('applies the button rules inside a visible category', () => {
+    it('applies the first matching profile inside a visible palette', () => {
         const projection = projectCategoriesForContext([category], context(), 'locked');
         expect(renderedSlots(projection.categories).slice(0, 4)).toEqual([
             'always',
@@ -186,7 +224,7 @@ describe('Case C: dynamic category plus dynamic buttons', () => {
         ]);
     });
 
-    it('drops everything when the category rule fails, whatever the buttons say', () => {
+    it('drops everything when the palette rule fails, whatever the profiles say', () => {
         const projection = projectCategoriesForContext(
             [category],
             context({ viewType: 'pdf' }),
@@ -197,35 +235,62 @@ describe('Case C: dynamic category plus dynamic buttons', () => {
 });
 
 describe('management modes keep the full configuration', () => {
-    const category = gridCategory([
-        button('static-1', 0, 0),
-        button('dynamic', 1, 1, PDF_ONLY),
-        button('static-2', 2, 2),
-    ]);
+    const category = gridCategory(
+        [button('static-1', 0, 0), button('static-2', 1, 2)],
+        undefined,
+        [profile('pdf', PDF_ONLY, [button('dynamic', 0, 1)])]
+    );
 
     for (const mode of ['sort', 'edit'] as const) {
-        it(`${mode} mode renders every configured button on its slot`, () => {
+        it(`${mode} mode renders the base layer by default`, () => {
             const projection = projectCategoriesForContext([category], context(), mode);
 
             expect(projection.categories).toHaveLength(1);
-            expect(renderedSlots(projection.categories).slice(0, 3)).toEqual([
+            // Identity is preserved: management modes never hand out copies.
+            expect(projection.categories[0]).toBe(category);
+            const palette = projection.palettes.get('palette')!;
+            expect(palette.activeProfileId).toBeNull();
+            expect(palette.slots.map((s) => s.button?.id ?? null).slice(0, 3)).toEqual([
                 'static-1',
-                'dynamic',
+                null,
                 'static-2',
             ]);
         });
 
-        it(`${mode} mode marks the non-matching button instead of hiding it`, () => {
-            const projection = projectCategoriesForContext([category], context(), mode);
-            expect([...projection.hiddenButtonIds]).toEqual(['dynamic']);
+        it(`${mode} mode shows the selected profile on top of the pinned base`, () => {
+            const projection = projectCategoriesForContext([category], context(), mode, {
+                selectedLayers: { palette: 'pdf' },
+            });
+            const palette = projection.palettes.get('palette')!;
+            expect(palette.activeProfileId).toBe('pdf');
+            expect(palette.slots.map((s) => s.button?.id ?? null).slice(0, 3)).toEqual([
+                'static-1',
+                'dynamic',
+                'static-2',
+            ]);
+            expect(palette.slots[0]!.pinned).toBe(true);
+            expect(palette.slots[1]!.pinned).toBe(false);
         });
 
-        it(`${mode} mode keeps a category with a failing rule manageable`, () => {
+        it(`${mode} mode does not mark palette tools via button conditions`, () => {
+            expect([
+                ...projectCategoriesForContext([category], context(), mode).hiddenButtonIds,
+            ]).toEqual([]);
+        });
+
+        it(`${mode} mode keeps a palette with a failing visibility rule manageable`, () => {
             const conditioned = gridCategory([button('a', 0, 0)], PDF_ONLY);
             const projection = projectCategoriesForContext([conditioned], context(), mode);
 
             expect(projection.categories).toHaveLength(1);
             expect([...projection.hiddenCategoryIds]).toEqual(['palette']);
+        });
+
+        it(`${mode} mode falls back to the base layer for an unknown selection`, () => {
+            const projection = projectCategoriesForContext([category], context(), mode, {
+                selectedLayers: { palette: 'deleted-profile' },
+            });
+            expect(projection.palettes.get('palette')!.layerId).toBe(BASE_LAYER_ID);
         });
     }
 });
@@ -272,6 +337,11 @@ describe('legacy flow categories are untouched by the palette', () => {
         expect(category.layout).toBeUndefined();
     });
 
+    it('still marks per-button conditions in management modes', () => {
+        const projection = projectCategoriesForContext([legacy], context(), 'sort');
+        expect([...projection.hiddenButtonIds]).toEqual(['b']);
+    });
+
     it('preserves category identity when nothing is filtered', () => {
         const allVisible: CategoryConfig = {
             ...legacy,
@@ -284,17 +354,31 @@ describe('legacy flow categories are untouched by the palette', () => {
 
 describe('serialization round-trip keeps slots', () => {
     it('reload reproduces exactly the same grid', () => {
-        const category = gridCategory([
-            button('a', 0, 0),
-            button('b', 1, 7),
-            button('c', 2, 15, MARKDOWN_ONLY),
-        ]);
+        const category = gridCategory(
+            [button('a', 0, 0), button('b', 1, 7)],
+            undefined,
+            [profile('md', MARKDOWN_ONLY, [button('c', 0, 15)])]
+        );
 
-        const before = renderedSlots([category]);
+        const before = renderedSlots(
+            projectCategoriesForContext([category], context(), 'locked').categories
+        );
         const reloaded = JSON.parse(JSON.stringify(category)) as CategoryConfig;
 
-        expect(renderedSlots([reloaded])).toEqual(before);
+        expect(
+            renderedSlots(
+                projectCategoriesForContext([reloaded], context(), 'locked').categories
+            )
+        ).toEqual(before);
         expect(reloaded.layout).toBe('grid');
-        expect(reloaded.buttons.map((b) => b.slot)).toEqual([0, 7, 15]);
+        expect(reloaded.buttons.map((b) => b.slot)).toEqual([0, 7]);
+        expect(reloaded.contextProfiles![0]!.buttons[0]!.slot).toBe(15);
+    });
+
+    it('carries no functions, so the whole palette stays JSON-serializable', () => {
+        const category = gridCategory([button('a', 0, 0)], MARKDOWN_ONLY, [
+            profile('md', MARKDOWN_ONLY, [button('c', 0, 15)]),
+        ]);
+        expect(JSON.parse(JSON.stringify(category))).toEqual(category);
     });
 });

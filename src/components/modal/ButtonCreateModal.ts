@@ -10,6 +10,15 @@ import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { t } from '@/utils/i18n';
 import { ActionSequence } from '@/actions/ActionSequence';
 import { NameInput, IconInput, ConditionEditor } from '@/components/input';
+import {
+    BASE_LAYER_ID,
+    addButtonToLayer,
+    findContextProfile,
+    isBaseLayer,
+    isPaletteCategory,
+    type PaletteLayerId,
+} from '@/utils/paletteLayers';
+import { findStoredCategory, replaceStoredCategory } from '@/utils/categoryStore';
 
 /**
  * ButtonCreateModal 按钮创建模态框类。
@@ -32,6 +41,12 @@ export class ButtonCreateModal extends Modal {
     iconInput: IconInput | null = null;
     // OCAP visibility conditions editor (visual builder + advanced JSON)
     conditionsInput: ConditionEditor | null = null;
+    /**
+     * Palette grid: the layer the new tool belongs to. Base = pinned into
+     * every context, a profile id = only in that context. There is no separate
+     * "pinned"/"contextual" switch — the layer the user is editing decides.
+     */
+    private readonly targetLayerId: PaletteLayerId;
 
     /**
      * 构造函数，初始化模态框和临时按钮对象。
@@ -39,12 +54,14 @@ export class ButtonCreateModal extends Modal {
      * @param plugin 插件主类实例
      * @param parentCategory 按钮所属分类
      * @param onSave 保存成功回调
+     * @param targetLayerId 调色板目标图层（仅 grid 分类）
      */
-	constructor(app: App, plugin: ButtonsPanelPlugin, parentCategory: CategoryConfig, onSave?: () => void) {
+	constructor(app: App, plugin: ButtonsPanelPlugin, parentCategory: CategoryConfig, onSave?: () => void, targetLayerId: PaletteLayerId = BASE_LAYER_ID) {
         super(app);
         this.plugin = plugin;
         this.parentCategory = parentCategory;
         this.onSave = onSave;
+        this.targetLayerId = targetLayerId;
         this.tempButton = {
             id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
             name: '',
@@ -127,6 +144,14 @@ export class ButtonCreateModal extends Modal {
         // 设置初始值
         this.nameInput.setValue(this.tempButton.name || '');
         this.iconInput.setValue(this.tempButton.icon || '');
+
+        // OCAP: inside a palette, contextuality is a property of the LAYER the
+        // tool is created on, not of the individual button — so the per-button
+        // condition editor is replaced by a statement of where it will land.
+        if (isPaletteCategory(this.parentCategory)) {
+            renderPaletteLayerNotice(container, this.parentCategory, this.targetLayerId);
+            return;
+        }
 
         // OCAP: visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(container, this.tempButton.conditions);
@@ -258,12 +283,59 @@ export class ButtonCreateModal extends Modal {
         // 保存按钮（ActionSequence 序列化结果转为 ButtonAction[]）
         this.tempButton.actions = this.actionSequence.toJSON() as ButtonAction[];
         this.tempButton.conditions = conditionsResult ? conditionsResult.conditions : undefined;
-        const maxOrder = Math.max(...this.parentCategory.buttons.map(b => b.order), -1);
-        this.tempButton.order = maxOrder + 1;
-        this.parentCategory.buttons.push({ ...this.tempButton });
+
+        // Always write into the STORED category: the object this modal was
+        // opened with can be a projection copy.
+        const stored =
+            findStoredCategory(this.plugin, this.parentCategory.id) ?? this.parentCategory;
+
+        if (isPaletteCategory(stored)) {
+            const next = addButtonToLayer(stored, this.targetLayerId, this.tempButton);
+            if (!next) {
+                new Notice(t('palette_layer_full'));
+                return;
+            }
+            replaceStoredCategory(this.plugin, next);
+        } else {
+            const maxOrder = Math.max(...stored.buttons.map((b) => b.order), -1);
+            this.tempButton.order = maxOrder + 1;
+            replaceStoredCategory(this.plugin, {
+                ...stored,
+                buttons: [...stored.buttons, { ...this.tempButton }],
+            });
+        }
+
         await this.plugin.saveSettings();
         new Notice(t('button_create_success'));
         this.close();
         this.onSave?.();
     }
+}
+
+/**
+ * Explains, inside a palette's button modal, which layer the tool belongs to
+ * and what that means — replacing the per-button condition editor, which a
+ * palette deliberately does not use.
+ */
+export function renderPaletteLayerNotice(
+    container: HTMLElement,
+    category: CategoryConfig,
+    layerId: PaletteLayerId
+): void {
+    const profileName = isBaseLayer(layerId)
+        ? null
+        : (findContextProfile(category, layerId)?.name ?? null);
+
+    const setting = new Setting(container)
+        .setName(t('palette_button_layer_label'))
+        .setDesc(
+            profileName === null
+                ? t('palette_button_layer_base_desc')
+                : t('palette_button_layer_context_desc').replace('{name}', profileName)
+        );
+    setting.settingEl.addClass('ocap-palette-layer-notice');
+    setting.controlEl.createSpan({
+        cls: 'ocap-palette-layer-notice-value',
+        text: profileName ?? t('palette_layer_base'),
+    });
 }

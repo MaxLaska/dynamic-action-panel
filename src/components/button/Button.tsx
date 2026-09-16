@@ -10,7 +10,10 @@ import {
     useInteractionMode,
 } from '@/contexts/OCAPVisibilityContext';
 import { hasConditions } from '@/context/conditions';
-import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
+import {
+    ContextStatusBadge,
+    type ContextStatus,
+} from '@/components/shared/ContextStatusBadge';
 
 interface SimpleButtonProps {
     button: ButtonConfig;
@@ -22,6 +25,18 @@ interface SimpleButtonProps {
     app: App;
     onClick?: () => void;
     className?: string;
+    /**
+     * Palette grid: the layer a tool lives in decides its marker (base/pinned
+     * vs. context profile), not a per-button condition. Flow categories leave
+     * this undefined and keep the condition-based marker.
+     */
+    contextStatus?: ContextStatus;
+    /**
+     * Palette grid: a base/pinned tool shown while a context profile is being
+     * edited. It stays visible for orientation but cannot be edited or moved
+     * from here — the base layer owns it.
+     */
+    layerLocked?: boolean;
 }
 
 /**
@@ -39,6 +54,8 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
     app,
     onClick,
     className,
+    contextStatus,
+    layerLocked = false,
 }) => {
     const iconRef = React.useRef<HTMLSpanElement>(null);
     const buttonRef = React.useRef<HTMLButtonElement>(null);
@@ -68,9 +85,14 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
     // explicitly so the configuration is transparent; locked mode is the
     // consumption surface and only hints at contextual buttons, so a palette
     // of static tools stays visually quiet.
+    // In a grid palette the marker follows the LAYER the tool lives in
+    // (contextStatus prop); in a flow category it follows the button's own
+    // conditions, exactly as before.
     const interactionMode = useInteractionMode();
     const isManagementMode = interactionMode !== 'locked';
-    const isContextual = hasConditions(button);
+    const status: ContextStatus =
+        contextStatus ?? (hasConditions(button) ? 'contextual' : 'persistent');
+    const isContextual = status === 'contextual';
     const showStatusBadge = isManagementMode || isContextual;
 
     // 悬浮显示完整按钮名称（Obsidian 原生 tooltip 样式）
@@ -88,8 +110,10 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
     }, [button.name, plugin.settings.panelConfig.showButtonTooltip]);
 
     // 绑定右键菜单
+    // A base tool shown inside a context-profile layer is deliberately inert:
+    // it belongs to the base layer and is only managed there.
     React.useEffect(() => {
-        if (!enableEditMode || !buttonRef.current) return;
+        if (!enableEditMode || layerLocked || !buttonRef.current) return;
 
         buttonRef.current.addEventListener('contextmenu', handleContextMenu);
         return () => {
@@ -97,7 +121,7 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
                 buttonRef.current.removeEventListener('contextmenu', handleContextMenu);
             }
         };
-    }, [enableEditMode, handleContextMenu]);
+    }, [enableEditMode, layerLocked, handleContextMenu]);
 
     // 使用 useMemo 缓存类名计算，避免每次渲染都重新计算
     const classNames = React.useMemo(() => {
@@ -109,11 +133,14 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
         if (isContextHidden) {
             names.push('ocap-context-hidden');
         }
+        if (layerLocked) {
+            names.push('ocap-layer-locked');
+        }
         if (className) {
             names.push(className);
         }
         return names.join(' ');
-    }, [displayStyle, enableAnimation, isContextHidden, className]);
+    }, [displayStyle, enableAnimation, isContextHidden, layerLocked, className]);
 
     return (
         <button
@@ -121,7 +148,9 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
             type="button"
             className={classNames}
             data-button-id={button.id}
-            onClick={onClick}
+            onClick={layerLocked ? undefined : onClick}
+            disabled={layerLocked || undefined}
+            aria-disabled={layerLocked || undefined}
         >
             {button.icon && (
                 <span
@@ -132,9 +161,10 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
             <span className="button-text">{button.name}</span>
             {showStatusBadge && (
                 <ContextStatusBadge
-                    status={isContextual ? 'contextual' : 'persistent'}
+                    status={status}
                     notMatching={isContextHidden}
                     subtle={!isManagementMode}
+                    locked={layerLocked}
                 />
             )}
         </button>

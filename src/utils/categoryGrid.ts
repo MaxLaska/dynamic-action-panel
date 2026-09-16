@@ -91,21 +91,37 @@ function inOrder(buttons: readonly ButtonConfig[]): ButtonConfig[] {
         .map((entry) => entry.button);
 }
 
+export interface GridPlacementOptions {
+    /**
+     * Slots this set of buttons may not occupy — used by the palette context
+     * layers, where the base layer reserves its slots in every context profile.
+     * A button whose stored slot is blocked is relocated to the lowest free
+     * unblocked slot, never dropped and never allowed to overwrite the block.
+     */
+    blocked?: readonly boolean[];
+}
+
 /**
  * Place buttons on the 4x4 grid, deterministically and without losing any
  * button. Buttons carrying a valid, still-free slot keep it; buttons with a
- * missing, out-of-range or already-taken slot are assigned the lowest free
- * slot in `order` sequence. This makes corrupt data (duplicate slots) self-heal
- * predictably instead of throwing or silently dropping buttons.
+ * missing, out-of-range, blocked or already-taken slot are assigned the lowest
+ * free slot in `order` sequence. This makes corrupt data (duplicate slots)
+ * self-heal predictably instead of throwing or silently dropping buttons.
  */
-export function placeButtonsOnGrid(buttons: readonly ButtonConfig[]): GridPlacement {
+export function placeButtonsOnGrid(
+    buttons: readonly ButtonConfig[],
+    options?: GridPlacementOptions
+): GridPlacement {
+    const blocked = options?.blocked;
+    const isBlocked = (slot: number): boolean => blocked?.[slot] === true;
+
     const slots = emptySlots();
     const ordered = inOrder(buttons);
     const unplaced: ButtonConfig[] = [];
 
     for (const button of ordered) {
         const slot = button.slot;
-        if (isValidSlotIndex(slot) && slots[slot] === null) {
+        if (isValidSlotIndex(slot) && !isBlocked(slot) && slots[slot] === null) {
             slots[slot] = button;
         } else {
             unplaced.push(button);
@@ -115,7 +131,7 @@ export function placeButtonsOnGrid(buttons: readonly ButtonConfig[]): GridPlacem
     const overflow: ButtonConfig[] = [];
     let cursor = 0;
     for (const button of unplaced) {
-        while (cursor < GRID_SLOT_COUNT && slots[cursor] !== null) {
+        while (cursor < GRID_SLOT_COUNT && (slots[cursor] !== null || isBlocked(cursor))) {
             cursor += 1;
         }
         if (cursor >= GRID_SLOT_COUNT) {
@@ -189,72 +205,10 @@ export function moveIdToSlotWithinGrid(
     return next;
 }
 
-/**
- * Conversion of an existing flow category to the grid layout.
- * Buttons keep their relative order and are laid out left-to-right, top-to-
- * bottom on slots 0..n-1. Buttons are replaced (new objects) so memo
- * comparators see the change; the category object is replaced as well.
- *
- * Refuses (returns `ok: false`) when the category holds more buttons than the
- * grid has slots, rather than dropping or hiding any of them — the caller is
- * expected to tell the user instead of silently losing configuration.
- */
-export type GridConversionResult =
-    | { ok: true; category: CategoryConfig }
-    | { ok: false; reason: 'too_many_buttons'; buttonCount: number; slotCount: number };
-
-export function convertCategoryToGrid(category: CategoryConfig): GridConversionResult {
-    if (category.buttons.length > GRID_SLOT_COUNT) {
-        return {
-            ok: false,
-            reason: 'too_many_buttons',
-            buttonCount: category.buttons.length,
-            slotCount: GRID_SLOT_COUNT,
-        };
-    }
-
-    const buttons = inOrder(category.buttons).map((button, index) => ({
-        ...button,
-        order: index,
-        slot: index,
-    }));
-
-    return { ok: true, category: { ...category, layout: 'grid', buttons } };
+/** Buttons in their deterministic base sequence; exported for the converters. */
+export function buttonsInOrder(buttons: readonly ButtonConfig[]): ButtonConfig[] {
+    return inOrder(buttons);
 }
 
-/**
- * Conversion of a grid category back to flow. Slots are dropped and the
- * buttons keep their spatial reading order (slot 0 first), so the flow list
- * matches what the user last saw. Holes simply disappear.
- */
-export function convertCategoryToFlow(category: CategoryConfig): CategoryConfig {
-    const placement = placeButtonsOnGrid(category.buttons);
-    const ordered = [
-        ...placement.slots.filter((b): b is ButtonConfig => b !== null),
-        ...placement.overflow,
-    ];
-    const buttons = ordered.map((button, index) => {
-        const { slot: _slot, ...rest } = button;
-        return { ...rest, order: index };
-    });
-
-    const { layout: _layout, ...categoryRest } = category;
-    return { ...categoryRest, layout: 'flow', buttons };
-}
-
-/**
- * Apply a category's layout choice, converting the buttons when the layout
- * actually changes. Returns the same category reference when nothing changes.
- */
-export function applyCategoryLayout(
-    category: CategoryConfig,
-    layout: CategoryLayout
-): GridConversionResult {
-    const current = getCategoryLayout(category);
-    if (current === layout) {
-        return { ok: true, category };
-    }
-    return layout === 'grid'
-        ? convertCategoryToGrid(category)
-        : { ok: true, category: convertCategoryToFlow(category) };
-}
+// Layout conversion (flow <-> palette) lives in src/utils/paletteLayers.ts,
+// because converting a palette has to account for its context layers as well.

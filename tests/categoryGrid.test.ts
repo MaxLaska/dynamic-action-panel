@@ -4,10 +4,7 @@ import {
     GRID_COLUMNS,
     GRID_ROWS,
     GRID_SLOT_COUNT,
-    applyCategoryLayout,
     buildGridSlotIds,
-    convertCategoryToFlow,
-    convertCategoryToGrid,
     findFirstFreeSlot,
     findSlotOfId,
     getCategoryLayout,
@@ -19,6 +16,11 @@ import {
     slotColumn,
     slotRow,
 } from '@/utils/categoryGrid';
+import {
+    applyCategoryLayout,
+    convertCategoryToFlow,
+    convertCategoryToGrid,
+} from '@/utils/paletteLayers';
 
 function button(id: string, order: number, slot?: number): ButtonConfig {
     const b: ButtonConfig = { id, name: id, actions: [], order };
@@ -334,7 +336,9 @@ describe('convertCategoryToGrid', () => {
         expect(original.layout).toBeUndefined();
     });
 
-    it('preserves conditions and every other button field', () => {
+    it('lifts a per-button condition into a context profile, keeping every other field', () => {
+        // A palette models contextuality through its layers, so the condition
+        // moves to a profile instead of staying (inert) on the button.
         const rich: ButtonConfig = {
             id: 'x',
             name: 'X',
@@ -348,13 +352,29 @@ describe('convertCategoryToGrid', () => {
 
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.category.buttons[0]).toMatchObject({
+        expect(result.category.buttons).toEqual([]);
+
+        const profile = result.category.contextProfiles![0]!;
+        expect(profile.conditions).toEqual({ rule: 'viewType', value: 'markdown' });
+        expect(profile.name).toBe('markdown');
+        expect(profile.buttons[0]).toMatchObject({
             id: 'x',
             icon: 'star',
             customCss: 'color: red',
-            conditions: { rule: 'viewType', value: 'markdown' },
             slot: 0,
         });
+        expect(profile.buttons[0]!.conditions).toBeUndefined();
+    });
+
+    it('keeps a conditionless button on the base layer', () => {
+        const result = convertCategoryToGrid(category([button('a', 0), button('b', 1)]));
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.category.buttons.map((b) => [b.id, b.slot])).toEqual([
+            ['a', 0],
+            ['b', 1],
+        ]);
+        expect(result.category.contextProfiles).toBeUndefined();
     });
 });
 
