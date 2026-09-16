@@ -1,0 +1,176 @@
+/* OCAP palette grid
+   A category with layout 'grid' renders a fixed 4x4 field of slots. Every slot
+   cell is always in the DOM — that is what keeps positions stable when a
+   button is hidden by its context rule — only the chrome differs by mode. */
+
+/* The container class differs by view mode (`buttons-panel-grid` in sort mode,
+   `buttons-panel-content` elsewhere) and both declare `display: flex`. The
+   `body` prefix raises specificity so the palette wins regardless of which
+   class is present and of CSS concatenation order. */
+body .buttons-panel .ocap-palette-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--ocap-grid-columns, 4), minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
+    align-items: stretch;
+    justify-items: stretch;
+}
+
+.buttons-panel .ocap-grid-slot {
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    min-width: 0;
+    border-radius: var(--radius-s);
+}
+
+/* The button fills its cell so the grid stays perfectly regular. */
+body .buttons-panel .ocap-grid-slot > .sortable-button-item,
+body .buttons-panel .ocap-grid-slot > button.buttons-panel-simple-button {
+    width: 100%;
+}
+
+body .buttons-panel .ocap-grid-slot > .sortable-button-item > button.buttons-panel-simple-button {
+    width: 100%;
+}
+
+/* A slot is a fixed box: a long tool name must be truncated inside it, never
+   spill over the neighbouring cells (which is what a flex row tolerated). */
+body .buttons-panel .ocap-grid-slot button.buttons-panel-simple-button {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+body .buttons-panel .ocap-grid-slot .button-text {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Empty slots keep the cell's footprint. In locked mode they are invisible
+   spacers; management modes outline them so the field is readable. */
+body .buttons-panel .ocap-grid-slot--empty {
+    min-height: var(--ocap-grid-slot-min-height, 56px);
+}
+
+body .buttons-panel .ocap-palette-grid.icon-left .ocap-grid-slot--empty {
+    --ocap-grid-slot-min-height: 40px;
+}
+
+.buttons-panel .ocap-grid-slot--outlined {
+    border: 1px dashed var(--background-modifier-border);
+    background-color: transparent;
+    opacity: 0.6;
+}
+
+/* The slot the pointer currently targets during a drag. */
+.buttons-panel .ocap-grid-slot--drop-target,
+.buttons-panel .ocap-grid-slot--filled.ocap-grid-slot--drop-target {
+    border: 1px solid var(--interactive-accent);
+    background-color: var(--background-modifier-hover);
+    opacity: 1;
+}
+
+/* Grid buttons advertise that they can be picked up (sort mode only). */
+.buttons-panel .ocap-palette-grid--managed .ocap-grid-slot--filled .sortable-button-item {
+    cursor: grab;
+}
+
+.buttons-panel .sortable-button-item--dragging,
+.buttons-panel .ocap-palette-grid--managed .sortable-button-item:active {
+    cursor: grabbing;
+}
+
+/* Buttons that could not be placed on a slot (hand-edited data with more
+   buttons than slots). Never dropped — shown below the grid instead. */
+.buttons-panel .ocap-palette-grid-overflow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--text-error);
+}
+
+.buttons-panel .ocap-palette-grid-actions {
+    display: flex;
+    margin-top: 4px;
+}
+
+/* Layout explanation under the dropdown in the category modals. */
+.buttons-panel .ocap-layout-hint {
+    margin: -6px 0 12px;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    line-height: 1.4;
+}
+
+/* --- Persistent / contextual status markers ---------------------------- */
+
+/* Small corner badge on buttons; icon shape carries the meaning, color only
+   reinforces it, so it stays readable in both themes and without color. */
+.buttons-panel .ocap-context-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    color: var(--text-muted);
+}
+
+.buttons-panel .ocap-context-badge .svg-icon {
+    width: 11px;
+    height: 11px;
+    stroke-width: 2.25px;
+}
+
+/* "Always here" is the unremarkable state, so it recedes; the contextual
+   marker is the one worth noticing. Both stay legible without relying on
+   color, since the two glyphs differ in silhouette. */
+.buttons-panel .ocap-context-badge--persistent {
+    color: var(--text-faint);
+    opacity: 0.55;
+}
+
+.buttons-panel .ocap-context-badge--contextual {
+    color: var(--text-accent);
+}
+
+/* Contextual, but its rule does not match right now: it would not appear in
+   locked mode. Pairs with the existing .ocap-context-hidden dimming. */
+.buttons-panel .ocap-context-badge--inactive {
+    color: var(--text-muted);
+    opacity: 0.75;
+}
+
+/* Locked mode: only contextual elements are marked, and quietly. */
+.buttons-panel .ocap-context-badge--subtle {
+    opacity: 0.45;
+}
+
+.buttons-panel .ocap-context-badge--subtle .svg-icon {
+    width: 9px;
+    height: 9px;
+}
+
+/* On a category title the badge sits inline next to the name. */
+.buttons-panel .ocap-context-badge--category {
+    position: static;
+    margin-left: 6px;
+    flex: 0 0 auto;
+}
+
+.buttons-panel .ocap-context-badge--category .svg-icon {
+    width: 13px;
+    height: 13px;
+}
+
+/* The button is the badge's positioning context. */
+body .buttons-panel button.buttons-panel-simple-button {
+    position: relative;
+}

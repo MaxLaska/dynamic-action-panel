@@ -11,7 +11,13 @@ import { AddButton } from '@/components/shared/AddButton';
 import { AddCategoryButton } from '@/components/shared/AddCategoryButton';
 import { IconButton } from '@/components/shared/IconButton';
 import { createCategoryMenuHandler } from '@/utils/categoryMenuUtils';
-import { useContextHiddenCategoryIds } from '@/contexts/OCAPVisibilityContext';
+import {
+    useContextHiddenCategoryIds,
+    useInteractionMode,
+} from '@/contexts/OCAPVisibilityContext';
+import { hasConditions } from '@/context/conditions';
+import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
+import { isGridCategory } from '@/utils/categoryGrid';
 import { t } from '@/utils/i18n';
 
 function resolveActiveTabId(
@@ -50,6 +56,7 @@ export const TabsModeContent: React.FC<TabsModeContentProps> = ({
     // OCAP: in sort/edit mode a category whose own condition does not hold
     // stays rendered and manageable but its tab gets a visual marker class.
     const contextHiddenCategoryIds = useContextHiddenCategoryIds();
+    const isManagementMode = useInteractionMode() !== 'locked';
     const tabRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
 
     const [activeTabId, setActiveTabId] = useState<string | null>(() =>
@@ -211,17 +218,26 @@ export const TabsModeContent: React.FC<TabsModeContentProps> = ({
             selectActiveTab(category.id);
         };
 
+        const isContextual = hasConditions(category);
         const tabInner = (
             <>
                 <span
                     className="tab-icon"
                     ref={(el) => {
                         if (el) {
-                            setIcon(el, 'layout-grid');
+                            setIcon(el, isGridCategory(category) ? 'layout-grid' : 'list');
                         }
                     }}
                 />
                 <span className="tab-label">{category.name}</span>
+                {(isManagementMode || isContextual) && (
+                    <ContextStatusBadge
+                        status={isContextual ? 'contextual' : 'persistent'}
+                        notMatching={contextHiddenCategoryIds.has(category.id)}
+                        subtle={!isManagementMode}
+                        className="ocap-context-badge--category"
+                    />
+                )}
             </>
         );
 

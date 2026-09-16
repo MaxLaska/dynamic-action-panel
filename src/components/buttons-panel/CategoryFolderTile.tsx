@@ -1,6 +1,12 @@
 import React from 'react';
 import type { ButtonConfig, CategoryConfig } from '@/types';
 import { safeSetSVG } from '@/utils/dom';
+import {
+    useContextHiddenCategoryIds,
+    useInteractionMode,
+} from '@/contexts/OCAPVisibilityContext';
+import { hasConditions } from '@/context/conditions';
+import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
 
 interface CategoryFolderTileProps {
     category: CategoryConfig;
@@ -41,6 +47,10 @@ export const CategoryFolderTile: React.FC<CategoryFolderTileProps> = ({
     const previewSlots = previewButtons.slice(0, 9);
     const emptySlots = Math.max(0, 9 - previewSlots.length);
 
+    const isManagementMode = useInteractionMode() !== 'locked';
+    const contextHiddenCategoryIds = useContextHiddenCategoryIds();
+    const isContextual = hasConditions(category);
+
     const classNames = ['buttons-panel-folder-tile', className].filter(Boolean).join(' ');
 
     return (
@@ -59,7 +69,17 @@ export const CategoryFolderTile: React.FC<CategoryFolderTileProps> = ({
                     ))}
                 </div>
             </div>
-            <span className="folder-tile-label">{category.name}</span>
+            <span className="folder-tile-label">
+                {category.name}
+                {(isManagementMode || isContextual) && (
+                    <ContextStatusBadge
+                        status={isContextual ? 'contextual' : 'persistent'}
+                        notMatching={contextHiddenCategoryIds.has(category.id)}
+                        subtle={!isManagementMode}
+                        className="ocap-context-badge--category"
+                    />
+                )}
+            </span>
             {showCount && category.buttons.length > 0 && (
                 <span className="folder-tile-count">{category.buttons.length}</span>
             )}

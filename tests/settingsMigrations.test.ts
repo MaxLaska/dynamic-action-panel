@@ -179,3 +179,74 @@ describe('migrateSettings', () => {
         ).toBe('keep-me');
     });
 });
+
+// The palette grid adds CategoryConfig.layout and ButtonConfig.slot. Both are
+// optional and additive: an absent layout means the historical flow behavior
+// and an absent slot is only consulted inside a grid category, so no stored
+// data needs transforming and the schema version stays where it is.
+describe('palette grid fields need no migration', () => {
+    it('does not bump the settings version', () => {
+        expect(CURRENT_SETTINGS_VERSION).toBe(1);
+    });
+
+    it('loads legacy categories without layout/slot unchanged', () => {
+        const result = migrateSettings(makeLegacyData());
+        const category = result.settings.categories[0]!;
+
+        expect(category.layout).toBeUndefined();
+        expect(category.buttons[0]!.slot).toBeUndefined();
+        // Buttons are handed through untouched, order included.
+        expect(category.buttons.map((b) => b.order)).toEqual(
+            [...category.buttons].map((_, i) => i)
+        );
+    });
+
+    it('preserves layout and slot on version-1 data without rewriting it', () => {
+        const stored = {
+            settingsVersion: 1,
+            categories: [
+                {
+                    id: 'palette',
+                    name: 'Palette',
+                    order: 0,
+                    layout: 'grid',
+                    buttons: [
+                        { id: 'a', name: 'A', actions: [], order: 0, slot: 0 },
+                        { id: 'b', name: 'B', actions: [], order: 1, slot: 7 },
+                    ],
+                },
+            ],
+            panelConfig: {},
+            pathConfig: {},
+        };
+
+        const result = migrateSettings(stored);
+
+        expect(result.status).toBe('current');
+        expect(result.changed).toBe(false);
+        expect(result.settings.categories[0]!.layout).toBe('grid');
+        expect(result.settings.categories[0]!.buttons.map((b) => b.slot)).toEqual([0, 7]);
+    });
+
+    it('keeps grid data loadable for a build that predates the palette', () => {
+        // A pre-palette build ignores the unknown fields and reads the same
+        // version-1 shape; nothing about the document forces an upgrade.
+        const stored = {
+            settingsVersion: 1,
+            categories: [
+                {
+                    id: 'palette',
+                    name: 'Palette',
+                    order: 0,
+                    layout: 'grid',
+                    buttons: [{ id: 'a', name: 'A', actions: [], order: 0, slot: 3 }],
+                },
+            ],
+            panelConfig: {},
+            pathConfig: {},
+        };
+        const result = migrateSettings(stored);
+        expect(result.settings.settingsVersion).toBe(1);
+        expect(result.settings.categories[0]!.buttons[0]!.name).toBe('A');
+    });
+});

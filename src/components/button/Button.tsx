@@ -5,7 +5,12 @@ import type { App } from 'obsidian';
 import { setTooltip } from 'obsidian';
 import { safeSetSVG } from '@/utils/dom';
 import { useButtonMenu } from '@/hooks';
-import { useContextHiddenButtonIds } from '@/contexts/OCAPVisibilityContext';
+import {
+    useContextHiddenButtonIds,
+    useInteractionMode,
+} from '@/contexts/OCAPVisibilityContext';
+import { hasConditions } from '@/context/conditions';
+import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
 
 interface SimpleButtonProps {
     button: ButtonConfig;
@@ -58,6 +63,15 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
     // rendered and manageable but gets a visual marker class.
     const contextHiddenIds = useContextHiddenButtonIds();
     const isContextHidden = contextHiddenIds.has(button.id);
+
+    // OCAP: persistent vs. contextual marker. Management modes state both
+    // explicitly so the configuration is transparent; locked mode is the
+    // consumption surface and only hints at contextual buttons, so a palette
+    // of static tools stays visually quiet.
+    const interactionMode = useInteractionMode();
+    const isManagementMode = interactionMode !== 'locked';
+    const isContextual = hasConditions(button);
+    const showStatusBadge = isManagementMode || isContextual;
 
     // 悬浮显示完整按钮名称（Obsidian 原生 tooltip 样式）
     React.useEffect(() => {
@@ -116,6 +130,13 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
                 />
             )}
             <span className="button-text">{button.name}</span>
+            {showStatusBadge && (
+                <ContextStatusBadge
+                    status={isContextual ? 'contextual' : 'persistent'}
+                    notMatching={isContextHidden}
+                    subtle={!isManagementMode}
+                />
+            )}
         </button>
     );
 };

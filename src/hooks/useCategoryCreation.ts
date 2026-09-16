@@ -4,6 +4,10 @@ import { useRefresh } from './useRefresh';
 import { CategoryCreateModal } from '@/components/modal/CategoryCreateModal';
 import type { CategoryConfig } from '@/types';
 import type { ButtonCondition } from '@/types/conditions';
+import {
+    DEFAULT_CATEGORY_LAYOUT,
+    type CategoryLayout,
+} from '@/utils/categoryGrid';
 
 /**
  * useCategoryCreation Hook
@@ -22,7 +26,11 @@ export function useCategoryCreation() {
      */
     const createCategory = useCallback(
         (onCreated?: (category: CategoryConfig) => void) => {
-            new CategoryCreateModal(app, plugin, (categoryName: string, conditions: ButtonCondition | undefined) => {
+            new CategoryCreateModal(app, plugin, (
+                categoryName: string,
+                conditions: ButtonCondition | undefined,
+                layout: CategoryLayout
+            ) => {
                 void (async () => {
                     const newCategory: CategoryConfig = {
                         id: Date.now().toString(),
@@ -32,6 +40,11 @@ export function useCategoryCreation() {
                     };
                     if (conditions !== undefined) {
                         newCategory.conditions = conditions;
+                    }
+                    // Only persist a non-default layout, so categories created
+                    // as flow stay byte-identical to pre-palette data.
+                    if (layout !== DEFAULT_CATEGORY_LAYOUT) {
+                        newCategory.layout = layout;
                     }
                     plugin.settings.categories.push(newCategory);
                     await plugin.saveSettings();

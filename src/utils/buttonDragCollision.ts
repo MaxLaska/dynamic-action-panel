@@ -1,16 +1,30 @@
 import { pointerWithin, closestCorners, type Collision, type CollisionDetection } from '@dnd-kit/core';
-import { CONTAINER_PREFIX, TAB_PREFIX, TITLE_PREFIX } from '@/utils/buttonDragItems';
+import {
+    CONTAINER_PREFIX,
+    SLOT_PREFIX,
+    TAB_PREFIX,
+    TITLE_PREFIX,
+} from '@/utils/buttonDragItems';
 import { parseCategorySortableId } from '@/utils/categoryDragItems';
 
 function isZoneDroppableId(id: string): boolean {
-    return id.startsWith(CONTAINER_PREFIX) || id.startsWith(TAB_PREFIX) || id.startsWith(TITLE_PREFIX);
+    return (
+        id.startsWith(CONTAINER_PREFIX) ||
+        id.startsWith(TAB_PREFIX) ||
+        id.startsWith(TITLE_PREFIX) ||
+        id.startsWith(SLOT_PREFIX)
+    );
 }
 
 function isButtonSortableId(id: string): boolean {
     return !isZoneDroppableId(id) && parseCategorySortableId(id) === null;
 }
 
-/** 按钮 > 标题区 > 标签 > 容器；分类排序项不参与按钮拖拽碰撞 */
+/**
+ * 按钮 > 网格空槽 > 标题区 > 标签 > 容器；分类排序项不参与按钮拖拽碰撞
+ * An empty grid slot is as precise a target as a button (both are single
+ * cells and cannot overlap), so it outranks every area zone.
+ */
 function pickPrimaryCollision(collisions: Collision[]): Collision[] {
     if (collisions.length === 0) return [];
 
@@ -18,6 +32,9 @@ function pickPrimaryCollision(collisions: Collision[]): Collision[] {
     if (overButtons.length > 0) {
         return [overButtons[0]!];
     }
+
+    const slot = collisions.find((c) => String(c.id).startsWith(SLOT_PREFIX));
+    if (slot) return [slot];
 
     const title = collisions.find((c) => String(c.id).startsWith(TITLE_PREFIX));
     if (title) return [title];

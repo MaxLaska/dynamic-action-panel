@@ -275,6 +275,22 @@ export function isCategoryVisibleInContext(
 }
 
 /**
+ * Whether an element is configured with a visibility condition at all —
+ * i.e. whether it is "contextual" rather than "persistent".
+ *
+ * Deliberately based on presence, not on validity: an element whose stored
+ * condition is structurally invalid fails open at runtime (it stays visible),
+ * but the user did configure a rule and the management UI must show that, so
+ * the invalid data can be found and corrected. Visibility itself is decided by
+ * isButtonVisibleInContext / isCategoryVisibleInContext, never by this helper.
+ */
+export function hasConditions(element: {
+    conditions?: ButtonCondition | null;
+}): boolean {
+    return element.conditions !== undefined && element.conditions !== null;
+}
+
+/**
  * Locked-mode projection of categories to what the user can actually use:
  * - buttons hidden by their conditions are removed;
  * - a category is removed entirely when its own condition does not hold OR

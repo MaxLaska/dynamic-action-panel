@@ -138,6 +138,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
             <OCAPVisibilityProvider
                 hiddenButtonIds={projection.hiddenButtonIds}
                 hiddenCategoryIds={projection.hiddenCategoryIds}
+                interactionMode={interactionMode}
             >
             <ButtonDragProvider
                 categories={filteredCategories}

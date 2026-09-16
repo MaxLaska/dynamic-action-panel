@@ -11,7 +11,13 @@ import { useCategoryCreation, useButtonCreation } from '@/hooks';
 import { AddButton } from '@/components/shared/AddButton';
 import { AddCategoryButton } from '@/components/shared/AddCategoryButton';
 import { createCategoryMenuHandler } from '@/utils/categoryMenuUtils';
-import { useContextHiddenCategoryIds } from '@/contexts/OCAPVisibilityContext';
+import {
+    useContextHiddenCategoryIds,
+    useInteractionMode,
+} from '@/contexts/OCAPVisibilityContext';
+import { hasConditions } from '@/context/conditions';
+import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
+import { isGridCategory } from '@/utils/categoryGrid';
 import { t } from '@/utils/i18n';
 
 interface ListModeContentProps {
@@ -39,6 +45,8 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
     // OCAP: in sort/edit mode a category whose own condition does not hold
     // stays rendered and manageable but gets a visual marker class.
     const contextHiddenCategoryIds = useContextHiddenCategoryIds();
+    const interactionMode = useInteractionMode();
+    const isManagementMode = interactionMode !== 'locked';
     const titleRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
     const titleRefCallbacks = React.useRef(
         new Map<string, (el: HTMLDivElement | null) => void>()
@@ -190,17 +198,30 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
         const titleClassName = 'buttons-panel-category-title is-collapsible';
         const bindTitleRef = getTitleRef(category.id);
 
+        const isContextual = hasConditions(category);
+        const showStatusBadge = isManagementMode || isContextual;
+
         const titleContent = (
             <>
                 <span
                     className="category-icon-left"
                     ref={(el) => {
                         if (el) {
-                            setIcon(el, 'layout-grid');
+                            // Layout icon: the palette keeps the grid glyph,
+                            // flow categories read as a list.
+                            setIcon(el, isGridCategory(category) ? 'layout-grid' : 'list');
                         }
                     }}
                 />
                 {category.name}
+                {showStatusBadge && (
+                    <ContextStatusBadge
+                        status={isContextual ? 'contextual' : 'persistent'}
+                        notMatching={contextHiddenCategoryIds.has(category.id)}
+                        subtle={!isManagementMode}
+                        className="ocap-context-badge--category"
+                    />
+                )}
                 <span
                     className="category-icon"
                     ref={(el) => {

@@ -9,17 +9,26 @@
 
 import React, { createContext, useContext } from 'react';
 import { EMPTY_ID_SET } from '@/context/conditions';
+import type { InteractionMode } from '@/types/settings';
 
 const EMPTY_HIDDEN_IDS: ReadonlySet<string> = EMPTY_ID_SET;
 
 interface OCAPVisibilityValue {
     hiddenButtonIds: ReadonlySet<string>;
     hiddenCategoryIds: ReadonlySet<string>;
+    /**
+     * Interaction mode, so renderers can pick the right presentation of the
+     * persistent/contextual markers: management modes (sort/edit) show both
+     * states explicitly, locked mode only hints at contextual elements.
+     * Defaults to 'locked' (the quiet variant) when no provider is mounted.
+     */
+    interactionMode: InteractionMode;
 }
 
 const EMPTY_VISIBILITY: OCAPVisibilityValue = {
     hiddenButtonIds: EMPTY_HIDDEN_IDS,
     hiddenCategoryIds: EMPTY_HIDDEN_IDS,
+    interactionMode: 'locked',
 };
 
 const OCAPVisibilityContext = createContext<OCAPVisibilityValue>(EMPTY_VISIBILITY);
@@ -27,14 +36,15 @@ const OCAPVisibilityContext = createContext<OCAPVisibilityValue>(EMPTY_VISIBILIT
 interface OCAPVisibilityProviderProps {
     hiddenButtonIds: ReadonlySet<string>;
     hiddenCategoryIds: ReadonlySet<string>;
+    interactionMode: InteractionMode;
 }
 
 export const OCAPVisibilityProvider: React.FC<
     React.PropsWithChildren<OCAPVisibilityProviderProps>
-> = ({ hiddenButtonIds, hiddenCategoryIds, children }) => {
+> = ({ hiddenButtonIds, hiddenCategoryIds, interactionMode, children }) => {
     const value = React.useMemo(
-        () => ({ hiddenButtonIds, hiddenCategoryIds }),
-        [hiddenButtonIds, hiddenCategoryIds]
+        () => ({ hiddenButtonIds, hiddenCategoryIds, interactionMode }),
+        [hiddenButtonIds, hiddenCategoryIds, interactionMode]
     );
     return (
         <OCAPVisibilityContext.Provider value={value}>
@@ -51,6 +61,11 @@ export function useContextHiddenButtonIds(): ReadonlySet<string> {
 /** Ids of categories whose own condition currently does not hold. */
 export function useContextHiddenCategoryIds(): ReadonlySet<string> {
     return useContext(OCAPVisibilityContext).hiddenCategoryIds;
+}
+
+/** Current interaction mode ('locked' when no provider is mounted). */
+export function useInteractionMode(): InteractionMode {
+    return useContext(OCAPVisibilityContext).interactionMode;
 }
 
 export { EMPTY_HIDDEN_IDS };

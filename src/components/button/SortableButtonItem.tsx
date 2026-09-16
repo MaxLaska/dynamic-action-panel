@@ -17,6 +17,11 @@ interface SortableButtonItemProps {
     enableEditMode: boolean;
     plugin: ButtonsPanelPlugin;
     app: App;
+    /**
+     * Palette grid: the item sits on a fixed slot, so it must never translate
+     * to preview a list reorder. Positions only change on drop.
+     */
+    positional?: boolean;
 }
 
 export const SortableButtonItem: React.FC<SortableButtonItemProps> = React.memo(
@@ -29,6 +34,7 @@ export const SortableButtonItem: React.FC<SortableButtonItemProps> = React.memo(
         enableEditMode,
         plugin,
         app,
+        positional = false,
     }) => {
         const buttonDrag = useButtonDragOptional();
         const handleButtonClick = useButtonClickHandler(button);
@@ -42,10 +48,12 @@ export const SortableButtonItem: React.FC<SortableButtonItemProps> = React.memo(
                 animateLayoutChanges: () => false,
             });
 
-        const style: React.CSSProperties = {
-            transform: transform ? CSS.Transform.toString(transform) : undefined,
-            transition: panelDragging ? undefined : transition,
-        };
+        const style: React.CSSProperties = positional
+            ? {}
+            : {
+                  transform: transform ? CSS.Transform.toString(transform) : undefined,
+                  transition: panelDragging ? undefined : transition,
+              };
 
         const handleClick = () => {
             if (buttonDrag?.isDragging) return;

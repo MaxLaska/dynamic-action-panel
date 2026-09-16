@@ -123,11 +123,65 @@ This file records durable decisions only. Do not use it as a work log.
 
 **Reason:** Live-verified gap: after closing all tabs and opening a file in the new tab, the context stayed stale and conditioned categories never reappeared.
 
+## 2026-09-17 – Palette grid: 4x4, 16 stable slots, holes are real
+
+**Decision:** A category can opt into `layout: 'grid'` — a fixed 4x4 field of 16 slots with stable identities `0..15`. A slot holds at most one button, and an empty slot **stays empty**: buttons never slide up to fill a hole, not after a reload, a context change, a visibility change, a drag, an edit or a save. `layout` absent or `'flow'` keeps the historical reflowing behavior, which remains the default.
+
+**Representation:** the slot lives on the button (`ButtonConfig.slot?: number`), not in a separate array on the category. A hole is therefore unambiguous — slot *i* is empty iff no button of the category claims it — and it survives every operation that filters `category.buttons` (context projection, search) with no extra bookkeeping, because the surviving buttons carry their own slot. Missing, out-of-range or duplicate slots are repaired deterministically at render time by `placeButtonsOnGrid` (`src/utils/categoryGrid.ts`): valid free slots are honoured, everything else takes the lowest free slot in `order` sequence, and anything beyond 16 is reported as `overflow` rather than dropped.
+
+**Reason:** Users must be able to memorize spatial positions ("top left is always slot 1"). A sorted list cannot represent a hole, so any list-based model would silently close gaps the moment a conditional tool disappeared — exactly the behavior the palette exists to prevent.
+
+## 2026-09-17 – The slot is the future hotkey identity
+
+**Decision:** A slot index is a property of the *position*, not of the tool that currently sits there. Slot ids stay stable and independent of the button occupying them, so a later slot-hotkey feature can bind `Alt+Q` to slot 0 without touching button configuration. No keybindings are implemented yet.
+
+**Reason:** Binding hotkeys to tools would move the shortcut whenever the palette is rearranged; binding them to positions keeps muscle memory intact, which is the same reason the slots are stable in the first place.
+
+## 2026-09-17 – Grid drop semantics: positional, never a cascading reorder
+
+**Decision:** Dropping in a grid is positional, not list-like. Three rules, in full:
+
+- **within one grid / grid → grid across categories:** an empty target slot relocates the button; an occupied target slot **swaps** the two buttons. Nothing else moves — no chain of neighbours shifts.
+- **flow → grid:** only empty slots accept the button. An occupied slot is rejected (the drop does nothing and the target ring is not shown), because there is no well-defined position for the displaced button in a flow list.
+- **grid → flow:** ordinary flow insert semantics; the vacated grid slot becomes a hole.
+
+Area zones (category container / tab / title) carry no position in a grid and are ignored; the user must target a cell. Sorting previews are disabled inside a grid (`SortingStrategy` returning `null`): the live drag state already shows the post-drop arrangement, so a sliding "make room" animation would be a lie.
+
+**Reason:** The task's hard constraint is no surprising auto-reorder heuristics. Swap is the only displacement rule that is symmetric, reversible and explainable in one sentence; rejecting the one genuinely ambiguous case beats inventing a rule the user cannot predict.
+
+## 2026-09-17 – Button-level conditions stay, and a hidden button leaves its slot empty
+
+**Decision:** Categories and buttons keep independent conditions (Phase 3 semantics unchanged, fail-open included). In a grid, a button hidden by its own condition leaves its slot empty and no other button moves. A category hidden by its own condition still disappears entirely in locked mode, exactly as before. This falls out of the model rather than being special-cased: `filterCategoriesByContext` removes the button from `category.buttons`, and the remaining buttons keep their slots.
+
+**Reason:** Category-level and button-level dynamics answer different questions ("is this toolset relevant at all?" vs. "is this one tool applicable?"). Collapsing them into one level would force users to split categories just to make one button conditional.
+
+## 2026-09-17 – Persistent vs. contextual is visible, and the marker is quieter in locked mode
+
+**Decision:** Every category and button carries a status marker: **persistent** (no condition, Lucide `pin`) or **contextual** (a condition exists, Lucide `filter`). Presence of `conditions` decides — not validity — so a configured-but-invalid rule is still surfaced for correction even though it fails open at runtime (`hasConditions`, `src/context/conditions.ts`).
+
+Presentation by mode:
+- **sort / edit (management):** both states are shown explicitly, so the configuration is fully transparent; a contextual element whose rule does not currently match additionally gets the inactive variant alongside the existing `ocap-context-hidden` dimming.
+- **locked (consumption):** only contextual elements are marked, in a reduced variant. Persistent tools show nothing, because a palette of static tools would otherwise be covered in pins for no information gain.
+
+Icons are chosen so the two differ in silhouette; color only reinforces them. Each marker carries a tooltip and an `aria-label`.
+
+**Reason:** The previous UI gave no way to tell a static tool from a conditional one, which made an empty slot unexplainable. Marking both states everywhere was too noisy in the consumption mode, where "always there" is the unremarkable default.
+
+## 2026-09-17 – Grid layout needs no settings migration
+
+**Decision:** `settingsVersion` stays at 1. `CategoryConfig.layout` and `ButtonConfig.slot` are purely additive optional fields: an absent layout means the historical flow behavior and an absent slot is only consulted inside a grid category, so no stored data needs transforming and version-1 data written today stays loadable by pre-palette builds. Categories created as flow do not persist a `layout` field at all.
+
+Converting a category with more than 16 buttons to the grid is **refused** with an explaining Notice instead of truncating, overflowing or silently dropping buttons; the modal stays open so the user can fix it.
+
+**Reason:** Same rule as category conditions (2026-09-16): version bumps are reserved for actual data transformations. Reflexive bumps force no-op migrations on every synced device and create artificial "future version" states in mixed-version vaults.
+
 ## Open decisions
 
 The following are still open:
 
 - final dynamic-component extension API (`enabledWhen`, dynamic label/icon next);
+- slot hotkeys (the slot identity is ready; the keybinding layer is not designed yet);
+- whether grid dimensions stay fixed at 4x4 or become configurable per category;
 - test coverage targets and component/UI testing approach (unit-test stack is decided: Vitest; editor DOM currently covered by live smoke tests only);
 - locked-mode empty state when every category is context-hidden;
 - packaging and release strategy for OCAP;

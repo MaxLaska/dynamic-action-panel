@@ -3,6 +3,10 @@ import { ButtonsPanelPlugin } from '@/types/plugin';
 import type { ButtonCondition } from '@/types/conditions';
 import { t } from '@/utils/i18n';
 import { ConditionEditor } from '@/components/input';
+import {
+    DEFAULT_CATEGORY_LAYOUT,
+    type CategoryLayout,
+} from '@/utils/categoryGrid';
 
 /**
  * CategoryCreateModal 分类创建模态框。
@@ -13,14 +17,20 @@ import { ConditionEditor } from '@/components/input';
 export class CategoryCreateModal extends Modal {
     /** 插件主类实例 */
     plugin: ButtonsPanelPlugin;
-    /** 创建分类后的回调函数，参数为新分类名称与可选的可见性条件 */
-    onCreate: (categoryName: string, conditions: ButtonCondition | undefined) => void;
+    /** 创建分类后的回调函数，参数为新分类名称、可选的可见性条件与布局 */
+    onCreate: (
+        categoryName: string,
+        conditions: ButtonCondition | undefined,
+        layout: CategoryLayout
+    ) => void;
     /** 输入框当前的分类名称 */
     newName: string;
     /** 输入框组件引用（Obsidian Setting 的 text 控件） */
     private nameInput: TextComponent | null = null;
     /** OCAP visibility conditions editor (visual builder + advanced JSON) */
     private conditionsInput: ConditionEditor | null = null;
+    /** OCAP palette: button layout of the new category */
+    private selectedLayout: CategoryLayout = DEFAULT_CATEGORY_LAYOUT;
 
     /**
      * 构造函数，初始化模态框。
@@ -31,7 +41,11 @@ export class CategoryCreateModal extends Modal {
     constructor(
         app: App,
         plugin: ButtonsPanelPlugin,
-        onCreate: (categoryName: string, conditions: ButtonCondition | undefined) => void
+        onCreate: (
+            categoryName: string,
+            conditions: ButtonCondition | undefined,
+            layout: CategoryLayout
+        ) => void
     ) {
         super(app);
         this.plugin = plugin;
@@ -69,6 +83,20 @@ export class CategoryCreateModal extends Modal {
                 }
             });
         });
+
+        // OCAP palette: button layout of the new category
+        new Setting(contentEl)
+            .setName(t('category_layout'))
+            .setDesc(t('category_layout_desc'))
+            .addDropdown((dropdown) => {
+                dropdown
+                    .addOption('flow', t('category_layout_flow'))
+                    .addOption('grid', t('category_layout_grid'))
+                    .setValue(this.selectedLayout)
+                    .onChange((value) => {
+                        this.selectedLayout = value === 'grid' ? 'grid' : 'flow';
+                    });
+            });
 
         // OCAP: visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(contentEl, undefined, {
@@ -116,7 +144,8 @@ export class CategoryCreateModal extends Modal {
         // 回调创建逻辑
         this.onCreate(
             this.newName.trim(),
-            conditionsResult ? conditionsResult.conditions : undefined
+            conditionsResult ? conditionsResult.conditions : undefined,
+            this.selectedLayout
         );
         this.close();
     }

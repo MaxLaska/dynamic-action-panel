@@ -1,8 +1,14 @@
 import { App, Modal, Setting, Notice, TextComponent } from 'obsidian';
 import { ButtonsPanelPlugin } from '@/types/plugin';
 import { CategoryConfig } from '@/types';
-import { t } from '@/utils/i18n';
+import { t, tWithParams } from '@/utils/i18n';
 import { ConditionEditor } from '@/components/input';
+import {
+    GRID_SLOT_COUNT,
+    applyCategoryLayout,
+    getCategoryLayout,
+    type CategoryLayout,
+} from '@/utils/categoryGrid';
 
 /**
  * CategoryEditModal 分类编辑模态框类。
@@ -27,6 +33,10 @@ export class CategoryEditModal extends Modal {
     private nameInput: TextComponent | null = null;
     // OCAP visibility conditions editor (visual builder + advanced JSON)
     private conditionsInput: ConditionEditor | null = null;
+    // OCAP palette: selected button layout (flow / 4x4 grid)
+    private selectedLayout: CategoryLayout;
+    // Explanation line below the layout dropdown
+    private layoutHintEl: HTMLElement | null = null;
 
     /**
      * 构造函数，初始化模态框。
@@ -48,6 +58,36 @@ export class CategoryEditModal extends Modal {
         this.oldConditions = category.conditions;
         this.onRename = onRename;
         this.newName = category.name;
+        this.selectedLayout = getCategoryLayout(category);
+    }
+
+    /** Layout dropdown + a one-line explanation of the selected layout. */
+    private renderLayoutSetting(contentEl: HTMLElement): void {
+        new Setting(contentEl)
+            .setName(t('category_layout'))
+            .setDesc(t('category_layout_desc'))
+            .addDropdown((dropdown) => {
+                dropdown
+                    .addOption('flow', t('category_layout_flow'))
+                    .addOption('grid', t('category_layout_grid'))
+                    .setValue(this.selectedLayout)
+                    .onChange((value) => {
+                        this.selectedLayout = value === 'grid' ? 'grid' : 'flow';
+                        this.updateLayoutHint();
+                    });
+            });
+
+        this.layoutHintEl = contentEl.createDiv({ cls: 'ocap-layout-hint' });
+        this.updateLayoutHint();
+    }
+
+    private updateLayoutHint(): void {
+        if (!this.layoutHintEl) return;
+        this.layoutHintEl.setText(
+            this.selectedLayout === 'grid'
+                ? tWithParams('category_layout_grid_hint', { slots: GRID_SLOT_COUNT })
+                : t('category_layout_flow_hint')
+        );
     }
 
     /**
@@ -79,6 +119,9 @@ export class CategoryEditModal extends Modal {
                 }
             });
         });
+
+        // OCAP palette: button layout of this category
+        this.renderLayoutSetting(contentEl);
 
         // OCAP: visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(contentEl, this.oldConditions, {
@@ -128,22 +171,36 @@ export class CategoryEditModal extends Modal {
         // 对象身份约定（DECISIONS.md）——内容变化必须产生新的对象引用。
         const categories = this.plugin.settings.categories;
         const index = categories.findIndex((c) => c.id === this.categoryId);
-        if (index > -1) {
-            const updated: CategoryConfig = {
-                ...categories[index]!,
-                name: this.newName.trim(),
-                // Explicitly assign (possibly undefined) so clearing the editor
-                // removes previously saved conditions (undefined is dropped by
-                // JSON serialization on save).
-                conditions: conditionsResult ? conditionsResult.conditions : undefined,
-            };
-            categories[index] = updated;
-            void this.plugin.saveSettings();
-            this.onRename();
-            this.close();
-        } else {
+        if (index === -1) {
             new Notice(t('category_not_found'));
+            return;
         }
+
+        // Layout first: switching to the grid rewrites the buttons (assigning
+        // slots), and it can legitimately refuse — nothing must be saved then.
+        const layoutResult = applyCategoryLayout(categories[index]!, this.selectedLayout);
+        if (!layoutResult.ok) {
+            new Notice(
+                tWithParams('category_layout_too_many_buttons', {
+                    count: layoutResult.buttonCount,
+                    slots: layoutResult.slotCount,
+                })
+            );
+            return;
+        }
+
+        const updated: CategoryConfig = {
+            ...layoutResult.category,
+            name: this.newName.trim(),
+            // Explicitly assign (possibly undefined) so clearing the editor
+            // removes previously saved conditions (undefined is dropped by
+            // JSON serialization on save).
+            conditions: conditionsResult ? conditionsResult.conditions : undefined,
+        };
+        categories[index] = updated;
+        void this.plugin.saveSettings();
+        this.onRename();
+        this.close();
     }
 
     /**

@@ -13,6 +13,11 @@ import type { ButtonCondition } from '@/types/conditions';
  *      Phase 3 additionally added optional CategoryConfig.conditions — a
  *      purely additive optional field that requires no data transformation,
  *      so it stays within version 1.
+ *      Phase 4 (palette grid) added optional CategoryConfig.layout and
+ *      ButtonConfig.slot on the same terms: an absent layout means the
+ *      historical flow behavior and an absent slot is only consulted inside a
+ *      grid category, so no stored data needs transforming and version 1 data
+ *      written today stays loadable by earlier builds.
  */
 export const CURRENT_SETTINGS_VERSION = 1;
 
@@ -47,6 +52,17 @@ export interface ButtonConfig {
      * sort/edit mode the button stays manageable (visually marked).
      */
     conditions?: ButtonCondition;
+    /**
+     * Palette grid slot (0..15) of this button inside a `layout: 'grid'`
+     * category. Ignored by flow categories, where `order` keeps deciding the
+     * position. The slot is a stable spatial identity — it is what a future
+     * slot hotkey will bind to — so it must not be recomputed from the array
+     * index: a button hidden by its conditions leaves its slot empty instead
+     * of letting the following buttons slide up.
+     * Absent/invalid slots are repaired deterministically at render time by
+     * placeButtonsOnGrid (src/utils/categoryGrid.ts), never by dropping data.
+     */
+    slot?: number;
 }
 
 /**
@@ -72,6 +88,17 @@ export interface CategoryConfig {
      * settingsVersion bump / migration step is required.
      */
     conditions?: ButtonCondition;
+    /**
+     * Button layout of this category.
+     * - absent / 'flow': historical behavior — buttons render in `order`
+     *   sequence and reflow whenever one is added, removed or context-hidden;
+     * - 'grid': the 4x4 palette with 16 stable slots, where a hidden or
+     *   removed button leaves its slot empty and nothing else moves.
+     * Optional additive field: categories without it keep behaving exactly as
+     * before, so no settingsVersion bump / migration step is required.
+     * See src/utils/categoryGrid.ts for the slot semantics.
+     */
+    layout?: 'flow' | 'grid';
 }
 
 /** 交互模式：locked(锁定布局)、sort(排序模式)、edit(编辑模式) */

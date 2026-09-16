@@ -35,12 +35,21 @@ import { CategoryFolderTile } from '@/components/buttons-panel/CategoryFolderTil
 import {
     applyDragOverToItems,
     buildButtonDragItems,
+    buildContainerLayouts,
     findContainerForButtonId,
+    getGridSlotButtonsFromAllCategories,
     getOrderedButtonsFromAllCategories,
     itemsShallowEqual,
+    parseSlotDroppableId,
     resolveOverContainerId,
     type ButtonDragItems,
 } from '@/utils/buttonDragItems';
+import {
+    getCategoryLayout,
+    isValidSlotIndex,
+    placeButtonsOnGrid,
+    type CategoryLayout,
+} from '@/utils/categoryGrid';
 import {
     applyCategoryDragOver,
     buildCategoryDragIds,
@@ -71,6 +80,10 @@ export interface ButtonDragContextValue {
     isDragging: boolean;
     activeButtonId: string | null;
     getOrderedButtons: (category: CategoryConfig) => ButtonConfig[];
+    /** Live slot occupancy of a grid category (index = slot, null = empty). */
+    getGridSlotButtons: (category: CategoryConfig) => (ButtonConfig | null)[];
+    /** Slot the pointer currently targets, for the drop highlight. */
+    dropTargetSlot: { categoryId: string; slot: number } | null;
     registerCategoryHover: (handler: ((categoryId: string) => void) | null) => void;
 }
 
@@ -94,6 +107,8 @@ const disabledButtonContextValue: ButtonDragContextValue = {
     isDragging: false,
     activeButtonId: null,
     getOrderedButtons: (category) => [...category.buttons].sort((a, b) => a.order - b.order),
+    getGridSlotButtons: (category) => placeButtonsOnGrid(category.buttons).slots,
+    dropTargetSlot: null,
     registerCategoryHover: () => {},
 };
 
@@ -122,6 +137,51 @@ interface ButtonDragProviderProps {
     children: React.ReactNode;
 }
 
+/**
+ * Grid cell the pointer is currently over, for the drop highlight: either an
+ * empty slot droppable or the cell of the button being hovered. Returns null
+ * for flow containers and for area zones, which have no addressable cell, and
+ * for targets this particular drag would be rejected on — the ring must only
+ * promise landings that actually happen.
+ */
+function resolveGridDropTarget(
+    activeId: string,
+    overId: string,
+    items: ButtonDragItems,
+    layouts: Record<string, CategoryLayout>
+): { categoryId: string; slot: number } | null {
+    let target: { categoryId: string; slot: number } | null = null;
+
+    const slotTarget = parseSlotDroppableId(overId);
+    if (slotTarget) {
+        target = layouts[slotTarget.categoryId] === 'grid' ? slotTarget : null;
+    } else {
+        const categoryId = findContainerForButtonId(overId, items);
+        if (categoryId && layouts[categoryId] === 'grid') {
+            const slot = items[categoryId]!.indexOf(overId);
+            target = isValidSlotIndex(slot) ? { categoryId, slot } : null;
+        }
+    }
+
+    if (!target) {
+        return null;
+    }
+
+    // Flow -> grid only accepts empty slots (see applyDragOverToItems), so an
+    // occupied cell must not advertise itself as a landing spot.
+    const activeContainer = findContainerForButtonId(activeId, items);
+    if (
+        activeContainer &&
+        activeContainer !== target.categoryId &&
+        layouts[activeContainer] !== 'grid' &&
+        (items[target.categoryId]?.[target.slot] ?? null) !== null
+    ) {
+        return null;
+    }
+
+    return target;
+}
+
 /** 统一面板拖拽：按钮与分类共用一个 DndContext */
 export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     categories,
@@ -148,6 +208,11 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         null
     );
     const [categoryListDragOpen, setCategoryListDragOpen] = useState(true);
+    /** Grid palette: slot the pointer currently targets (drop highlight). */
+    const [dropTargetSlot, setDropTargetSlot] = useState<{
+        categoryId: string;
+        slot: number;
+    } | null>(null);
     const itemsRef = useRef(items);
     const categoryIdsRef = useRef(categoryIds);
     const categoryHoverRef = useRef<((categoryId: string) => void) | null>(null);
@@ -176,6 +241,11 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         () => createPanelDragCollisionDetection(categoryDragLayout),
         [categoryDragLayout]
     );
+
+    /** Per-container layout, so index means order (flow) or slot (grid). */
+    const containerLayouts = useMemo(() => buildContainerLayouts(categories), [categories]);
+    const containerLayoutsRef = useRef(containerLayouts);
+    containerLayoutsRef.current = containerLayouts;
 
     const cancelDragOverFrame = useCallback(() => {
         if (dragOverFrameRef.current !== null) {
@@ -242,6 +312,12 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         [categories, items]
     );
 
+    const getGridSlotButtons = useCallback(
+        (category: CategoryConfig) =>
+            getGridSlotButtonsFromAllCategories(category, categories, items),
+        [categories, items]
+    );
+
     const getOrderedCategories = useCallback(
         (source: CategoryConfig[]) => getOrderedCategoriesFromIds(source, categoryIds),
         [categoryIds]
@@ -284,6 +360,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     const resetButtonDragHoverState = useCallback(() => {
         lastNotifiedHoverContainerRef.current = null;
         lastAppliedDragOverRef.current = null;
+        setDropTargetSlot(null);
         cancelDragOverFrame();
     }, [cancelDragOverFrame]);
 
@@ -337,15 +414,50 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 }
             }
 
+            // Every button the drag state accounts for. Buttons outside this
+            // set were never part of the drag (e.g. grid overflow from
+            // hand-edited data) and must stay in their category instead of
+            // being dropped by the rewrite below.
+            const placedIds = new Set<string>();
+            for (const ids of Object.values(finalItems)) {
+                for (const id of ids) {
+                    if (id !== null) placedIds.add(id);
+                }
+            }
+
             for (const category of pluginInstance.settings.categories) {
                 const ids = finalItems[category.id];
                 if (!ids) continue;
-                category.buttons = ids
-                    .map((id) => allButtons.get(id))
-                    .filter((b): b is ButtonConfig => b !== undefined);
-                category.buttons.forEach((btn, idx) => {
+
+                const isGrid = getCategoryLayout(category) === 'grid';
+                const nextButtons: ButtonConfig[] = [];
+
+                ids.forEach((id, index) => {
+                    if (id === null) return;
+                    const button = allButtons.get(id);
+                    if (!button) return;
+                    // In a grid the index IS the slot; `order` is kept in sync
+                    // with the reading order so flow fallbacks stay sane.
+                    if (isGrid) {
+                        button.slot = index;
+                    } else {
+                        delete button.slot;
+                    }
+                    nextButtons.push(button);
+                });
+
+                nextButtons.forEach((btn, idx) => {
                     btn.order = idx;
                 });
+
+                // Preserve buttons of this category that no container claimed.
+                for (const button of category.buttons) {
+                    if (!placedIds.has(button.id)) {
+                        nextButtons.push(button);
+                    }
+                }
+
+                category.buttons = nextButtons;
             }
 
             await pluginInstance.saveSettings();
@@ -408,7 +520,12 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             notifyCategoryHover(hoverOverContainer);
         }
 
-        const next = applyDragOverToItems(prev, activeId, overId);
+        const next = applyDragOverToItems(
+            prev,
+            activeId,
+            overId,
+            containerLayoutsRef.current
+        );
         lastAppliedDragOverRef.current = { activeId, overId };
         if (next !== prev) {
             itemsRef.current = next;
@@ -500,6 +617,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             if (!over || active.id === over.id) {
                 // 指针离开按钮区（如磁贴区）：回退到拖拽开始时的位置
                 if (!over) {
+                    setDropTargetSlot(null);
                     const baseline = buildButtonDragItems(categories);
                     if (!itemsShallowEqual(baseline, itemsRef.current)) {
                         itemsRef.current = baseline;
@@ -510,6 +628,14 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 return;
             }
             const overIdStr = String(over.id);
+            setDropTargetSlot(
+                resolveGridDropTarget(
+                    activeId,
+                    overIdStr,
+                    itemsRef.current,
+                    containerLayoutsRef.current
+                )
+            );
             scheduleButtonDragOver(activeId, overIdStr);
         },
         [
@@ -604,7 +730,12 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             if (active && over) {
                 const overId = String(over.id);
                 const prev = itemsRef.current;
-                const next = applyDragOverToItems(prev, activeId, overId);
+                const next = applyDragOverToItems(
+                    prev,
+                    activeId,
+                    overId,
+                    containerLayoutsRef.current
+                );
                 if (next !== prev) {
                     itemsRef.current = next;
                     setItems(next);
@@ -681,9 +812,19 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             isDragging: isButtonDragActive,
             activeButtonId,
             getOrderedButtons,
+            getGridSlotButtons,
+            dropTargetSlot: isButtonDragActive ? dropTargetSlot : null,
             registerCategoryHover,
         }),
-        [buttonEnabled, isButtonDragActive, activeButtonId, getOrderedButtons, registerCategoryHover]
+        [
+            buttonEnabled,
+            isButtonDragActive,
+            activeButtonId,
+            getOrderedButtons,
+            getGridSlotButtons,
+            dropTargetSlot,
+            registerCategoryHover,
+        ]
     );
 
     const categoryContextValue = useMemo<CategoryDragContextValue>(
