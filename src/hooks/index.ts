@@ -13,4 +13,5 @@ export { useCategoryCreation } from './useCategoryCreation';
 export { useButtonCreation } from './useButtonCreation';
 export { useRefresh } from './useRefresh';
 export { useButtonClickHandler } from './useButtonClickHandler';
+export { useOCAPContext } from './useOCAPContext';
 

@@ -1,64 +1,75 @@
 # OCAP – Status
 
-Last updated: 2026-09-16 (stabilization phase 1)
+Last updated: 2026-09-16 (Phase 2 Foundation)
 
 ## Current state
 
-- GitHub fork `MaxLaska/obsidian-contextual-action-panel`, local repo in `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`, branch `master` @ upstream v2.4.7 baseline (`a20369c`).
-- Initial read-only audit accepted (`docs/ocap/audits/2026-09-16-initial-audit.md`).
-- **Stabilization phase 1 is complete**: baseline verified, test foundation established, all five confirmed audit findings fixed, live smoke test in Obsidian 1.13.7 fully green (details below).
-- No OCAP feature implementation (Context Engine etc.) has started yet.
+- GitHub fork `MaxLaska/obsidian-contextual-action-panel`, local repo in `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`, branch `master`.
+- Stabilization phase 1 complete (baseline `4d233de`); details in git history and `docs/ocap/audits/2026-09-16-initial-audit.md`.
+- **Phase 2 Foundation is implemented and live-verified**: versioned settings with a migration pipeline, a central reactive `OCAPContextService`, a declarative condition model with a pure evaluator, context-based button visibility integrated into the panel, a minimal advanced conditions UI, 65 new unit tests, and a full automated live smoke test in Obsidian 1.13.7.
 
-## Baseline verification (2026-09-16)
+## Phase 2 architecture
 
-- Node v24.14.0, npm 11.9.0.
-- `npm ci`: OK. Note: first attempts failed with `EBUSY` because **Dropbox locks `node_modules` during sync** — deleting `node_modules` and reinstalling resolved it; expect this to recur occasionally.
-- `npm run lint`: PASS (0 problems) — before and after the changes.
-- `npx tsc --noEmit`: PASS — before and after.
-- Safe build without vault deploy: `node esbuild.config.mjs production` (writes only `dist/`) — PASS. `npm run build/dev` would additionally call `scripts/deploy.mjs`, which exits silently when no `.env` exists (none exists here; only `.env.example`).
-- Pre-existing: `npm audit` reports 6 dev-dependency vulnerabilities (2 moderate, 4 high) — present at the unmodified baseline, untouched per scope.
+### Settings versioning & migration (`src/settings/settingsMigrations.ts`)
 
-## Test foundation
+- `ButtonsPanelPluginSettings.settingsVersion`, current version **1** (`CURRENT_SETTINGS_VERSION` in `src/types/settings.ts`).
+- `migrateSettings(raw)` is pure/deterministic and returns `{settings, changed, status, fromVersion}` with status `defaults | current | migrated | future`.
+- Pipeline of `{from, apply}` steps; step `0→1` adopts unversioned upstream data: nested `panelConfig`/`pathConfig` are deep-merged over defaults (fixes the upstream shallow-merge gap), categories/buttons are preserved untouched, unknown top-level keys survive.
+- Future versions (`settingsVersion > CURRENT`) are loaded best-effort, keep their higher version number and are **never rewritten or downgraded** (`main.ts` skips the persist in that case and warns).
+- `main.ts loadSettings()` runs the migration and persists a migrated result exactly once via `saveData` (no render side effects during load).
 
-- **Vitest 3.x** (`npm test` = `vitest run`, `npm run test:watch`). Chosen because the project is esbuild-based ESM TypeScript: Vitest runs TS natively via esbuild, needs near-zero config, and is easily extended later for the Context Engine / condition resolver. Vitest 5 was rejected for now because its Vite 8 dependency requires esbuild ≥0.27 as a peer while the build pins esbuild 0.25.5.
-- `vitest.config.ts`: alias `@` → `src`, alias `obsidian` → `tests/mocks/obsidian.ts` (the real package is a type-only stub without runtime), Node environment, tests under `tests/`.
-- `eslint.config.mjs`: obsidianmd runtime rules disabled for `tests/**` and `vitest.config.ts` (Node-side tooling, not plugin runtime code).
-- 29 tests in 3 files: `tests/scriptMetaParser.test.ts`, `tests/scriptService.getScriptMeta.test.ts`, `tests/shallowEqual.test.ts`. All PASS.
+### Context Engine (`src/context/`)
 
-## Fixed audit findings
+- `OCAPContext.ts`: immutable `OCAPContextSnapshot` (viewType, filePath, fileName, fileBaseName, fileExtension, folderPath, tags, properties) + pure `buildContextSnapshot` / `contextSnapshotsEqual` / `extractTagsFromCache` (inline + frontmatter tags, deduped, `#` stripped). No Obsidian runtime dependency.
+- `OCAPContextService.ts`: plugin-level service (created/started in `onload`, stopped in `onunload`, `refresh()` re-run on `onLayoutReady`). Subscribes to `workspace active-leaf-change / file-open / layout-change`, `metadataCache changed` (context file only), `vault rename / delete` (context file only). Emits a new snapshot **only** when `contextSnapshotsEqual` says the context changed semantically; snapshot reference is stable otherwise.
+- Context source semantics: the snapshot describes the **last active content leaf in the root split**. Focusing the buttons panel or sidebars does not change the context (mirrors `lastActiveContentLeaf`); if the tracked leaf is detached, `layout-change` falls back to `getMostRecentLeaf()`.
+- React binding: `useOCAPContext()` (`src/hooks/useOCAPContext.ts`) via `useSyncExternalStore` on the service; no polling, no DOM observation, no new CustomEvents. The legacy `buttons-panel-refresh` bus is untouched (still used by modals).
 
-1. **NavigationBar hook order** (`src/components/shared/NavigationBar.tsx`): early `return null` on `showTopNavBar` moved below the `useState`/`useRef` calls.
-2. **FolderModeContent hook order** (`src/components/buttons-panel/FolderModeContent.tsx`): the empty-categories early return moved below `handleRename` (`useCallback`) and its derived values. The masking remount workaround `key={'folder-'+filteredCategories.length}` in `PanelContent.tsx` was removed: it was introduced together with the folder view without other documented purpose, its only correctness effect was forcing a remount exactly when the early-return condition (`categories.length === 0`) could flip, and the state resets it caused as a side effect are covered by existing effects (open category disappearing closes the detail). Behavior change: an open folder detail no longer force-closes when the filtered category count changes (e.g. while typing a search query). Verified in the live smoke test (see below).
-3. **ButtonItem memoization** (`src/components/button/ButtonItem.tsx` + `src/utils/shallowEqual.ts` + `src/components/modal/ButtonEditModal.ts`): the audit's framing was adjusted after checking the real data flow. Settings objects are shared by identity between React and `plugin.settings`, and `ButtonEditModal` used to edit buttons by in-place `Object.assign` — so **no prop comparator can ever detect an edit by value** (prev and next props read the same mutated object). Fix: (a) `ButtonEditModal` now replaces the edited `ButtonConfig` with a new object; (b) `ButtonItem` memo now compares all props by identity (`shallowEqualExcept`, ignoring the unused `index`). This both fixes the stale-render gap (changed actions/execution config now re-render, and freshly captured identities keep context-menu/click handlers pointing at live settings objects) and keeps memoization for the common identity-stable re-renders (drag, search typing). Convention going forward: **content edits must replace objects, not mutate them** (see DECISIONS.md).
-4. **ScriptService.getScriptMeta** (`src/services/ScriptService.ts` + `src/utils/scriptMetaParser.ts` + `src/types/script.ts`): metadata is now extracted by a **static parser** — no `AsyncFunction`, no eval, no script execution. The parser scans for the last `module.exports = { ... }` assignment outside strings/comments and statically reads string/object/array literals for `name`/`description`/`tags`; non-static values (identifiers, calls, interpolated templates, spreads) are skipped in a controlled way; malformed literals yield `null`; an `entry` property must be present (mirrors the previous runtime contract). `getScriptMeta` now returns the new display-only type `ScriptFileMeta` (no entry function); the only consumer (`ScriptAction` → suggestion dropdown) uses name/description only. Script *execution* (`runScript`) still evaluates the module as before — that is the product feature.
-5. **dnd-kit pinned exactly** (`package.json`): `@dnd-kit/core 6.3.1`, `@dnd-kit/sortable 10.0.0`, `@dnd-kit/utilities 3.2.2` (previous lockfile versions, carets removed). No upgrades performed.
+### Conditions (`src/types/conditions.ts` + `src/context/conditions.ts`)
 
-## Verification after changes
+- Declarative, JSON-serializable tree: groups `all` / `any` / `not` plus atomic rules discriminated by `rule`: `viewType`, `path` (equals/startsWith/contains), `folder` (equals/segment-aware startsWith), `extension`, `property` (exists/equals incl. list properties, loose scalar compare), `tag` (nested-tag aware, `#` tolerant). No function strings, no eval.
+- Pure interpreter: `isValidCondition` (structural validation, depth-capped), `evaluateCondition` (deterministic; missing context values evaluate rules to false; `all []` = true, `any []` = false), `isButtonVisibleInContext` (no conditions ⇒ visible; **invalid conditions fail open** ⇒ visible), `filterCategoriesByContext` (identity-preserving), `collectContextHiddenButtonIds`.
 
-- Tests: PASS (29/29) · Lint: PASS · `tsc --noEmit`: PASS · Build (`node esbuild.config.mjs production`): PASS.
-- `git status` reviewed: no `node_modules`, no `.env`, no vault files, `dist/` remains gitignored. `package-lock.json` diff is large but consists only of the vitest/vite dev-dependency tree plus the dnd-kit pinning; all packages resolve from registry.npmjs.org; root esbuild stays 0.25.5 (vite uses its own nested copy).
+### Integration
+
+- `ButtonConfig.conditions?: ButtonCondition` (optional; absent ⇒ 100 % upstream behavior).
+- Single central integration point in `PanelContent.tsx`: in **locked** mode categories are filtered through `filterCategoriesByContext` before reaching the mode contents and the DnD provider; in **sort/edit** mode nothing is filtered — hidden buttons get the class `ocap-context-hidden` (dimmed + dashed outline) via `OCAPVisibilityContext` consumed in `SimpleButton`. DnD is only active in sort mode, i.e. always operates on unfiltered lists.
+- Conditions affect **visibility only** in this phase (no enabled/name/icon/action/styling dynamics yet; model kept open for those).
+
+### UI
+
+- Minimal advanced editor `ConditionsInput` (`src/components/input/ConditionsInput.ts`): JSON textarea in `ButtonCreateModal` and `ButtonEditModal`, validated on save (`JSON.parse` + `isValidCondition`), invalid input blocks the save with a Notice + error marker, empty input clears conditions. i18n keys added to en/zh/ru. A visual condition builder is deliberately deferred.
+
+## Verification (2026-09-16)
+
+- `npm test`: **94/94 PASS** (7 files; 65 new across `settingsMigrations` 13, `ocapContextSnapshot` 15, `conditions` 26, `ocapContextService` 11 with a fake workspace/metadataCache/vault).
+- `npm run lint`: PASS (0 problems) · `npx tsc --noEmit`: PASS · production build (`node esbuild.config.mjs production`, dist-only): PASS.
 
 ## Live smoke test (2026-09-16, all PASS)
 
-Automated live test of the real production build in **Obsidian 1.13.7**, run via the Chrome DevTools Protocol against the throwaway vault `C:\Users\flash\ObsidianTestVaults\ocap-smoke` (junction `.obsidian/plugins/buttons-panel` → repo `dist/`; deploy via `.env` + `node scripts/deploy.mjs dev`). `window.onerror`, `unhandledrejection` and `console.error` were monitored throughout: **0 errors observed**.
+Automated via CDP against an **isolated Obsidian 1.13.7 instance** (`--user-data-dir` in a scratch folder registering only the test vault `C:\Users\flash\ObsidianTestVaults\ocap-smoke`; the user's running production instance/vault and the global vault registry were never touched). Error monitoring (`window.onerror`, `unhandledrejection`, `console.error`) active throughout: **0 errors**.
 
-1. NavigationBar toggle (4× via the real settings path): nav bar mounts/unmounts correctly, no hook-order crash — PASS.
-2. Folder view empty↔non-empty (categories 0→1→0→2): correct empty hint/tiles, no hook crash without the remount key — PASS.
-3. Folder detail + search (remount key removed): detail stays open while its category matches, auto-closes when filtered out; no-hit state and filter reset correct — PASS.
-4. Button edit through the real context-menu → edit-modal → save flow: settings updated, object identity replaced, panel DOM shows the new name immediately — PASS.
-5. Script metadata: `scripts/test.js` with a measurable top-level side effect; `getScriptMeta` returned localized name/description/tags with the side-effect counter staying 0; a subsequent button click executed top level + entry exactly once — PASS.
-6. Drag & drop regression (sort mode, 400 ms long-press): drag activated, two buttons reordered and persisted — PASS.
+1. Live migration: unversioned phase-1 `data.json` loaded, `settingsVersion: 1` persisted, all categories/buttons intact — PASS.
+2. Static buttons visible in every mode; script button executes (top level + entry exactly once, Notice shown) — PASS.
+3. viewType condition: visible on markdown, disappears when all tabs closed (`empty` view) — PASS.
+4. Folder condition reacts to file switch `notes/` ↔ `other/` — PASS.
+5. Tag condition reacts, including a **live frontmatter edit** (tag added via `processFrontMatter` → button appears via metadataCache event) — PASS.
+6. Nested `all` (viewType + property equals) — PASS.
+7. Locked mode hides non-matching button; focusing the panel itself does **not** change the context — PASS.
+8. Sort and edit mode render the hidden button with the `ocap-context-hidden` marker; it stays manageable — PASS.
+9. Real context-menu → edit-modal flow: conditions textarea prefilled; invalid JSON blocks save (Notice, nothing persisted); valid edit saves name + conditions, DOM updates immediately — PASS.
+10. DnD (sort mode, long-press): two condition buttons reordered and persisted — PASS.
 
-The production vault (`H:\Dropbox\01_Uni\A1_Nexus`) was never opened or modified (Obsidian's vault registry was temporarily pointed at the test vault and byte-identically restored afterwards); source code was unchanged during the whole smoke test.
-
-**Known test limitations (documented honestly):** (a) tests 1–2 triggered state changes through the settings API — the same code path the settings tab uses, but not via mouse clicks in the settings UI; (b) test 5 called `getScriptMeta` directly instead of focusing the script input field with the mouse — the suggester's prefetch calls exactly this method.
+Final build re-verified live after the last lint refactor (context reactivity + filtering re-checked, 0 errors).
 
 ## Caveats / open points
 
-- The static metadata parser is intentionally conservative: exotic but valid metadata (computed values, concatenation, `exports.name = ...` style) now yields `undefined`/`null` instead of a value. UI falls back to the file basename.
-- Chinese hardcoded UI string in `FolderDetailOverlay.tsx` and other audit cleanup items (dead code, duplicate menus) remain untouched (out of scope for phase 1).
-- Local dev deploy is configured via gitignored `.env` → test vault `C:\Users\flash\ObsidianTestVaults\ocap-smoke`; `npm run dev`/`build` will deploy there (and only there) until `.env` is changed.
+- Categories whose buttons are all context-hidden keep their header/tile in locked mode (not collapsed away yet).
+- Conditions UI is a JSON textarea (advanced); the visual condition builder is the documented next UI step and should trigger the planned modal consolidation (audit §12).
+- Mode switches in the live test went through the settings API (same code path as the nav menu) rather than mouse clicks on the nav dropdown.
+- Popout-window leaves are not context sources (root-split only); selection/cursor context not implemented (later phase).
+- Pre-existing: 6 dev-dependency `npm audit` findings (unchanged baseline); Dropbox can transiently lock `node_modules` (EBUSY on `npm ci`).
 
 ## Next step
 
-Start the OCAP foundation: `settingsVersion` + settings migration pipeline, followed by the first `OCAPContext`/ContextService with a declarative `conditions` model (see audit §12).
+Phase 3 candidates: visual condition editor (with `ButtonCreateModal`/`ButtonEditModal` consolidation), category-level conditions / empty-category collapsing in locked mode, then the first dynamic behaviors (enabledWhen, dynamic label/icon) on top of the same condition model.

@@ -9,7 +9,7 @@ import type { ButtonAction } from '@/types/action';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { t } from '@/utils/i18n';
 import { ActionSequence } from '@/actions/ActionSequence';
-import { NameInput, IconInput } from '@/components/input';
+import { NameInput, IconInput, ConditionsInput } from '@/components/input';
 
 /**
  * ButtonEditModal 按钮编辑模态框类。
@@ -32,6 +32,8 @@ export class ButtonEditModal extends Modal {
     nameInput: NameInput | null = null;
     // 图标输入组件实例
     iconInput: IconInput | null = null;
+    // OCAP visibility conditions input (advanced JSON editor)
+    conditionsInput: ConditionsInput | null = null;
 
     /**
      * 构造函数，初始化模态框和临时按钮对象。
@@ -130,6 +132,9 @@ export class ButtonEditModal extends Modal {
         // 设置初始值
         this.nameInput.setValue(this.tempButton.name || '');
         this.iconInput.setValue(this.tempButton.icon || '');
+
+        // OCAP: advanced visibility-conditions editor (JSON, validated on save)
+        this.conditionsInput = new ConditionsInput(container, this.tempButton.conditions);
     }
 
     /**
@@ -242,6 +247,13 @@ export class ButtonEditModal extends Modal {
             this.actionSequence.clearAllErrors();
         }
 
+        // 验证 OCAP 条件输入（JSON + 结构校验）
+        const conditionsResult = this.conditionsInput?.getResult();
+        if (conditionsResult && !conditionsResult.ok) {
+            new Notice(conditionsResult.error);
+            return;
+        }
+
         // 如果有错误，显示通知并返回
         if (hasError) {
             new Notice(t('please_complete_required_fields'));
@@ -250,6 +262,9 @@ export class ButtonEditModal extends Modal {
 
         // 更新临时按钮的动作（ActionSequence 序列化结果转为 ButtonAction[]）
         this.tempButton.actions = this.actionSequence.toJSON() as ButtonAction[];
+        // Explicitly assign (possibly undefined) so clearing the textarea
+        // removes previously saved conditions through the spread below.
+        this.tempButton.conditions = conditionsResult ? conditionsResult.conditions : undefined;
 
         // Replace the button with a new object instead of mutating it in place:
         // React.memo comparisons rely on a changed object identity to detect

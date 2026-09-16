@@ -1,6 +1,17 @@
 // settings.ts
 // 用户设置/配置相关类型定义。
 import type { ButtonAction } from '@/types/action';
+import type { ButtonCondition } from '@/types/conditions';
+
+/**
+ * Current settings schema version.
+ * Bump together with a new migration step in src/settings/settingsMigrations.ts.
+ * Version history:
+ * - 0 (implicit): unversioned upstream Buttons Panel settings (no settingsVersion field)
+ * - 1: settingsVersion introduced; nested defaults deep-merged; optional
+ *      ButtonConfig.conditions added (absent field = always visible)
+ */
+export const CURRENT_SETTINGS_VERSION = 1;
 
 /**
  * ButtonConfig 按钮配置对象类型。
@@ -25,6 +36,14 @@ export interface ButtonConfig {
     stopOnError?: boolean;
     /** 顺序执行时动作间延迟（毫秒） */
     delayBetweenActions?: number;
+    /**
+     * Optional declarative visibility condition (OCAP Context Engine).
+     * Absent/undefined = the button behaves exactly like a static upstream
+     * button and is always visible. Conditions are applied against the
+     * current OCAPContext snapshot in locked interaction mode only; in
+     * sort/edit mode the button stays manageable (visually marked).
+     */
+    conditions?: ButtonCondition;
 }
 
 /**
@@ -90,6 +109,12 @@ export interface PathConfig {
  * 包含所有分类、面板设置等。
  */
 export interface ButtonsPanelPluginSettings {
+    /**
+     * Settings schema version (see CURRENT_SETTINGS_VERSION).
+     * Data without this field is treated as version 0 (unversioned upstream
+     * data) and migrated by src/settings/settingsMigrations.ts.
+     */
+    settingsVersion: number;
     /** 分类数组 */
     categories: CategoryConfig[];
     /** 面板设置 */
@@ -103,6 +128,7 @@ export interface ButtonsPanelPluginSettings {
  * 提供插件初始化时的默认配置。
  */
 export const DEFAULT_SETTINGS: ButtonsPanelPluginSettings = {
+    settingsVersion: CURRENT_SETTINGS_VERSION,
     categories: [],
     panelConfig: {
         displayStyle: 'icon_top',

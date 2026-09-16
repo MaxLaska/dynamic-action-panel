@@ -136,3 +136,11 @@ body .buttons-panel .buttons-panel-container button.buttons-panel-simple-button.
     overflow: hidden;
     color: var(--text-muted);
 }
+
+/* OCAP: button hidden by its conditions in the current context, shown in
+   sort/edit mode with a visual marker so it stays manageable. */
+body .buttons-panel .buttons-panel-container button.buttons-panel-simple-button.ocap-context-hidden {
+    opacity: 0.45;
+    outline: 1px dashed var(--text-faint);
+    outline-offset: -1px;
+}

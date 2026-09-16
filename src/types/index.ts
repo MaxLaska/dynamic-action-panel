@@ -1,6 +1,7 @@
 // index.ts
 // 类型聚合导出文件，统一导出所有核心类型。
 export * from '@/types/action';
+export * from '@/types/conditions';
 export * from '@/types/settings';
 export * from '@/types/plugin';
 export * from '@/types/script';

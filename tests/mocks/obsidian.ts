@@ -17,6 +17,16 @@ export class Notice {
 
 export class WorkspaceLeaf {}
 
+export class TAbstractFile {
+    path = '';
+    name = '';
+}
+
+export class TFile extends TAbstractFile {
+    basename = '';
+    extension = '';
+}
+
 export class Modal {}
 
 export class Menu {}

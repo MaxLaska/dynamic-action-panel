@@ -12,10 +12,11 @@ import { Plugin, WorkspaceLeaf, TFile, Notice, normalizePath } from 'obsidian';
 import { ButtonsPanelView } from '@/views/ButtonsPanelView';
 import { ButtonsPanelSettingTab } from '@/settings/ButtonsPanelSettingTab';
 import {
-    DEFAULT_SETTINGS,
     ButtonsPanelPluginSettings,
 } from '@/types';
 import type { ButtonsPanelPlugin as ButtonsPanelPluginType } from '@/types';
+import { migrateSettings } from '@/settings/settingsMigrations';
+import { OCAPContextService } from '@/context/OCAPContextService';
 import { t, tWithParams } from '@/utils/i18n';
 
 // 视图类型常量
@@ -32,6 +33,8 @@ export default class ButtonsPanelPlugin extends Plugin {
     settingTab!: ButtonsPanelSettingTab;
     /** 按钮动作执行器对象 */
 	actionDispatcher!: ButtonsPanelPluginType['actionDispatcher'];
+    /** OCAP context service (reactive workspace context snapshot store) */
+    contextService!: OCAPContextService;
     /** 记录最后激活的内容标签页（排除按钮面板） */
     lastActiveContentLeaf: WorkspaceLeaf | null = null;
     /** 分类展开状态（运行时状态，不持久化） */
@@ -48,6 +51,11 @@ export default class ButtonsPanelPlugin extends Plugin {
             this.app,
             this
         );
+
+        // OCAP context service: subscribes to workspace/metadata events and
+        // provides the reactive context snapshot used for button conditions.
+        this.contextService = new OCAPContextService(this.app, [BUTTONS_PANEL_VIEW_TYPE]);
+        this.contextService.start();
 
         // 注册按钮面板视图
         this.registerView(
@@ -85,6 +93,9 @@ export default class ButtonsPanelPlugin extends Plugin {
 
         this.app.workspace.onLayoutReady(() => {
             void registerScriptCommands(this);
+            // The workspace layout (and thus the active content leaf) is only
+            // reliable now; rebuild the initial context snapshot.
+            this.contextService.refresh();
         });
 
         // 监听标签页切换，记录最后激活的标签页（排除按钮面板）
@@ -104,21 +115,30 @@ export default class ButtonsPanelPlugin extends Plugin {
     /**
      * 插件卸载时自动调用。
      */
-    onunload() {}
+    onunload() {
+        this.contextService?.stop();
+    }
 
     /**
-     * 加载插件设置（异步），合并默认设置和已保存设置。
+     * 加载插件设置（异步）：迁移/规范化持久化数据（settingsVersion 管道，
+     * 见 src/settings/settingsMigrations.ts），迁移结果持久化一次。
      */
     async loadSettings() {
-        const rawData = (await this.loadData()) as Record<string, unknown> | null;
+        const rawData: unknown = await this.loadData();
+        const result = migrateSettings(rawData);
+        this.settings = result.settings;
 
-        this.settings =
-            rawData && typeof rawData === 'object'
-                ? ({
-                      ...DEFAULT_SETTINGS,
-                      ...(rawData as Partial<ButtonsPanelPluginSettings>),
-                  })
-                : DEFAULT_SETTINGS;
+        if (result.status === 'future') {
+            console.warn(
+                `[OCAP] Stored settings use a newer schema version (${result.fromVersion}) ` +
+                    'than this plugin build supports; loading best-effort without rewriting them.'
+            );
+        } else if (result.changed) {
+            // Persist the migrated data once so the migration does not rerun
+            // on every load. Intentionally saveData (not saveSettings) to
+            // avoid re-render side effects during load.
+            await this.saveData(this.settings);
+        }
     }
 
     /**

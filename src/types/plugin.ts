@@ -2,6 +2,7 @@
 // 插件主类接口类型扩展，约束插件主类结构。
 import type { Plugin, SettingTab, WorkspaceLeaf } from 'obsidian';
 import { ButtonsPanelPluginSettings } from '@/types';
+import type { OCAPContextService } from '@/context/OCAPContextService';
 
 /**
  * ButtonsPanelPlugin 插件主类接口类型扩展。
@@ -18,6 +19,9 @@ export interface ButtonsPanelPlugin extends Plugin {
 
     /** 动作调度器实例（暴露最小可用表面，具体结构由实现类决定） */
     actionDispatcher: unknown;
+
+    /** OCAP context service (reactive workspace context snapshot store) */
+    contextService: OCAPContextService;
 
     /** 保存设置方法，异步 */
     saveSettings(): Promise<void>;

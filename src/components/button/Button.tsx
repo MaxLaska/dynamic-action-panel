@@ -5,6 +5,7 @@ import type { App } from 'obsidian';
 import { setTooltip } from 'obsidian';
 import { safeSetSVG } from '@/utils/dom';
 import { useButtonMenu } from '@/hooks';
+import { useContextHiddenButtonIds } from '@/contexts/OCAPVisibilityContext';
 
 interface SimpleButtonProps {
     button: ButtonConfig;
@@ -53,6 +54,11 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
     // 使用 hook 获取右键菜单处理函数
     const handleContextMenu = useButtonMenu(button, category);
 
+    // OCAP: in sort/edit mode a button hidden by its conditions stays
+    // rendered and manageable but gets a visual marker class.
+    const contextHiddenIds = useContextHiddenButtonIds();
+    const isContextHidden = contextHiddenIds.has(button.id);
+
     // 悬浮显示完整按钮名称（Obsidian 原生 tooltip 样式）
     React.useEffect(() => {
         const el = buttonRef.current;
@@ -86,11 +92,14 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
         if (enableAnimation) {
             names.push('with-animation');
         }
+        if (isContextHidden) {
+            names.push('ocap-context-hidden');
+        }
         if (className) {
             names.push(className);
         }
         return names.join(' ');
-    }, [displayStyle, enableAnimation, className]);
+    }, [displayStyle, enableAnimation, isContextHidden, className]);
 
     return (
         <button
