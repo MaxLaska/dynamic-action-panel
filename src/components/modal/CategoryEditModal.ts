@@ -2,10 +2,13 @@ import { App, Modal, Setting, Notice, TextComponent } from 'obsidian';
 import { ButtonsPanelPlugin } from '@/types/plugin';
 import { CategoryConfig } from '@/types';
 import { t } from '@/utils/i18n';
+import { ConditionEditor } from '@/components/input';
 
 /**
- * CategoryEditModal 分类编辑模态框类（目前仅支持重命名）。
+ * CategoryEditModal 分类编辑模态框类。
  * 用于输入新分类名称并保存，支持回车提交、空名校验。
+ * OCAP: additionally edits the category's visibility conditions with the
+ * shared visual ConditionEditor.
  */
 export class CategoryEditModal extends Modal {
     // 插件主类实例
@@ -14,12 +17,16 @@ export class CategoryEditModal extends Modal {
     categoryId: string;
     // 旧的分类名称
     oldCategoryName: string;
+    // 旧的分类可见性条件
+    private oldConditions: CategoryConfig['conditions'];
     // 重命名后的回调函数
     onRename: () => void;
     // 输入框当前的新分类名称
     newName: string;
     // 输入框组件引用（Obsidian Setting 的 text 控件）
     private nameInput: TextComponent | null = null;
+    // OCAP visibility conditions editor (visual builder + advanced JSON)
+    private conditionsInput: ConditionEditor | null = null;
 
     /**
      * 构造函数，初始化模态框。
@@ -38,6 +45,7 @@ export class CategoryEditModal extends Modal {
         this.plugin = plugin;
         this.categoryId = category.id;
         this.oldCategoryName = category.name;
+        this.oldConditions = category.conditions;
         this.onRename = onRename;
         this.newName = category.name;
     }
@@ -72,6 +80,11 @@ export class CategoryEditModal extends Modal {
             });
         });
 
+        // OCAP: visual visibility-conditions editor (validated on save)
+        this.conditionsInput = new ConditionEditor(contentEl, this.oldConditions, {
+            description: t('conditions_category_desc'),
+        });
+
         // 底部操作按钮：保存/取消
         new Setting(contentEl)
             .addButton((button) =>
@@ -90,7 +103,7 @@ export class CategoryEditModal extends Modal {
     }
 
     /**
-     * 处理保存逻辑，校验输入并更新分类名称。
+     * 处理保存逻辑，校验输入并更新分类名称与可见性条件。
      */
     handleSave() {
         if (!this.newName || this.newName.trim() === '') {
@@ -102,12 +115,29 @@ export class CategoryEditModal extends Modal {
         // 清除错误状态
         this.nameInput?.inputEl.classList.remove('input-error');
 
+        // 验证 OCAP 条件输入（可视化编辑器 / JSON）
+        const conditionsResult = this.conditionsInput?.getResult();
+        if (conditionsResult && !conditionsResult.ok) {
+            new Notice(conditionsResult.error);
+            return;
+        }
+
         // 不再检测重名，允许同名分类
 
-        // 根据ID查找并重命名分类
-        const category = this.plugin.settings.categories.find((c) => c.id === this.categoryId);
-        if (category) {
-            category.name = this.newName.trim();
+        // 根据ID查找分类并用新对象替换：
+        // 对象身份约定（DECISIONS.md）——内容变化必须产生新的对象引用。
+        const categories = this.plugin.settings.categories;
+        const index = categories.findIndex((c) => c.id === this.categoryId);
+        if (index > -1) {
+            const updated: CategoryConfig = {
+                ...categories[index]!,
+                name: this.newName.trim(),
+                // Explicitly assign (possibly undefined) so clearing the editor
+                // removes previously saved conditions (undefined is dropped by
+                // JSON serialization on save).
+                conditions: conditionsResult ? conditionsResult.conditions : undefined,
+            };
+            categories[index] = updated;
             void this.plugin.saveSettings();
             this.onRename();
             this.close();

@@ -83,15 +83,19 @@ export class OCAPContextService {
         );
 
         // If the tracked content leaf disappeared (closed/detached), fall back
-        // to the most recent leaf in the main area.
+        // to the most recent leaf in the main area. Independently of that, a
+        // leaf can swap its view in place (e.g. an empty tab that opens a
+        // file in the same tab) without emitting active-leaf-change or
+        // file-open — so always rebuild here; refresh() deduplicates via
+        // contextSnapshotsEqual, keeping this cheap.
         this.track(
             workspace,
             workspace.on('layout-change', () => {
                 if (this.contentLeaf && !this.isContentLeaf(this.contentLeaf)) {
                     this.contentLeaf = null;
                     this.adoptMostRecentLeaf();
-                    this.refresh();
                 }
+                this.refresh();
             })
         );
 

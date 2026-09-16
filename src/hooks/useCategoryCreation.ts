@@ -3,6 +3,7 @@ import { usePluginContext } from '@/contexts/PluginContext';
 import { useRefresh } from './useRefresh';
 import { CategoryCreateModal } from '@/components/modal/CategoryCreateModal';
 import type { CategoryConfig } from '@/types';
+import type { ButtonCondition } from '@/types/conditions';
 
 /**
  * useCategoryCreation Hook
@@ -21,7 +22,7 @@ export function useCategoryCreation() {
      */
     const createCategory = useCallback(
         (onCreated?: (category: CategoryConfig) => void) => {
-            new CategoryCreateModal(app, plugin, (categoryName: string) => {
+            new CategoryCreateModal(app, plugin, (categoryName: string, conditions: ButtonCondition | undefined) => {
                 void (async () => {
                     const newCategory: CategoryConfig = {
                         id: Date.now().toString(),
@@ -29,6 +30,9 @@ export function useCategoryCreation() {
                         order: plugin.settings.categories.length,
                         buttons: [],
                     };
+                    if (conditions !== undefined) {
+                        newCategory.conditions = conditions;
+                    }
                     plugin.settings.categories.push(newCategory);
                     await plugin.saveSettings();
                     refresh();

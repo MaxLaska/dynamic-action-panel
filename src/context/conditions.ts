@@ -15,11 +15,11 @@ import type {
     ConditionRule,
     ConditionScalar,
 } from '@/types/conditions';
-import type { ButtonConfig, CategoryConfig } from '@/types/settings';
+import type { ButtonConfig, CategoryConfig, InteractionMode } from '@/types/settings';
 import type { OCAPContextSnapshot } from '@/context/OCAPContext';
 
 /** Maximum nesting depth accepted by the validator (guards against cycles). */
-const MAX_CONDITION_DEPTH = 32;
+export const MAX_CONDITION_DEPTH = 32;
 
 const PATH_OPS = ['equals', 'startsWith', 'contains'] as const;
 const FOLDER_OPS = ['equals', 'startsWith'] as const;
@@ -253,26 +253,61 @@ export function isButtonVisibleInContext(
 }
 
 /**
- * Filter categories down to context-visible buttons.
- * Category objects are kept identical when none of their buttons is hidden so
- * memoized React subtrees are not invalidated unnecessarily. Categories are
- * kept even if all their buttons are hidden (their header/tile stays).
+ * Visibility of a category's own condition in the given context.
+ * Same semantics as buttons: no condition => visible; structurally invalid
+ * condition data fails open (visible).
+ * Note: this only evaluates the category's own condition; whether the
+ * category is actually rendered in locked mode additionally requires at
+ * least one visible button (see filterCategoriesByContext).
+ */
+export function isCategoryVisibleInContext(
+    category: CategoryConfig,
+    context: OCAPContextSnapshot
+): boolean {
+    const conditions = category.conditions;
+    if (conditions === undefined || conditions === null) {
+        return true;
+    }
+    if (!isValidCondition(conditions)) {
+        return true;
+    }
+    return evaluateCondition(conditions, context);
+}
+
+/**
+ * Locked-mode projection of categories to what the user can actually use:
+ * - buttons hidden by their conditions are removed;
+ * - a category is removed entirely when its own condition does not hold OR
+ *   when no visible button remains (a category without visible buttons has
+ *   nothing to offer in consumption mode).
+ * Category objects are kept identical when none of their buttons is hidden
+ * so memoized React subtrees are not invalidated unnecessarily.
  */
 export function filterCategoriesByContext(
     categories: CategoryConfig[],
     context: OCAPContextSnapshot
 ): CategoryConfig[] {
     let anyChanged = false;
-    const result = categories.map((category) => {
+    const result: CategoryConfig[] = [];
+    for (const category of categories) {
+        if (!isCategoryVisibleInContext(category, context)) {
+            anyChanged = true;
+            continue;
+        }
         const visibleButtons = category.buttons.filter((button) =>
             isButtonVisibleInContext(button, context)
         );
-        if (visibleButtons.length === category.buttons.length) {
-            return category;
+        if (visibleButtons.length === 0) {
+            anyChanged = true;
+            continue;
         }
-        anyChanged = true;
-        return { ...category, buttons: visibleButtons };
-    });
+        if (visibleButtons.length === category.buttons.length) {
+            result.push(category);
+        } else {
+            anyChanged = true;
+            result.push({ ...category, buttons: visibleButtons });
+        }
+    }
     return anyChanged ? result : categories;
 }
 
@@ -293,4 +328,64 @@ export function collectContextHiddenButtonIds(
         }
     }
     return hidden;
+}
+
+/**
+ * Ids of all categories whose own condition does not hold in the given
+ * context. Used in sort/edit mode to visually mark (instead of hide) those
+ * categories. Mirrors the button marker semantics: the marker reflects the
+ * element's own condition only (a category that would additionally vanish in
+ * locked mode because all its buttons are hidden is not marked — its dimmed
+ * buttons already show that).
+ */
+export function collectContextHiddenCategoryIds(
+    categories: CategoryConfig[],
+    context: OCAPContextSnapshot
+): Set<string> {
+    const hidden = new Set<string>();
+    for (const category of categories) {
+        if (!isCategoryVisibleInContext(category, context)) {
+            hidden.add(category.id);
+        }
+    }
+    return hidden;
+}
+
+/** Shared empty set for projections that hide nothing / mark nothing. */
+export const EMPTY_ID_SET: ReadonlySet<string> = new Set<string>();
+
+/**
+ * Central projection of the configured categories to what a view mode should
+ * render for the given context and interaction mode. All context-visibility
+ * decisions live here; List/Tab/Folder mode receive the result as-is.
+ * - locked (consumption): categories/buttons are filtered, nothing is marked;
+ * - sort/edit (management): everything stays rendered (identical references),
+ *   context-hidden buttons and categories are reported for visual marking.
+ */
+export interface PanelContextProjection {
+    /** Categories the active view mode should render. */
+    categories: CategoryConfig[];
+    /** Buttons to mark as context-hidden (management modes only). */
+    hiddenButtonIds: ReadonlySet<string>;
+    /** Categories to mark as context-hidden (management modes only). */
+    hiddenCategoryIds: ReadonlySet<string>;
+}
+
+export function projectCategoriesForContext(
+    categories: CategoryConfig[],
+    context: OCAPContextSnapshot,
+    interactionMode: InteractionMode
+): PanelContextProjection {
+    if (interactionMode === 'locked') {
+        return {
+            categories: filterCategoriesByContext(categories, context),
+            hiddenButtonIds: EMPTY_ID_SET,
+            hiddenCategoryIds: EMPTY_ID_SET,
+        };
+    }
+    return {
+        categories,
+        hiddenButtonIds: collectContextHiddenButtonIds(categories, context),
+        hiddenCategoryIds: collectContextHiddenCategoryIds(categories, context),
+    };
 }

@@ -1,0 +1,141 @@
+/* ConditionEditor.css
+   Visual condition builder used in the button and category modals.
+   Uses Obsidian CSS variables only (dark/light theme compatible). */
+
+.buttons-panel .ocap-condition-editor-heading {
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.buttons-panel .ocap-condition-editor {
+    margin-bottom: var(--size-4-3);
+}
+
+/* ---- builder ---- */
+
+.buttons-panel .ocap-condition-builder {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-1);
+}
+
+.buttons-panel .ocap-condition-empty {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+}
+
+.buttons-panel .ocap-condition-empty-hint {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.buttons-panel .ocap-condition-group {
+    border-left: 2px solid var(--background-modifier-border);
+    padding-left: var(--size-4-2);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-1);
+}
+
+.buttons-panel .ocap-condition-group-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1);
+}
+
+.buttons-panel .ocap-condition-group-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--size-2-1);
+    margin-left: auto;
+}
+
+.buttons-panel .ocap-condition-group-children {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-1);
+}
+
+.buttons-panel .ocap-condition-empty-group-hint {
+    color: var(--text-faint);
+    font-size: var(--font-ui-smaller);
+    padding: var(--size-2-1) 0;
+}
+
+.buttons-panel .ocap-condition-rule {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--size-4-1);
+}
+
+.buttons-panel .ocap-condition-rule select.dropdown,
+.buttons-panel .ocap-condition-group-header select.dropdown {
+    font-size: var(--font-ui-small);
+    height: auto;
+    padding-top: var(--size-2-1);
+    padding-bottom: var(--size-2-1);
+}
+
+.buttons-panel .ocap-condition-value {
+    flex: 1 1 90px;
+    min-width: 70px;
+    font-size: var(--font-ui-small);
+}
+
+.buttons-panel .ocap-condition-property-key {
+    flex: 0 1 110px;
+}
+
+.buttons-panel .ocap-condition-icon-button {
+    color: var(--text-muted);
+    padding: var(--size-2-1);
+}
+
+.buttons-panel .ocap-condition-icon-button:hover {
+    color: var(--text-normal);
+}
+
+.buttons-panel .ocap-condition-icon-button[disabled] {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.buttons-panel .ocap-condition-add {
+    font-size: var(--font-ui-small);
+}
+
+/* ---- advanced JSON section ---- */
+
+.buttons-panel .ocap-condition-advanced {
+    margin-top: var(--size-4-2);
+}
+
+.buttons-panel .ocap-condition-advanced summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    user-select: none;
+}
+
+.buttons-panel .ocap-condition-advanced textarea.ocap-conditions-textarea {
+    width: 100%;
+    margin-top: var(--size-4-1);
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    resize: vertical;
+}
+
+.buttons-panel .ocap-condition-advanced textarea.input-error {
+    border-color: var(--text-error);
+}
+
+.buttons-panel .ocap-condition-advanced-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: var(--size-2-2);
+}
+
+.buttons-panel .ocap-condition-advanced-actions button {
+    font-size: var(--font-ui-small);
+}

@@ -11,6 +11,7 @@ import { AddButton } from '@/components/shared/AddButton';
 import { AddCategoryButton } from '@/components/shared/AddCategoryButton';
 import { IconButton } from '@/components/shared/IconButton';
 import { createCategoryMenuHandler } from '@/utils/categoryMenuUtils';
+import { useContextHiddenCategoryIds } from '@/contexts/OCAPVisibilityContext';
 import { t } from '@/utils/i18n';
 
 function resolveActiveTabId(
@@ -46,6 +47,9 @@ export const TabsModeContent: React.FC<TabsModeContentProps> = ({
     const categoryDrag = useCategoryDragOptional();
     const { createCategory } = useCategoryCreation();
     const { createButton } = useButtonCreation();
+    // OCAP: in sort/edit mode a category whose own condition does not hold
+    // stays rendered and manageable but its tab gets a visual marker class.
+    const contextHiddenCategoryIds = useContextHiddenCategoryIds();
     const tabRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
 
     const [activeTabId, setActiveTabId] = useState<string | null>(() =>
@@ -194,7 +198,11 @@ export const TabsModeContent: React.FC<TabsModeContentProps> = ({
 
     const renderTab = (category: CategoryConfig) => {
         const isActive = category.id === activeTabId;
-        const tabClassNames = ['buttons-panel-tab', isActive && 'is-active']
+        const tabClassNames = [
+            'buttons-panel-tab',
+            isActive && 'is-active',
+            contextHiddenCategoryIds.has(category.id) && 'ocap-context-hidden',
+        ]
             .filter(Boolean)
             .join(' ');
 

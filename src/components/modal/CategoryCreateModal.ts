@@ -1,20 +1,26 @@
 import { App, Modal, Setting, Notice, TextComponent } from 'obsidian';
 import { ButtonsPanelPlugin } from '@/types/plugin';
+import type { ButtonCondition } from '@/types/conditions';
 import { t } from '@/utils/i18n';
+import { ConditionEditor } from '@/components/input';
 
 /**
  * CategoryCreateModal 分类创建模态框。
  * 用于弹出对话框让用户输入新分类名称，并回调创建逻辑。
+ * OCAP: optionally sets the category's visibility conditions with the shared
+ * visual ConditionEditor.
  */
 export class CategoryCreateModal extends Modal {
     /** 插件主类实例 */
     plugin: ButtonsPanelPlugin;
-    /** 创建分类后的回调函数，参数为新分类名称 */
-    onCreate: (categoryName: string) => void;
+    /** 创建分类后的回调函数，参数为新分类名称与可选的可见性条件 */
+    onCreate: (categoryName: string, conditions: ButtonCondition | undefined) => void;
     /** 输入框当前的分类名称 */
     newName: string;
     /** 输入框组件引用（Obsidian Setting 的 text 控件） */
     private nameInput: TextComponent | null = null;
+    /** OCAP visibility conditions editor (visual builder + advanced JSON) */
+    private conditionsInput: ConditionEditor | null = null;
 
     /**
      * 构造函数，初始化模态框。
@@ -22,7 +28,11 @@ export class CategoryCreateModal extends Modal {
      * @param plugin 插件主类实例
      * @param onCreate 创建分类的回调函数
      */
-    constructor(app: App, plugin: ButtonsPanelPlugin, onCreate: (categoryName: string) => void) {
+    constructor(
+        app: App,
+        plugin: ButtonsPanelPlugin,
+        onCreate: (categoryName: string, conditions: ButtonCondition | undefined) => void
+    ) {
         super(app);
         this.plugin = plugin;
         this.onCreate = onCreate;
@@ -60,6 +70,11 @@ export class CategoryCreateModal extends Modal {
             });
         });
 
+        // OCAP: visual visibility-conditions editor (validated on save)
+        this.conditionsInput = new ConditionEditor(contentEl, undefined, {
+            description: t('conditions_category_desc'),
+        });
+
         // 底部操作按钮：保存/取消
         new Setting(contentEl)
             .addButton((button) =>
@@ -91,8 +106,18 @@ export class CategoryCreateModal extends Modal {
         // 清除错误状态
         this.nameInput?.inputEl.classList.remove('input-error');
 
+        // 验证 OCAP 条件输入（可视化编辑器 / JSON）
+        const conditionsResult = this.conditionsInput?.getResult();
+        if (conditionsResult && !conditionsResult.ok) {
+            new Notice(conditionsResult.error);
+            return;
+        }
+
         // 回调创建逻辑
-        this.onCreate(this.newName.trim());
+        this.onCreate(
+            this.newName.trim(),
+            conditionsResult ? conditionsResult.conditions : undefined
+        );
         this.close();
     }
 

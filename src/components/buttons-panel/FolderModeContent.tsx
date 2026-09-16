@@ -12,6 +12,7 @@ import { AddCategoryButton } from '@/components/shared/AddCategoryButton';
 import { createCategoryMenuHandler } from '@/utils/categoryMenuUtils';
 import { categorySortableId } from '@/utils/categoryDragItems';
 import { useConfigContext } from '@/contexts/ConfigContext';
+import { useContextHiddenCategoryIds } from '@/contexts/OCAPVisibilityContext';
 import { t } from '@/utils/i18n';
 
 interface FolderModeContentProps {
@@ -35,6 +36,9 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
     const categoryDrag = useCategoryDragOptional();
     const { createCategory } = useCategoryCreation();
     const { createButton } = useButtonCreation();
+    // OCAP: in sort/edit mode a category whose own condition does not hold
+    // stays rendered and manageable but its tile gets a visual marker class.
+    const contextHiddenCategoryIds = useContextHiddenCategoryIds();
 
     // 默认不自动展开
     const [openCategoryId, setOpenCategoryId] = React.useState<string | null>(null);
@@ -310,7 +314,16 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
             : [...category.buttons].sort((a, b) => a.order - b.order);
 
         const tile = (
-            <CategoryFolderTile category={category} previewButtons={orderedButtons} showCount={panelConfig.folderShowBtnCount ?? true} />
+            <CategoryFolderTile
+                category={category}
+                previewButtons={orderedButtons}
+                showCount={panelConfig.folderShowBtnCount ?? true}
+                className={
+                    contextHiddenCategoryIds.has(category.id)
+                        ? 'ocap-context-hidden'
+                        : undefined
+                }
+            />
         );
 
         const handleOpen = () => openFolder(category.id);

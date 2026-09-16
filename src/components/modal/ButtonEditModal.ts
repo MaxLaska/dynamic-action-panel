@@ -9,7 +9,7 @@ import type { ButtonAction } from '@/types/action';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { t } from '@/utils/i18n';
 import { ActionSequence } from '@/actions/ActionSequence';
-import { NameInput, IconInput, ConditionsInput } from '@/components/input';
+import { NameInput, IconInput, ConditionEditor } from '@/components/input';
 
 /**
  * ButtonEditModal 按钮编辑模态框类。
@@ -32,8 +32,8 @@ export class ButtonEditModal extends Modal {
     nameInput: NameInput | null = null;
     // 图标输入组件实例
     iconInput: IconInput | null = null;
-    // OCAP visibility conditions input (advanced JSON editor)
-    conditionsInput: ConditionsInput | null = null;
+    // OCAP visibility conditions editor (visual builder + advanced JSON)
+    conditionsInput: ConditionEditor | null = null;
 
     /**
      * 构造函数，初始化模态框和临时按钮对象。
@@ -133,8 +133,8 @@ export class ButtonEditModal extends Modal {
         this.nameInput.setValue(this.tempButton.name || '');
         this.iconInput.setValue(this.tempButton.icon || '');
 
-        // OCAP: advanced visibility-conditions editor (JSON, validated on save)
-        this.conditionsInput = new ConditionsInput(container, this.tempButton.conditions);
+        // OCAP: visual visibility-conditions editor (validated on save)
+        this.conditionsInput = new ConditionEditor(container, this.tempButton.conditions);
     }
 
     /**

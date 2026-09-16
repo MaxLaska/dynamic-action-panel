@@ -9,7 +9,10 @@ import type { ButtonCondition } from '@/types/conditions';
  * Version history:
  * - 0 (implicit): unversioned upstream Buttons Panel settings (no settingsVersion field)
  * - 1: settingsVersion introduced; nested defaults deep-merged; optional
- *      ButtonConfig.conditions added (absent field = always visible)
+ *      ButtonConfig.conditions added (absent field = always visible).
+ *      Phase 3 additionally added optional CategoryConfig.conditions — a
+ *      purely additive optional field that requires no data transformation,
+ *      so it stays within version 1.
  */
 export const CURRENT_SETTINGS_VERSION = 1;
 
@@ -59,6 +62,16 @@ export interface CategoryConfig {
     order: number;
     /** 分类下的按钮数组 */
     buttons: ButtonConfig[];
+    /**
+     * Optional declarative visibility condition (OCAP Context Engine), same
+     * model as ButtonConfig.conditions. Absent/undefined = always visible.
+     * In locked mode a category is rendered only when this condition holds
+     * AND at least one of its buttons is context-visible; in sort/edit mode
+     * the category stays rendered and manageable (visually marked).
+     * Optional additive field: existing version-1 settings stay valid, so no
+     * settingsVersion bump / migration step is required.
+     */
+    conditions?: ButtonCondition;
 }
 
 /** 交互模式：locked(锁定布局)、sort(排序模式)、edit(编辑模式) */

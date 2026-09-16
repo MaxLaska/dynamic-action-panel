@@ -11,6 +11,7 @@ import { useCategoryCreation, useButtonCreation } from '@/hooks';
 import { AddButton } from '@/components/shared/AddButton';
 import { AddCategoryButton } from '@/components/shared/AddCategoryButton';
 import { createCategoryMenuHandler } from '@/utils/categoryMenuUtils';
+import { useContextHiddenCategoryIds } from '@/contexts/OCAPVisibilityContext';
 import { t } from '@/utils/i18n';
 
 interface ListModeContentProps {
@@ -35,6 +36,9 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
     const categoryDrag = useCategoryDragOptional();
     const { createCategory } = useCategoryCreation();
     const { createButton } = useButtonCreation();
+    // OCAP: in sort/edit mode a category whose own condition does not hold
+    // stays rendered and manageable but gets a visual marker class.
+    const contextHiddenCategoryIds = useContextHiddenCategoryIds();
     const titleRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
     const titleRefCallbacks = React.useRef(
         new Map<string, (el: HTMLDivElement | null) => void>()
@@ -266,7 +270,10 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
         const categoryClassNames = [
             'buttons-panel-category',
             isVisuallyOpen ? 'list-category-open' : 'list-category-closed',
-        ].join(' ');
+            contextHiddenCategoryIds.has(category.id) && 'ocap-context-hidden',
+        ]
+            .filter(Boolean)
+            .join(' ');
 
         if (categorySortEnabled) {
             return (

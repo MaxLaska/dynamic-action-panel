@@ -81,13 +81,54 @@ This file records durable decisions only. Do not use it as a work log.
 
 **Reason:** Locked is the consumption mode; sort/edit are management modes where hiding configuration targets would make conditioned buttons uneditable (edit mode has the context menu, sort mode the drag surface). Filtering in one place keeps all view modes and the DnD provider consistent, and DnD (sort-only) always operates on unfiltered lists.
 
+## 2026-09-16 – One visual condition editor operating directly on the condition model
+
+**Decision:** The visual condition builder (`src/components/input/ConditionEditor.ts`) edits the declarative `ButtonCondition` tree directly through pure immutable helpers (`src/context/conditionTree.ts`). There is no second/parallel editing model. The editor is a reusable, self-contained imperative component (constructor + `getResult()`), shared by button and category modals and available to future consumers (`enabledWhen`, …); no broader modal consolidation was performed because none was needed for reuse.
+
+**Canonicalization:** the editor normalizes a bare-rule root to a group on load (`all [x] ≡ x`, semantically identical); NOT groups always hold exactly one child (deleting the child deletes the NOT; converting a multi-child group to NOT wraps the children losslessly in a group of the previous kind).
+
+**Editor-state rule:** control callbacks must read the live node at their tree path (`currentRuleAt`), never the rule object captured at render time — text inputs update the tree without re-rendering, so captured objects go stale (this caused a real data-loss bug found in the live test).
+
+**Reason:** A parallel editing model would drift from the persisted schema and double the validation surface. Pure tree helpers keep all manipulation logic unit-testable without DOM.
+
+## 2026-09-16 – Advanced JSON view stays, bidirectional but explicit, never silently saved
+
+**Decision:** The JSON textarea remains as a collapsed "Advanced: JSON" section inside the ConditionEditor. Builder → JSON syncs live; JSON → builder only via the explicit Apply button (validated). Unapplied JSON edits take precedence at save time and are validated there: invalid JSON or schema violations block the save with a Notice. Structurally invalid stored conditions (which fail open at runtime) are surfaced in this section for correction. Incomplete builder state (e.g. property rule without key) also blocks the save.
+
+**Reason:** Full keystroke-level bidirectional sync would fight the user mid-typing; an explicit Apply keeps both representations consistent without data loss, and the save-time validation guarantees nothing invalid is ever silently persisted or dropped.
+
+## 2026-09-16 – Category visibility semantics in locked mode
+
+**Decision:** `CategoryConfig.conditions?: ButtonCondition` uses the identical condition model and fail-open rules as buttons. In locked (consumption) mode a category is rendered iff (1) its own condition holds or none is set AND (2) at least one of its buttons is context-visible. A category with zero visible buttons — including a category with no buttons at all — disappears entirely. This applies uniformly to list, tabs and folder mode because filtering happens centrally before the modes render.
+
+**Reason:** Locked mode is for consumption; a category offering nothing actionable is noise. Tying the rule to "visible buttons" (not "was emptied by conditions") keeps the semantics simple and predictable.
+
+## 2026-09-16 – One central rendering projection
+
+**Decision:** `projectCategoriesForContext(categories, context, interactionMode)` in `src/context/conditions.ts` is the single decision point for context visibility: locked mode gets filtered categories, sort/edit get untouched references plus `hiddenButtonIds`/`hiddenCategoryIds` marker sets (distributed via `OCAPVisibilityContext`). View modes never evaluate conditions themselves.
+
+**Marker semantics:** an element is marked context-hidden iff its **own** condition fails (categories are not marked merely because all their buttons are hidden — the dimmed buttons already show that). Category markers use the same `ocap-context-hidden` class on the list title / tab / folder tile.
+
+**Reason:** One projection keeps the three view modes and the DnD provider consistent, is unit-testable in isolation, and gives later features (dynamic behaviors) a single extension point.
+
+## 2026-09-16 – Category conditions do not bump the settings version
+
+**Decision:** `settingsVersion` stays at 1. `CategoryConfig.conditions` is a purely additive optional field: absent means "always visible", no existing persisted data needs transformation, and version-1 data written by Phase 3 remains loadable by Phase 2 builds. Version bumps are reserved for actual data transformations or incompatible semantic changes.
+
+**Reason:** Reflexive version bumps would force no-op migrations on every synced device and create artificial "future version" states in mixed-version vaults.
+
+## 2026-09-16 – Context snapshot rebuilds on every layout-change
+
+**Decision:** `OCAPContextService` rebuilds the snapshot on every `layout-change` (deduplicated via `contextSnapshotsEqual`), not only when the tracked leaf was detached. A leaf can swap its view in place (empty tab → file opened in the same tab) without emitting `active-leaf-change` or `file-open`.
+
+**Reason:** Live-verified gap: after closing all tabs and opening a file in the new tab, the context stayed stale and conditioned categories never reappeared.
+
 ## Open decisions
 
 The following are still open:
 
-- visual condition editor design (and the related Button modal consolidation);
-- category-level conditions and empty-category behavior in locked mode;
-- final dynamic-component extension API;
-- test coverage targets and component/UI testing approach (unit-test stack is decided: Vitest);
+- final dynamic-component extension API (`enabledWhen`, dynamic label/icon next);
+- test coverage targets and component/UI testing approach (unit-test stack is decided: Vitest; editor DOM currently covered by live smoke tests only);
+- locked-mode empty state when every category is context-hidden;
 - packaging and release strategy for OCAP;
 - final OCAP manifest `id` and public product naming details.

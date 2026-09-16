@@ -8,7 +8,7 @@ export { ScriptInput } from '@/components/input/ScriptInput';
 export { UrlInput } from '@/components/input/UrlInput';
 export { IconInput } from '@/components/input/IconInput';
 export { NameInput } from '@/components/input/NameInput';
-export { ConditionsInput } from '@/components/input/ConditionsInput';
+export { ConditionEditor } from '@/components/input/ConditionEditor';
 
 // 组件类型定义导出
 export type { FileInputOptions } from '@/components/input/FileInput';

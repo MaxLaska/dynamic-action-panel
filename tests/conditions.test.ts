@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
     collectContextHiddenButtonIds,
+    collectContextHiddenCategoryIds,
     evaluateCondition,
     filterCategoriesByContext,
     isButtonVisibleInContext,
+    isCategoryVisibleInContext,
     isValidCondition,
+    projectCategoriesForContext,
 } from '@/context/conditions';
 import { buildContextSnapshot, EMPTY_OCAP_CONTEXT } from '@/context/OCAPContext';
 import type { ButtonCondition } from '@/types/conditions';
@@ -37,6 +40,18 @@ function makeButton(id: string, conditions?: ButtonCondition): ButtonConfig {
         button.conditions = conditions;
     }
     return button;
+}
+
+function makeCategory(
+    id: string,
+    buttons: ButtonConfig[],
+    conditions?: ButtonCondition
+): CategoryConfig {
+    const category: CategoryConfig = { id, name: id, order: 0, buttons };
+    if (conditions !== undefined) {
+        category.conditions = conditions;
+    }
+    return category;
 }
 
 describe('isValidCondition', () => {
@@ -377,13 +392,161 @@ describe('filterCategoriesByContext', () => {
         expect(result[0]).not.toBe(categories[0]);
     });
 
-    it('keeps a category whose buttons are all hidden', () => {
+    it('drops a category whose buttons are all hidden (phase 3 semantics)', () => {
         const onlyPdf: CategoryConfig[] = [
             { id: 'c', name: 'C', order: 0, buttons: [pdfButton] },
         ];
-        const result = filterCategoriesByContext(onlyPdf, markdownContext);
+        expect(filterCategoriesByContext(onlyPdf, markdownContext)).toHaveLength(0);
+    });
+
+    it('drops a category without any buttons in locked mode', () => {
+        const empty: CategoryConfig[] = [makeCategory('c', [])];
+        expect(filterCategoriesByContext(empty, markdownContext)).toHaveLength(0);
+    });
+
+    it('drops a category whose own condition does not hold, even with visible buttons', () => {
+        const cats: CategoryConfig[] = [
+            makeCategory('c', [staticButton], { rule: 'viewType', value: 'pdf' }),
+        ];
+        expect(filterCategoriesByContext(cats, markdownContext)).toHaveLength(0);
+        // Same category matches in the pdf context.
+        expect(filterCategoriesByContext(cats, pdfContext)).toHaveLength(1);
+    });
+
+    it('keeps a matching category with at least one visible button', () => {
+        const cats: CategoryConfig[] = [
+            makeCategory('c', [pdfButton, staticButton], {
+                rule: 'viewType',
+                value: 'markdown',
+            }),
+        ];
+        const result = filterCategoriesByContext(cats, markdownContext);
         expect(result).toHaveLength(1);
-        expect(result[0]!.buttons).toEqual([]);
+        expect(result[0]!.buttons.map((b) => b.id)).toEqual(['static']);
+    });
+
+    it('drops a matching category whose buttons are all hidden', () => {
+        const cats: CategoryConfig[] = [
+            makeCategory('c', [pdfButton], { rule: 'viewType', value: 'markdown' }),
+        ];
+        expect(filterCategoriesByContext(cats, markdownContext)).toHaveLength(0);
+    });
+
+    it('applies nested category conditions', () => {
+        const nested: ButtonCondition = {
+            all: [
+                { rule: 'viewType', value: 'markdown' },
+                { any: [{ rule: 'tag', value: 'project' }, { rule: 'tag', value: 'nope' }] },
+                { not: { rule: 'property', key: 'status', op: 'equals', value: 'done' } },
+            ],
+        };
+        const cats: CategoryConfig[] = [makeCategory('c', [staticButton], nested)];
+        expect(filterCategoriesByContext(cats, markdownContext)).toHaveLength(1);
+        expect(filterCategoriesByContext(cats, pdfContext)).toHaveLength(0);
+    });
+
+    it('keeps static categories with static buttons untouched (identity preserved)', () => {
+        const cats: CategoryConfig[] = [
+            makeCategory('a', [staticButton]),
+            makeCategory('b', [makeButton('other')]),
+        ];
+        expect(filterCategoriesByContext(cats, markdownContext)).toBe(cats);
+        expect(filterCategoriesByContext(cats, EMPTY_OCAP_CONTEXT)).toBe(cats);
+    });
+
+    it('fails open for invalid category condition data', () => {
+        const category = makeCategory('c', [staticButton]);
+        (category as unknown as Record<string, unknown>)['conditions'] = {
+            rule: 'no-such-rule',
+        };
+        expect(filterCategoriesByContext([category], markdownContext)).toHaveLength(1);
+    });
+});
+
+describe('isCategoryVisibleInContext', () => {
+    it('categories without conditions are always visible', () => {
+        expect(isCategoryVisibleInContext(makeCategory('c', []), markdownContext)).toBe(true);
+        expect(isCategoryVisibleInContext(makeCategory('c', []), EMPTY_OCAP_CONTEXT)).toBe(
+            true
+        );
+    });
+
+    it('applies valid conditions', () => {
+        const category = makeCategory('c', [], { rule: 'viewType', value: 'markdown' });
+        expect(isCategoryVisibleInContext(category, markdownContext)).toBe(true);
+        expect(isCategoryVisibleInContext(category, pdfContext)).toBe(false);
+    });
+
+    it('fails open for invalid condition data', () => {
+        const category = makeCategory('c', []);
+        (category as unknown as Record<string, unknown>)['conditions'] = 'garbage';
+        expect(isCategoryVisibleInContext(category, markdownContext)).toBe(true);
+        (category as unknown as Record<string, unknown>)['conditions'] = null;
+        expect(isCategoryVisibleInContext(category, markdownContext)).toBe(true);
+    });
+});
+
+describe('collectContextHiddenCategoryIds', () => {
+    it('collects exactly the categories whose own condition fails', () => {
+        const categories: CategoryConfig[] = [
+            makeCategory('static', [makeButton('b1')]),
+            makeCategory('md', [makeButton('b2')], { rule: 'viewType', value: 'markdown' }),
+            makeCategory('pdf', [makeButton('b3')], { rule: 'viewType', value: 'pdf' }),
+            // All buttons hidden, but own condition holds: not marked.
+            makeCategory('empty-by-buttons', [
+                makeButton('b4', { rule: 'viewType', value: 'pdf' }),
+            ]),
+        ];
+        const hidden = collectContextHiddenCategoryIds(categories, markdownContext);
+        expect([...hidden]).toEqual(['pdf']);
+    });
+});
+
+describe('projectCategoriesForContext', () => {
+    const staticButton = makeButton('static');
+    const pdfButton = makeButton('pdf-only', { rule: 'viewType', value: 'pdf' });
+    const categories: CategoryConfig[] = [
+        makeCategory('plain', [staticButton, pdfButton]),
+        makeCategory('pdf-cat', [makeButton('x')], { rule: 'viewType', value: 'pdf' }),
+    ];
+
+    it('locked mode filters and marks nothing', () => {
+        const projection = projectCategoriesForContext(
+            categories,
+            markdownContext,
+            'locked'
+        );
+        expect(projection.categories.map((c) => c.id)).toEqual(['plain']);
+        expect(projection.categories[0]!.buttons.map((b) => b.id)).toEqual(['static']);
+        expect(projection.hiddenButtonIds.size).toBe(0);
+        expect(projection.hiddenCategoryIds.size).toBe(0);
+    });
+
+    it('sort mode keeps everything (same reference) and marks hidden elements', () => {
+        const projection = projectCategoriesForContext(categories, markdownContext, 'sort');
+        expect(projection.categories).toBe(categories);
+        expect([...projection.hiddenButtonIds]).toEqual(['pdf-only']);
+        expect([...projection.hiddenCategoryIds]).toEqual(['pdf-cat']);
+    });
+
+    it('edit mode behaves like sort mode', () => {
+        const projection = projectCategoriesForContext(categories, markdownContext, 'edit');
+        expect(projection.categories).toBe(categories);
+        expect([...projection.hiddenButtonIds]).toEqual(['pdf-only']);
+        expect([...projection.hiddenCategoryIds]).toEqual(['pdf-cat']);
+    });
+
+    it('is fully static-compatible: phase-2 settings without category conditions', () => {
+        const legacy: CategoryConfig[] = [
+            makeCategory('a', [staticButton]),
+            makeCategory('b', [makeButton('md', { rule: 'viewType', value: 'markdown' })]),
+        ];
+        const locked = projectCategoriesForContext(legacy, markdownContext, 'locked');
+        expect(locked.categories).toBe(legacy);
+        const sort = projectCategoriesForContext(legacy, markdownContext, 'sort');
+        expect(sort.categories).toBe(legacy);
+        expect(sort.hiddenButtonIds.size).toBe(0);
+        expect(sort.hiddenCategoryIds.size).toBe(0);
     });
 });
 

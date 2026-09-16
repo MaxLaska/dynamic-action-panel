@@ -267,6 +267,28 @@ describe('OCAPContextService', () => {
         service.stop();
     });
 
+    it('rebuilds on layout-change when the tracked leaf swaps its view in place', () => {
+        // Regression (phase 3 live finding): opening a file in an empty tab
+        // replaces the leaf's view without emitting active-leaf-change or
+        // file-open — only layout-change fires. The service must still
+        // rebuild the snapshot.
+        const { app, workspace } = makeFakeApp();
+        const service = makeService(app);
+        service.start();
+
+        const leaf = new FakeLeaf(workspace, 'empty', null);
+        workspace.trigger('active-leaf-change', leaf);
+        expect(service.getSnapshot().viewType).toBe('empty');
+
+        // Same leaf object, new view (as Obsidian does on openFile).
+        leaf.view = { getViewType: () => 'markdown', file: makeFile('x/y.md') };
+        workspace.trigger('layout-change');
+
+        expect(service.getSnapshot().viewType).toBe('markdown');
+        expect(service.getSnapshot().filePath).toBe('x/y.md');
+        service.stop();
+    });
+
     it('supports unsubscribe', () => {
         const { app, workspace } = makeFakeApp();
         const service = makeService(app);

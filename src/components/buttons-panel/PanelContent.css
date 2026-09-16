@@ -52,3 +52,14 @@
     font-size: 16px;
 }
 
+
+/* OCAP: category whose own condition does not hold in the current context,
+   shown in sort/edit mode with a restrained visual marker so it stays
+   manageable (mirrors the button marker in Button.css). */
+body .buttons-panel .buttons-panel-category.ocap-context-hidden > .buttons-panel-category-title,
+body .buttons-panel .buttons-panel-tab.ocap-context-hidden,
+body .buttons-panel .buttons-panel-folder-tile.ocap-context-hidden {
+    opacity: 0.45;
+    outline: 1px dashed var(--text-faint);
+    outline-offset: -1px;
+}

@@ -3,14 +3,8 @@ import type { CategoryConfig } from '@/types';
 import { useConfigContext } from '@/contexts/ConfigContext';
 import { ButtonDragProvider } from '@/contexts/ButtonDragContext';
 import { useOCAPContext } from '@/hooks/useOCAPContext';
-import {
-    collectContextHiddenButtonIds,
-    filterCategoriesByContext,
-} from '@/context/conditions';
-import {
-    EMPTY_HIDDEN_IDS,
-    OCAPVisibilityProvider,
-} from '@/contexts/OCAPVisibilityContext';
+import { projectCategoriesForContext } from '@/context/conditions';
+import { OCAPVisibilityProvider } from '@/contexts/OCAPVisibilityContext';
 import { TabsModeContent } from '@/components/buttons-panel/TabsModeContent';
 import { ListModeContent } from '@/components/buttons-panel/ListModeContent';
 import { FolderModeContent } from '@/components/buttons-panel/FolderModeContent';
@@ -47,10 +41,6 @@ export const PanelContent: React.FC<PanelContentProps> = ({
     const normalizedQuery = searchQuery?.trim().toLowerCase() ?? '';
 
     const ocapContext = useOCAPContext();
-    // Conditions hide buttons only in locked (normal usage) mode; in sort and
-    // edit mode all buttons stay rendered and manageable, context-hidden ones
-    // are visually marked instead (see OCAPVisibilityProvider below).
-    const conditionsApply = interactionMode === 'locked';
 
     const searchFilteredCategories = React.useMemo(() => {
         const sorted = [...categories].sort((a, b) => a.order - b.order);
@@ -79,24 +69,22 @@ export const PanelContent: React.FC<PanelContentProps> = ({
             .filter((c): c is CategoryConfig => c !== null);
     }, [categories, normalizedQuery]);
 
-    // Context-based visibility filter (locked mode only). Category identity is
-    // preserved when nothing is filtered so memoized subtrees stay stable.
-    const filteredCategories = React.useMemo(
+    // Central context projection: in locked mode categories/buttons hidden by
+    // their conditions are filtered out (a category also disappears when no
+    // visible button remains); in sort/edit mode everything stays rendered
+    // and manageable, context-hidden elements are marked instead (see
+    // OCAPVisibilityProvider below). Identities are preserved when nothing is
+    // filtered so memoized subtrees stay stable.
+    const projection = React.useMemo(
         () =>
-            conditionsApply
-                ? filterCategoriesByContext(searchFilteredCategories, ocapContext)
-                : searchFilteredCategories,
-        [conditionsApply, searchFilteredCategories, ocapContext]
+            projectCategoriesForContext(
+                searchFilteredCategories,
+                ocapContext,
+                interactionMode
+            ),
+        [searchFilteredCategories, ocapContext, interactionMode]
     );
-
-    // In sort/edit mode context-hidden buttons stay visible but are marked.
-    const contextHiddenButtonIds = React.useMemo(
-        () =>
-            conditionsApply
-                ? EMPTY_HIDDEN_IDS
-                : collectContextHiddenButtonIds(searchFilteredCategories, ocapContext),
-        [conditionsApply, searchFilteredCategories, ocapContext]
-    );
+    const filteredCategories = projection.categories;
 
     const dragReorderEnabled = normalizedQuery.length === 0 && interactionMode === 'sort';
 
@@ -147,7 +135,10 @@ export const PanelContent: React.FC<PanelContentProps> = ({
 
     return (
         <div ref={panelContentRef} className="buttons-panel-panel-content">
-            <OCAPVisibilityProvider hiddenButtonIds={contextHiddenButtonIds}>
+            <OCAPVisibilityProvider
+                hiddenButtonIds={projection.hiddenButtonIds}
+                hiddenCategoryIds={projection.hiddenCategoryIds}
+            >
             <ButtonDragProvider
                 categories={filteredCategories}
                 enabled={dragReorderEnabled}
