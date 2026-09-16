@@ -4,6 +4,7 @@ import type { ButtonsPanelPlugin } from '@/types/plugin';
 import type { App } from 'obsidian';
 import { SimpleButton } from './Button';
 import { useButtonClickHandler } from '@/hooks/useButtonClickHandler';
+import { shallowEqualExcept } from '@/utils/shallowEqual';
 
 interface ButtonItemProps {
     button: ButtonConfig;
@@ -15,6 +16,22 @@ interface ButtonItemProps {
     plugin: ButtonsPanelPlugin;
     app: App;
 }
+
+/**
+ * Memo comparison for ButtonItem.
+ *
+ * All props except `index` (unused in the render output) are compared by
+ * identity. `button` and `category` must NOT be value-compared: the previous
+ * comparator checked id/name/icon only, so a button whose actions or
+ * execution config changed could keep rendering (and executing) stale data.
+ * Value comparison cannot work here at all, because prev and next props may
+ * reference the same object — which is why edits have to replace the
+ * ButtonConfig object (see ButtonEditModal) instead of mutating it in place.
+ */
+export const areButtonItemPropsEqual = (
+    prevProps: ButtonItemProps,
+    nextProps: ButtonItemProps
+): boolean => shallowEqualExcept(prevProps, nextProps, ['index']);
 
 export const ButtonItem: React.FC<ButtonItemProps> = React.memo(
     ({
@@ -41,14 +58,7 @@ export const ButtonItem: React.FC<ButtonItemProps> = React.memo(
             />
         );
     },
-    (prevProps, nextProps) =>
-        prevProps.button.id === nextProps.button.id &&
-        prevProps.button.name === nextProps.button.name &&
-        prevProps.button.icon === nextProps.button.icon &&
-        prevProps.category.id === nextProps.category.id &&
-        prevProps.displayStyle === nextProps.displayStyle &&
-        prevProps.enableAnimation === nextProps.enableAnimation &&
-        prevProps.enableEditMode === nextProps.enableEditMode
+    areButtonItemPropsEqual
 );
 
 ButtonItem.displayName = 'ButtonItem';

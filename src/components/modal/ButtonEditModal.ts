@@ -251,15 +251,15 @@ export class ButtonEditModal extends Modal {
         // 更新临时按钮的动作（ActionSequence 序列化结果转为 ButtonAction[]）
         this.tempButton.actions = this.actionSequence.toJSON() as ButtonAction[];
 
-        // 更新原始按钮
-        Object.assign(this.button, this.tempButton);
-
-        // 更新分类中的按钮
+        // Replace the button with a new object instead of mutating it in place:
+        // React.memo comparisons rely on a changed object identity to detect
+        // edited button content (see areButtonItemPropsEqual in ButtonItem).
+        const updatedButton: ButtonConfig = { ...this.button, ...this.tempButton };
         const index = this.parentCategory.buttons.findIndex(
             (b: ButtonConfig) => b.id === this.button.id
         );
         if (index > -1) {
-            this.parentCategory.buttons[index] = this.button;
+            this.parentCategory.buttons[index] = updatedButton;
         }
 
         await this.plugin.saveSettings();

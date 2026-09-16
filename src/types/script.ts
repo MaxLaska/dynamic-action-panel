@@ -69,3 +69,14 @@ export interface ScriptMeta {
 
 /** 脚本模块导出形态：module.exports = ScriptMeta。 */
 export type ScriptModuleExports = ScriptMeta;
+
+/**
+ * Statically extracted script metadata for display purposes (suggestion
+ * dropdowns etc.). Produced WITHOUT executing the script, so it carries no
+ * entry function and localized texts may be partial.
+ */
+export interface ScriptFileMeta {
+    name?: Record<string, string> | string;
+    description?: Record<string, string> | string;
+    tags?: string[];
+}

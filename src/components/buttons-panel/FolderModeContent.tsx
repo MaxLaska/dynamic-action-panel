@@ -361,22 +361,6 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
         );
     };
 
-    if (categories.length === 0) {
-        return (
-            <div className="buttons-panel-folder-mode">
-                {enableEditMode && !isSearchActive ? (
-                    <p className="buttons-panel-empty-hint">
-                        <AddCategoryButton onClick={() => createCategory()} />
-                    </p>
-                ) : (
-                    <div className="buttons-panel-empty-hint">
-                        {isSearchActive ? t('no_search_results') : t('no_categories_hint')}
-                    </div>
-                )}
-            </div>
-        );
-    }
-
     const openCategory = openCategoryId
         ? categories.find((c) => c.id === openCategoryId)
         : undefined;
@@ -396,6 +380,24 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
         },
         [openCategory, plugin]
     );
+
+    // Rules of Hooks: this early return must stay below every hook call above,
+    // so the hook count stays constant when categories become (non-)empty.
+    if (categories.length === 0) {
+        return (
+            <div className="buttons-panel-folder-mode">
+                {enableEditMode && !isSearchActive ? (
+                    <p className="buttons-panel-empty-hint">
+                        <AddCategoryButton onClick={() => createCategory()} />
+                    </p>
+                ) : (
+                    <div className="buttons-panel-empty-hint">
+                        {isSearchActive ? t('no_search_results') : t('no_categories_hint')}
+                    </div>
+                )}
+            </div>
+        );
+    }
 
     const categorySortIds = orderedCategories.map((c) => categorySortableId(c.id));
 

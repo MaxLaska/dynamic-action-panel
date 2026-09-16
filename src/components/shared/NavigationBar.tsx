@@ -157,13 +157,15 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
     onOpenSettings,
     onSearchChange,
 }) => {
-    if (!showTopNavBar) {
-        return null;
-    }
-
     const [isSearchOpen, setIsSearchOpen] = React.useState(false);
     const [searchText, setSearchText] = React.useState('');
     const searchInputRef = React.useRef<HTMLInputElement | null>(null);
+
+    // Rules of Hooks: all hooks must run before any early return; otherwise
+    // toggling showTopNavBar changes the hook count and crashes the component.
+    if (!showTopNavBar) {
+        return null;
+    }
 
     const handleSearchButtonClick = () => {
         setIsSearchOpen((prev) => {

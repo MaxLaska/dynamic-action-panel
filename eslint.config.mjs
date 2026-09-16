@@ -35,4 +35,14 @@ export default tseslint.config(
 		},
 	},
 	...obsidianmd.configs.recommended,
+	{
+		// Tests and the test runner config are Node-side tooling, not plugin
+		// runtime code: Obsidian-specific runtime rules do not apply there.
+		files: ['tests/**/*.ts', 'vitest.config.ts'],
+		rules: {
+			'obsidianmd/no-global-this': 'off',
+			'obsidianmd/no-tfile-tfolder-cast': 'off',
+			'obsidianmd/no-nodejs-modules': 'off',
+		},
+	},
 );

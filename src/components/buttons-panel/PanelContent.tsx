@@ -94,7 +94,6 @@ export const PanelContent: React.FC<PanelContentProps> = ({
             />
         ) : viewType === 'folder' ? (
             <FolderModeContent
-                key={`folder-${filteredCategories.length}`}
                 categories={filteredCategories}
                 displayStyle={effectiveDisplayStyle}
                 enableAnimation={enableAnimation}

@@ -7,9 +7,11 @@ import type {
     LocalizedText,
     ScriptContext,
     ScriptEntry,
+    ScriptFileMeta,
     ScriptMeta,
     ScriptThis,
 } from '@/types/script';
+import { parseScriptMeta } from '@/utils/scriptMetaParser';
 
 /**
  * 脚本动作服务类，负责处理用户自定义脚本执行。
@@ -30,7 +32,7 @@ export class ScriptService {
     ) {}
 
     /** 脚本元数据缓存：以脚本文件完整路径为 key，避免重复解析。 */
-    private metaCache: Map<string, ScriptMeta | null> = new Map();
+    private metaCache: Map<string, ScriptFileMeta | null> = new Map();
 
     /**
      * 运行用户自定义的脚本文件。
@@ -71,25 +73,36 @@ export class ScriptService {
     }
 
     /**
-     * 从脚本文件读取结构化元数据（module.exports = { entry, name, description, tags }）。
-     * 仅在文件作用域内声明函数、赋值 module.exports，不会触发入口函数的实际逻辑（无副作用）。
-     * 读取结果会按文件路径缓存。
+     * Reads structured metadata (module.exports = { entry, name, description,
+     * tags }) from a script file by STATIC PARSING ONLY. The script is never
+     * executed for metadata retrieval — running arbitrary top-level code just
+     * because a suggestion dropdown prefetches metadata would be a security
+     * hazard. Results are cached per file path.
      *
-     * @param file 脚本文件
-     * @returns 解析到的 ScriptMeta；解析失败或格式不符的脚本返回 null
+     * @param file the script file
+     * @returns statically extracted metadata; null when the script has no
+     *          statically analyzable `module.exports = { entry, ... }` object
      */
-    async getScriptMeta(file: obsidian.TFile): Promise<ScriptMeta | null> {
+    async getScriptMeta(file: obsidian.TFile): Promise<ScriptFileMeta | null> {
         const cacheKey = file.path;
         if (this.metaCache.has(cacheKey)) {
             return this.metaCache.get(cacheKey) ?? null;
         }
 
-        let meta: ScriptMeta | null = null;
+        let meta: ScriptFileMeta | null = null;
         try {
             const scriptContent = await this.app.vault.read(file);
             if (scriptContent) {
-                const module = await this.evaluateModule(scriptContent);
-                meta = this.parseMetaFromExports(module.exports);
+                const parsed = parseScriptMeta(scriptContent);
+                // Mirror the runtime contract: only scripts that declare an
+                // `entry` export count as valid script modules.
+                if (parsed && parsed.hasEntry) {
+                    meta = {
+                        name: parsed.name,
+                        description: parsed.description,
+                        tags: parsed.tags,
+                    };
+                }
             }
         } catch {
             meta = null;
@@ -107,7 +120,7 @@ export class ScriptService {
      * @returns 当前语言下的展示文本
      */
     resolveLocalizedText(
-        text: LocalizedText | string | undefined,
+        text: LocalizedText | Record<string, string> | string | undefined,
         fallback = ''
     ): string {
         if (!text) return fallback;
@@ -115,8 +128,8 @@ export class ScriptService {
         const lang = getCurrentLang();
         return (
             text[lang] ||
-            text.en ||
-            text.zh ||
+            text['en'] ||
+            text['zh'] ||
             Object.values(text).find((v) => !!v) ||
             fallback
         );
