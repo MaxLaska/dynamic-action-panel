@@ -56,8 +56,13 @@ import {
 import { snapCenterToCursor } from '@/utils/dndModifiers';
 import { PANEL_AUTO_SCROLL_OPTIONS } from '@/utils/panelAutoScroll';
 
-const DESKTOP_LONG_PRESS_DELAY_MS = 400;
-const DESKTOP_LONG_PRESS_TOLERANCE_PX = 6;
+/**
+ * Desktop mouse: start dragging after a small deliberate movement instead of a
+ * long press. No `tolerance` is configured on purpose — for a distance
+ * constraint dnd-kit checks tolerance first and *cancels* the pending drag when
+ * it is exceeded, which would abort exactly the fast drag gestures this enables.
+ */
+const DESKTOP_DRAG_ACTIVATION_DISTANCE_PX = 4;
 /** 标签视图：悬停目标标签满此时长后才视为可放置位置 */
 const CATEGORY_TAB_DROP_HOVER_MS = 400;
 
@@ -188,8 +193,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             : [
                   useSensor(ScrollAwarePointerSensor, {
                       activationConstraint: {
-                          delay: DESKTOP_LONG_PRESS_DELAY_MS,
-                          tolerance: DESKTOP_LONG_PRESS_TOLERANCE_PX,
+                          distance: DESKTOP_DRAG_ACTIVATION_DISTANCE_PX,
                       },
                   }),
               ]),

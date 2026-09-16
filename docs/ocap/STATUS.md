@@ -50,9 +50,16 @@ Last updated: 2026-09-16 (Phase 3 – Usable Context Rules)
 
 - `layout-change` now always rebuilds the snapshot: a leaf can swap its view in place (empty tab → file opened in the same tab) without `active-leaf-change`/`file-open` firing; previously the snapshot went stale. Deduplicated via `contextSnapshotsEqual`. Regression test added.
 
+## Desktop DnD activation fix (2026-09-16)
+
+- The sort-mode pointer sensor used a long-press constraint copied from the touch pattern, so a normal mouse drag never started a drag at all. `src/contexts/ButtonDragContext.tsx` now gives the desktop `ScrollAwarePointerSensor` `activationConstraint: { distance: 4 }` — **no `tolerance`**, because for a distance constraint dnd-kit evaluates tolerance first and *cancels*, which would abort fast drags. Touch keeps its `{ delay: 500, tolerance: 10 }` long-press unchanged.
+- This activates the distance branch in `scrollAwarePointerHandleMove.ts` that already existed but was unreachable; no reordering, persistence or overlay code changed.
+- DnD only exists in sort mode (`ButtonDragProvider` renders no `DndContext` otherwise), so the 4px threshold cannot affect normal clicks in locked mode.
+- Live-verified (isolated Obsidian 1.13.7, CDP, 17/17 + threshold sweep, 0 errors): category reorder, same-category button reorder, cross-category move, persistence across a plugin reload, click/collapse/context-menu behavior. Drag feedback (cursor-following `DragOverlay`, 0.45 source dimming, live list reflow) was found adequate once activation works; details and the remaining UX gaps in `docs/ocap/audits/2026-09-16-dnd-sort-mode.md`.
+
 ## Verification (2026-09-16)
 
-- `npm test`: **132/132 PASS** (8 files; new `conditionTree` 22, extended `conditions` with category/projection/mode/back-compat coverage, context-service regression test).
+- `npm test`: **139/139 PASS** (9 files; `conditionTree` 22, extended `conditions` with category/projection/mode/back-compat coverage, context-service regression test, new `scrollAwarePointerHandleMove` 7).
 - `npm run lint`: PASS (0 problems) · `npx tsc --noEmit`: PASS · production build (`node esbuild.config.mjs production`, dist-only): PASS.
 
 ## Live smoke test (2026-09-16, 19/19 PASS + extra checks)
@@ -74,7 +81,7 @@ Automated via CDP against an isolated Obsidian 1.13.7 instance (`--user-data-dir
 13. Context switch back (notes/note-a.md): categories reappear (required the layout-change fix above) — PASS.
 14. Sort and edit mode show all categories/buttons; hidden category marked on title (list), tab and folder tile; hidden buttons marked — PASS.
 15. Context-hidden button still manageable (context menu opens in edit mode) — PASS.
-16. DnD (sort mode, 400ms long-press, trusted input): reorder within category, DOM + persisted `data.json` — PASS.
+16. DnD (sort mode, trusted input): reorder within category, DOM + persisted `data.json` — PASS. (Activation was a 400ms long-press at the time; superseded by the distance-based fix above.)
 17. Static button unchanged/inert, no errors — PASS.
 18. Script action executes exactly once (entry + top level) — PASS.
 19. Zero React/console/unhandled errors across the whole run — PASS.
@@ -92,4 +99,4 @@ Extra: tabs and folder view checked in locked (Beta collapsed) and sort (Beta ma
 
 ## Next step
 
-Phase 4 candidates: first dynamic behaviors on the same condition model (`enabledWhen`, dynamic label/icon), context-specific locked-mode empty state, optional jsdom-based editor unit tests, packaging/release strategy + manifest id decision.
+Phase 4 candidates: first dynamic behaviors on the same condition model (`enabledWhen`, dynamic label/icon), context-specific locked-mode empty state, optional jsdom-based editor unit tests, packaging/release strategy + manifest id decision. Smaller UX candidate: sort-mode drag affordance (resting grip/`cursor: grab`) and an explicit drop indicator.
