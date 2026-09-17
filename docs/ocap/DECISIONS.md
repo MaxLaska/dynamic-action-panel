@@ -71,7 +71,7 @@ This file records durable decisions only. Do not use it as a work log.
 
 ## 2026-09-16 – Central context store with useSyncExternalStore subscription
 
-**Decision:** Workspace context lives in one plugin-level `OCAPContextService` holding an immutable `OCAPContextSnapshot`. Obsidian events (workspace/metadataCache/vault) rebuild the snapshot, which is only replaced (and subscribers notified) when it changed semantically. React subscribes via `useSyncExternalStore` (`useOCAPContext()`); no polling, no DOM observation, no new document CustomEvents. The context describes the last active **content leaf in the root split** — focusing the buttons panel or sidebars never changes it.
+**Decision:** Workspace context lives in one plugin-level `WorkspaceContextService` holding an immutable `WorkspaceContextSnapshot`. Obsidian events (workspace/metadataCache/vault) rebuild the snapshot, which is only replaced (and subscribers notified) when it changed semantically. React subscribes via `useSyncExternalStore` (`useWorkspaceContext()`); no polling, no DOM observation, no new document CustomEvents. The context describes the last active **content leaf in the root split** — focusing the buttons panel or sidebars never changes it.
 
 **Reason:** One store avoids a second parallel state world and keeps re-renders bounded by real context changes. The content-leaf rule prevents conditioned buttons from disappearing the moment the user focuses the panel to click them, mirroring the existing action-execution semantics (`lastActiveContentLeaf`).
 
@@ -105,7 +105,7 @@ This file records durable decisions only. Do not use it as a work log.
 
 ## 2026-09-16 – One central rendering projection
 
-**Decision:** `projectCategoriesForContext(categories, context, interactionMode)` in `src/context/conditions.ts` is the single decision point for context visibility: locked mode gets filtered categories, sort/edit get untouched references plus `hiddenButtonIds`/`hiddenCategoryIds` marker sets (distributed via `OCAPVisibilityContext`). View modes never evaluate conditions themselves.
+**Decision:** `projectCategoriesForContext(categories, context, interactionMode)` in `src/context/conditions.ts` is the single decision point for context visibility: locked mode gets filtered categories, sort/edit get untouched references plus `hiddenButtonIds`/`hiddenCategoryIds` marker sets (distributed via `PanelVisibilityContext`). View modes never evaluate conditions themselves.
 
 **Marker semantics:** an element is marked context-hidden iff its **own** condition fails (categories are not marked merely because all their buttons are hidden — the dimmed buttons already show that). Category markers use the same `ocap-context-hidden` class on the list title / tab / folder tile.
 
@@ -119,7 +119,7 @@ This file records durable decisions only. Do not use it as a work log.
 
 ## 2026-09-16 – Context snapshot rebuilds on every layout-change
 
-**Decision:** `OCAPContextService` rebuilds the snapshot on every `layout-change` (deduplicated via `contextSnapshotsEqual`), not only when the tracked leaf was detached. A leaf can swap its view in place (empty tab → file opened in the same tab) without emitting `active-leaf-change` or `file-open`.
+**Decision:** `WorkspaceContextService` rebuilds the snapshot on every `layout-change` (deduplicated via `contextSnapshotsEqual`), not only when the tracked leaf was detached. A leaf can swap its view in place (empty tab → file opened in the same tab) without emitting `active-leaf-change` or `file-open`.
 
 **Reason:** Live-verified gap: after closing all tabs and opening a file in the new tab, the context stayed stale and conditioned categories never reappeared.
 

@@ -29,7 +29,7 @@ Konvention in diesem Dokument: Pfade relativ zur Repo-Wurzel; Zeilennummern bezi
 
 ### 2.1 Render-Pfad eines Grids
 
-`ButtonsPanelView.renderPanel()` → `reactRoot.update()` → `ButtonsPanelApp` → `PanelContent` (`src/components/buttons-panel/PanelContent.tsx`) → `OCAPVisibilityProvider` → `CategoryVariantProvider` → `ButtonDragProvider` → List/Tabs/Folder-Content → `CategoryButtonGrid` → `GridSlotCell` × `rows*columns`.
+`ButtonsPanelView.renderPanel()` → `reactRoot.update()` → `ButtonsPanelApp` → `PanelContent` (`src/components/buttons-panel/PanelContent.tsx`) → `PanelVisibilityProvider` → `CategoryVariantProvider` → `ButtonDragProvider` → List/Tabs/Folder-Content → `CategoryButtonGrid` → `GridSlotCell` × `rows*columns`.
 
 - `CategoryButtonGrid` hat **fünf Call-Sites**: `ListModeContent.tsx:280`, `TabsModeContent.tsx:181` (sortable-Zweig) und `:331` (nicht-sortable-Zweig), `FolderDetailOverlay.tsx:215`, `CategoryListDragPreview.tsx:57`. Nicht jede gerenderte Instanz ist eine **interaktive, sichtbare** Instanz:
   - `CategoryListDragPreview` (`enableEditMode={false}`, `sortableEnabled={false}`) existiert während eines Kategorie-Drags sogar **zweimal** für dieselbe Kategorie (Platzhalter + `DragOverlay`-Kopie).
@@ -448,7 +448,7 @@ Warum nicht einfach „Layer unmountet → `exit()`": dieselbe Kategorie ist zei
 
 ### 7.3 Der eine gefährliche Fall: Kontextwechsel ohne explizite Variant-Wahl
 
-Ohne explizite Wahl fällt `selectedVariantOf` auf die runtime-aufgelöste Variant zurück (`CategoryVariantContext.tsx:117-120`), und `normalizedSelection` rechnet bei jedem `ocapContext`-Wechsel neu (`PanelContent.tsx:137-147`). Wechselt der Nutzer im Edit Mode die aktive Note, kann das angezeigte Grid einer nie explizit gewählten dynamischen Kategorie **unter dem Cursor wechseln**.
+Ohne explizite Wahl fällt `selectedVariantOf` auf die runtime-aufgelöste Variant zurück (`CategoryVariantContext.tsx:117-120`), und `normalizedSelection` rechnet bei jedem `workspaceContext`-Wechsel neu (`PanelContent.tsx:137-147`). Wechselt der Nutzer im Edit Mode die aktive Note, kann das angezeigte Grid einer nie explizit gewählten dynamischen Kategorie **unter dem Cursor wechseln**.
 
 **Regel:** Beim Betreten des Select Mode einer **dynamischen** Kategorie ruft die Bar zuerst `selectVariant(categoryId, resolution.variantId)` (in `CategoryButtonGrid` verfügbar, `:102`; nach I-KEY dort nie `null`). Statische Grids brauchen keinen Pin — sie haben genau ein Grid. `PanelContent.selectVariant` behandelt genau diesen Fall bereits („Re-selecting what is already shown: make it explicit but keep the existing flip target", `:113-122`). Danach ist die Wahl explizit und kontextfest. Pin und `enter` passieren im selben Event-Handler, werden von React also gemeinsam gebatcht; sollte ein Kontextwechsel trotzdem dazwischenkommen, beendet I-CTX (4) den Mode sofort wieder — schlimmstenfalls muss der Nutzer erneut klicken, nie wird ein falsches Grid adressiert.
 

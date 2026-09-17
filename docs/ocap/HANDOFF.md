@@ -1,18 +1,35 @@
-# OCAP – Handoff (kompakter Snapshot)
+# Dynamic Action Panel – Handoff (kompakter Snapshot)
 
 Snapshot für neue Claude-Code-Sessions. Kein Verlauf — bei größeren
 abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 
 ## 1. Projekt-/Git-Stand
 
+- **Produktname: `Dynamic Action Panel`.** Früher „Obsidian Contextual Action
+  Panel (OCAP)". Das Rebranding ist abgeschlossen; Details und die Liste der
+  bewusst behaltenen Legacy-Identifier:
+  `docs/ocap/rebranding-dynamic-action-panel.md`. **Kein Akronym** —
+  ausgeschrieben schreiben, `DAP` ist kein Projektbegriff. Intern gilt
+  Domänensprache (Panel, Grid, Tool, Category, Variant, Cell, Template),
+  kein Produktname in Identifiern.
+- **Bewusst NICHT umbenannt** (Contracts, keine Namen): Plugin-ID
+  `buttons-panel` (und damit Installationspfad + `data.json`), View-Type
+  `buttons-panel-view`, Command-IDs `buttons-panel:*`, CSS-Klassen
+  `buttons-panel-*` / `ocap-*`, Custom Properties `--ocap-*`, DOM-Events
+  `buttons-panel-refresh` / `-search`, die persistierten Farbwerte
+  `ocap:<name>`, das Template-Format `ocap-template` / `.ocap.json` samt
+  `OCAP_TEMPLATE_*`-Konstanten, die `ButtonsPanel*`-TS-Identifier (sie
+  spiegeln genau diese Contracts) und der Pfad `docs/ocap/`. In älteren
+  Audits steht `OCAP` weiterhin als der damalige Projektname — Historie
+  nicht umschreiben.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
-  Buttons Panel 2.4.7.
-- Branch `master`. Verifizierter Stand: `2ba2cf1`
-  (`docs: design generic grid selection architecture`), Working Tree sauber,
-  `master` und `origin/master` synchron — die 15 bis dahin lokalen Commits
-  wurden erfolgreich auf `origin/master` gepusht. Darauf folgt nur noch der
-  Docs-Commit mit dieser Statusangabe, ebenfalls gepusht.
+  Buttons Panel 2.4.7. **Das GitHub-Repository ist noch NICHT umbenannt**;
+  empfohlener Slug `dynamic-action-panel` (manueller Schritt, siehe
+  Rebranding-Dokument).
+- Branch `master`. Stand nach dem Rebranding-Pass: Working Tree sauber, drei
+  Commits (internal naming / public branding / HANDOFF). Davor war `2ba2cf1`
+  gepusht und `master` mit `origin/master` synchron.
 - Settings-Version: **5** (`CURRENT_SETTINGS_VERSION`), forward-only
   Migrationskette `0 → 1 → 2 → 3 → 4 → 5` in
   `src/settings/settingsMigrations.ts`. v5 ist der Tool-Registry-Refactor
@@ -101,7 +118,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   weder `order` (Position = Array-Reihenfolge bzw. Importer-Sache) noch
   `library` (vault-lokale Lifecycle-Entscheidung).
 - **IDs im Dokument sind paketlokale REFERENZEN, keine Identitäten.** Der
-  Import erzeugt für Kategorie, Variants und Tools frische OCAP-IDs
+  Import erzeugt für Kategorie, Variants und Tools frische IDs
   (`freshId`) und schreibt alle Referenzen um. Deshalb kann ein Import nichts
   Bestehendes überschreiben, und dieselbe Datei lässt sich zweimal
   kollisionsfrei importieren. Ein Tool, das das Dokument zwischen zwei
@@ -249,7 +266,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Zustand, dann den Klick (`Locked — click to edit`). Global fürs ganze Panel,
   kein per-Category-Lock.
 - **Ein Tool darf vor seiner Action existieren.** Name/Icon/Slot zuerst und
-  die Action später ist ein legitimer Zustand; OCAP schreibt keine
+  die Action später ist ein legitimer Zustand; Das Plugin schreibt keine
   Konfigurationsreihenfolge vor. Beim Speichern werden **unberührte**
   Action-Zeilen verworfen, eine **halb** ausgefüllte blockiert weiterhin (sie
   stillschweigend zu verwerfen hieße, Eingaben wegzuwerfen). Ein Klick auf ein
@@ -268,7 +285,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   (`src/context/panelProjection.ts`) entscheidet allein, was gerendert wird —
   locked: Runtime-Auflösung; edit: die vom Nutzer editierte Variant.
   Liefert `gridViews` (aufgelöstes Grid pro Kategorie) an Rendering UND DnD.
-- **Kontext:** `OCAPContextService` hält einen immutablen Snapshot
+- **Kontext:** `WorkspaceContextService` hält einen immutablen Snapshot
   (`useSyncExternalStore`); Quelle ist der zuletzt aktive Content-Leaf —
   Panel-Fokus ändert den Kontext nie.
 - **Variant-spezifisches DnD:** Der Drag-State spiegelt exakt das EINE Grid
@@ -414,7 +431,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Belegung/Ziel/Preview hängt, darf eine feste Größe setzen (gepinnt in
   `tests/paletteGridGeometry.test.ts`).
 - **Datei-Drop und Button-DnD sind zwei getrennte Mechanismen und können sich
-  nicht stören:** OCAPs Button-DnD ist pointer-basiert (dnd-kit) und erzeugt
+  nicht stören:** Das Button-DnD des Plugins ist pointer-basiert (dnd-kit) und erzeugt
   nie HTML5-Drag-Events; der Drop aus dem File Explorer ist ein nativer
   HTML5-Drag und läuft ausschließlich über `dragenter/dragover/drop` auf der
   Zelle. Eine belegte Zelle akzeptiert den `dragover` gar nicht erst — ein
@@ -432,7 +449,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   (`<scriptFolderPath>/<scriptName>`); `.js` außerhalb → `file` plus Hinweis,
   weil `Run script` es gar nicht adressieren kann; alles andere → `file` mit
   dem exakten Vault-Pfad.
-- Drag-Debugging: `window.__OCAP_DND_DEBUG = true` traced den kompletten
+- Drag-Debugging: `window.__PANEL_DND_DEBUG = true` traced den kompletten
   dnd-kit-Lifecycle (flag-gated, kostenlos wenn aus).
 - Settings-Objekte sind immutable-per-edit (Änderung = neue Objektidentität);
   React-Memos vergleichen Identität.
@@ -493,7 +510,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   `path`, `extension`, `property`, `tag`, `viewType`.
 - `src/utils/conditionSummary.ts` — pure Trigger-/Condition-Zusammenfassung.
 - `src/utils/categoryIcon.ts` — Icon pro Kategorie-Art (dynamic/static/flow).
-- `src/context/OCAPContextService.ts` — reaktiver Kontext-Snapshot-Store.
+- `src/context/WorkspaceContextService.ts` — reaktiver Kontext-Snapshot-Store.
 - `src/contexts/ButtonDragContext.tsx` — DndContext-Provider: Sensoren,
   Drag-State (`items`), Baseline-Previews, Persistierung, Debug-Tracing.
 - `src/utils/buttonDragItems.ts` — pure Drag-State-Semantik: Slot-Droppable-
