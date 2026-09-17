@@ -8,7 +8,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
   Buttons Panel 2.4.7.
-- Branch `master`, HEAD `refactor: introduce tool registry and placements`,
+- Branch `master`, HEAD `feat: add portable OCAP template export and import`,
   lokal vor `origin/master` — nicht ohne Auftrag pushen.
 - Settings-Version: **5** (`CURRENT_SETTINGS_VERSION`), forward-only
   Migrationskette `0 → 1 → 2 → 3 → 4 → 5` in
@@ -22,7 +22,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   der produktiven v4-`data.json` liegt als Fixture unter
   `tests/fixtures/data-v4-real.json` und ist in
   `tests/realDataMigration.test.ts` verlustfrei gepinnt.
-- Teststand: `npm test` **541/541** (Vitest, node env, `tests/`),
+- Teststand: `npm test` **602/602** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
   `node esbuild.config.mjs production` grün.
 - Achtung: `npm run build` deployt zusätzlich nach `VAULT_PATH` aus `.env`
@@ -84,6 +84,88 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - **Fehlende Datei-Referenzen sind kein Fehlerzustand:** Action-Parameter
   tragen Vault-Pfade unverändert; das Runtime scheitert lazy mit Notice
   (`File not found: …`, live verifiziert).
+
+## 2b. Portables Template-Format (Export/Import)
+
+- **Eine Kategorie (inkl. aller Dynamic Variants und aller referenzierten
+  Tools) ist als Datei transportierbar:** `Research.ocap.json`, Format-Id
+  `ocap-template`, **eigene** `formatVersion: 1`
+  (`OCAP_TEMPLATE_FORMAT_VERSION`) — bewusst UNABHÄNGIG von
+  `settingsVersion`, sonst würde jede interne Migration alle je exportierten
+  Templates entwerten. Vollständige Spezifikation:
+  `docs/ocap/template-format.md`.
+- **Die interne `data.json` ist NICHT das Exportformat.** Das Dokument trägt
+  weder `order` (Position = Array-Reihenfolge bzw. Importer-Sache) noch
+  `library` (vault-lokale Lifecycle-Entscheidung).
+- **IDs im Dokument sind paketlokale REFERENZEN, keine Identitäten.** Der
+  Import erzeugt für Kategorie, Variants und Tools frische OCAP-IDs
+  (`freshId`) und schreibt alle Referenzen um. Deshalb kann ein Import nichts
+  Bestehendes überschreiben, und dieselbe Datei lässt sich zweimal
+  kollisionsfrei importieren. Ein Tool, das das Dokument zwischen zwei
+  Placements teilt, bleibt danach geteilt — das war das exportierte Panel.
+- **Import erzeugt, Import merged nicht.** Keine Deduplizierung nach Name,
+  Action, Icon, Pfad oder Hash; ein importiertes Tool bleibt eine eigene
+  Definition. Namenskollisionen bekommen ein lesbares Suffix
+  (`Research` → `Research (imported)` → `Research (imported 2)`), kein
+  Merge-Dialog. Importierte Kategorien werden ans Ende gehängt.
+- **Atomar:** parse → validate → interne Referenzen prüfen → IDs remappen →
+  nächsten `ToolState` planen → **ein** `commitToolState`. Alles davor ist
+  pure Planung, also lässt eine kaputte/fremde/zu neue Datei den Zustand
+  byte-gleich (keine halbe Kategorie, keine halben Tools, keine
+  Registry-Leichen).
+- **Export ist strikt read-only:** keine IDs, keine normalisierte und
+  persistierte Reihenfolge, kein GC, keine Migration, kein `library`-Flag,
+  keine `ToolDefinition` angefasst. Nur die tatsächlich referenzierten Tools
+  der exportierten Kategorien landen im Paket.
+- **Externe Ziele bleiben unverändert** (`Literatur/Bieker_Westerholt.pdf`
+  bleibt exakt dieser String). Eine fehlende Datei blockiert den Import NIE;
+  die bestehende Lazy-Fail-Notice (`File not found: …`) ist die richtige
+  Stelle. Die Import-Zusammenfassung meldet die Zahl fehlender Ziele, ohne
+  Pfade zu korrigieren, zu raten oder zu ersetzen.
+- **Ein Template ist Daten, kein Code.** Der Parser validiert Actions und
+  Condition-Bäume als Werte gegen die bekannten Unions und BAUT NEU (kein
+  Spread unvalidierter Objekte, keine unbekannte Property wird übernommen);
+  Dokument-Keys werden gegen `__proto__`/`constructor`/`prototype` geprüft und
+  die Tool-Registry wird mit `Object.create(null)` gebaut; Größen- und
+  Tiefenlimits begrenzen die Arbeit; dangling interne Tool-Referenzen und ein
+  zweites Fallback werden abgelehnt. Importieren führt nichts aus.
+- **UI-Einstiege:** Kategorie-Kontextmenü (`Export template…` /
+  `Import template…`), Rechtsklick auf den `+`-Add-Category-Button
+  (`Import template…` — der Weg bei LEEREM Panel-Kontextmenü) und das Command
+  `buttons-panel:import-template`. Export schreibt in die **Vault-Wurzel**
+  (sichtbar im File Explorer, direkt kopierbar); Import nutzt ein transientes
+  `<input type="file">`, also den OS-Dateidialog — der braucht eine echte
+  User-Geste, die alle drei Einstiege liefern.
+
+## 2c. Grid Cell Styles (Datenmodell vorbereitet, KEINE UI)
+
+- **Die Farbe gehört zur ZELLE, nicht zum Tool** — auch eine LEERE Zelle muss
+  später eine tragen können. Deshalb weder auf `ToolDefinition` noch auf
+  `ToolPlacement`, sondern auf dem Grid:
+  `cellStyles?: Record<GridCellKey, { color?: string }>` auf der Kategorie
+  (statisches Grid) bzw. auf der **Variant** (dynamisch) — genau wie
+  `rows`/`columns`.
+- **Der Key ist die logische Zelle `r<row>c<column>` (z. B. `r2c3`), NICHT der
+  flache Slot-Index.** Ein flacher Index benennt bei anderer Spaltenzahl eine
+  andere Zelle (Row 1/Col 2 ist Slot 5 bei 3 Spalten und Slot 6 bei 4). Mit
+  Koordinaten-Key braucht **Wachsen gar kein Remapping** und **Schrumpfen
+  verwirft exakt die Keys des weggeschnittenen Streifens** — derselbe
+  Streifen, aus dem auch die Tools fallen.
+- **Portable Farbwerte:** Hex-Literal (`#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa`)
+  ODER ein namespaced Palette-Eintrag (`ocap:<name>`). CSS-Klassen und
+  `var(--…)` werden abgelehnt — das Präfix macht die Regel „keine
+  DOM-Klassen als persistente Wahrheit" prüfbar statt nur behauptet.
+- Semantik steht bereits: Copy Category / Duplicate Variant kopieren sie
+  **unabhängig**; `Make dynamic…` verschiebt sie auf die erste Variant (Teil
+  des Grid-Zustands); Resize remappt koordinatenstabil; `grid → flow`
+  verwirft sie mit dem Grid; Export/Import tragen sie pro Variant und
+  verwerfen Styles von Zellen, die das importierte Grid nicht hat.
+- **KEIN `settingsVersion`-Bump nötig:** optionales, rein additives Feld,
+  dessen Abwesenheit „keine Zelle gefärbt" bedeutet — exakt wie
+  `rows`/`columns`. Kein gespeichertes Datum muss transformiert werden, und
+  von diesem Build geschriebene Settings bleiben für ältere Builds ladbar.
+- **Es gibt noch KEINE Farb-UI:** kein Picker, kein Auswahlrahmen, keine
+  Pipette, kein Paint Mode, keine sichtbare Einfärbung.
 
 ## 2. Produktmodell
 
@@ -381,6 +463,13 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   `commitStoredGridResize`, Variant-Ops (add/duplicate/remove mit GC),
   `duplicateCategoryInState`, `deleteCategoryFromState`,
   `convertStoredStaticGridToDynamic`, `applyStoredCategoryLayout`.
+- `src/export/templateFormat.ts` — Format-Id, `OCAP_TEMPLATE_FORMAT_VERSION`,
+  Dokumenttypen. `src/export/templateExport.ts` (read-only Exporter),
+  `src/export/templateParse.ts` (**die Trust-Grenze**: Validierung +
+  Rebuild + Migrationshaken), `src/export/templateImport.ts` (purer Planner,
+  ID-Remapping, externe Referenzen), `src/export/templateIo.ts`
+  (Obsidian-I/O + der EINE Commit). Spezifikation:
+  `docs/ocap/template-format.md`.
 - `src/utils/id.ts` — der EINE Id-Generator (`freshId`, zählerbasiert
   kollisionssicher); alle Create/Copy/Duplicate-Pfade nutzen ihn.
 - `src/utils/categoryStore.ts` — **Commit-Funnel**: `findStoredCategory`,
@@ -408,7 +497,9 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   IDs, `applyDragOverToItems` (move/swap/flow-Regeln),
   `resolveGridDropOutcome` (accept/blocked/no-cell).
 - `src/utils/buttonDragCollision.ts` — Collision-Ranking der Button-Drags.
-- `src/utils/categoryGrid.ts` — **pure Grid-Geometrie**: `GridDimensions`,
+- `src/utils/categoryGrid.ts` — **pure Grid-Geometrie** (inkl. der Cell-Style-
+  Primitiven `gridCellKey`/`parseGridCellKey`/`resizeGridCellStyles`/
+  `isGridCellColor`): `GridDimensions`,
   `readGridDimensions` (fehlend = Legacy 4×4), `DEFAULT_GRID_DIMENSIONS` (1×3),
   Grenzen 1–5, `remapSlot`, `resizeGridButtons`, `placeButtonsOnGrid`
   (dimensionsbewusst), `fitGridDimensions` für flow → grid — und die
@@ -638,23 +729,58 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
     unit-getestet): echter File-Explorer-Drop, Run Script, Variant
     Delete/Move, Cross-Category-Drag.
 
+- **Template-Export/-Import live verifiziert** (isolierte Obsidian 1.13.7,
+  scratch `--user-data-dir`, Snapshot von `ocap-smoke`, CDP mit echten
+  Maus-Events, Fehlermonitore aktiv: **0 Konsolenfehler/Exceptions über alle
+  Phasen**):
+  - Static-Grid-Kategorie über das echte `+`-Modal angelegt (`rows: 1,
+    columns: 3`); `other/Becker_Westerholt.pdf` per echtem File-Explorer-
+    `dragstart` auf Slot 0 gedroppt (`app.dragManager` real gefüllt); zweites
+    Tool über das Slot-`+` mit URL-Action konfiguriert.
+  - Kategorie-Kontextmenü zeigt `Edit / Make dynamic… / Copy / Export
+    template… / Import template… / Delete`. `Export template…` schreibt
+    `Smoke.ocap.json` in die Vault-Wurzel; die Settings sind danach
+    **byte-gleich** (Export ist read-only).
+  - Kategorie gelöscht (Registry 11 → 9), dann über `Import template…` +
+    echten (abgefangenen) OS-Dateidialog reimportiert: neue Kategorie mit
+    frischen `cat-`/`tool-`-IDs, 1×3, Slots 0/1, beide Actions vollständig.
+  - Klick auf den importierten PDF-Button im locked Mode öffnet das echte
+    PDF-Leaf (`other/Becker_Westerholt.pdf`).
+  - **Zweiter Import derselben Datei:** zusätzliche Kategorie
+    `Smoke (imported)`, disjunkte Tool-IDs, nichts überschrieben.
+  - **Dynamic Roundtrip** (`Research`, 3 Variants): Trigger
+    (`fileName startsWith SRC_`, `extension md`), Fallback, eigene Größen
+    (3×4 / 2×5 / 1×2), synthetische Cell Styles pro Variant
+    (`r2c3: ocap:red`, `r1c4: #a1b2c3`), Placements/Slots — alles erhalten,
+    alle IDs frisch, Name als `Research (imported)` entkollidiert.
+  - **Fehlendes Datei-Ziel blockiert nicht:** Import erfolgreich mit
+    `… 1 referenced file was not found in this vault.`; der Klick meldet
+    danach `File not found: Literatur/Nope_Missing.pdf`.
+  - **Ablehnungen lassen den Zustand byte-gleich** (je mit klarer Notice):
+    kaputtes JSON, fremdes Format, eine rohe interne `data.json`,
+    `formatVersion: 99`, dangling Tool-Referenz.
+  - Nach `disablePlugin`/`enablePlugin`: State identisch, `data.json`
+    **byte-gleich** (keine Migration, kein Rewrite), Cell Styles auf Platte
+    variant-lokal erhalten.
+
 ## 6. Offene Punkte / nächste Baustellen
 
 0. **Produktiv-Deployment des v5-Builds steht aus** (bewusst nicht gemacht:
    erster Start migriert die produktive `data.json`). Separater Auftrag:
    Backup der kompletten Plugin-Installation inkl. v4-`data.json` → Deploy →
    erster v5-Start → Post-Migration-Verifikation → ggf. Rollback.
-   Danach folgen die Audit-Phasen B–D: Library-Semantik sichtbar machen
-   (Promote/„aus Grid entfernen, Tool behalten“), Accent-/Farb-Felder
-   (additiv), Export-/Import-Fundament (`src/export/`, portables Schema mit
-   eigener `schemaVersion`, Import remappt IDs — F5). KEINE Library-UI,
-   kein Export, keine Farben sind bisher gebaut; `library` ist ein reines
-   Domain-Feld ohne UI.
+   Danach folgen die restlichen Audit-Phasen: Library-Semantik sichtbar
+   machen (Promote/„aus Grid entfernen, Tool behalten“) und die Farb-UI.
+   Das **Export-/Import-Fundament (F5) ist gebaut** (Abschnitt 2b), das
+   **Cell-Style-Datenmodell ebenfalls** (Abschnitt 2c) — KEINE Library-UI und
+   KEINE Farb-UI; `library` bleibt ein reines Domain-Feld ohne UI.
 1. **Slot-Hotkeys** (geplantes Feature) — Slot-Identität ist stabil
    und variant-unabhängig; nur die Keybinding-Schicht fehlt.
 2. **Toggle-Tools** (OFF/ON mit eigenen Actions/Appearance) — braucht einen
    Tool-Typ-Begriff auf `ButtonConfig`.
-3. Rich Tooltips und Kategorie-/Variant-Export/Import (reine Serialisierung).
+3. Rich Tooltips. (Kategorie-Export/Import ist gebaut — Abschnitt 2b;
+   offen bleiben eine Multi-Category-Export-UI und ein Export ganzer
+   Panel-Sets, die das Format bereits trägt.)
 4. **Flow-Kategorien haben dieselbe Falle wie zuvor das Grid:** ein Release auf
    dem Container-Hintergrund derselben Flow-Kategorie rechnet gegen die
    Baseline zurück und verwirft die Umsortierung (live reproduziert, nicht
@@ -710,11 +836,14 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
      gewollt, aber es ist der einzige verbliebene Zustandswechsel in dieser
      Sekunde.
 9. Bewusst nicht umgesetzt (kommt später): die sichtbare Tool-Library-UI
-   (die Trennung Definition/Placement selbst ist seit v5 GEBAUT),
-   Panel-Templates, JSON Import/Export, per-Category-Lock, „Pin active
-   dynamic variant", Toggle-Tools, Slot-Hotkeys, Icon-Picker,
-   ZotFlow-Annotationen auf Slots, Placement-Overrides (lokaler
-   Name/Icon), Farben/Accents.
+   (die Trennung Definition/Placement selbst ist seit v5 GEBAUT), die
+   **Farb-UI** (Picker, Auswahlrahmen, Pipette, „alle Zellen gleicher Farbe",
+   Paint Mode, Fill Visible Cells, Drag-Painting, sichtbare Einfärbung — nur
+   das Datenmodell steht, Abschnitt 2c), eine Multi-Category-/Panel-Set-
+   Export-UI, per-Category-Lock, „Pin active dynamic variant", Toggle-Tools,
+   Slot-Hotkeys, Icon-Picker, ZotFlow-Annotationen auf Slots,
+   Placement-Overrides (lokaler Name/Icon), Infinite Grid / Scroll-Navigation,
+   Text-/Notiz-Zellen, Zell-Merging, Row-/Column-Reordering.
 
 ## 7. Arbeitsregel für neue Sessions
 
