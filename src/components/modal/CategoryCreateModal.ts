@@ -11,7 +11,7 @@ import {
 /**
  * Modal for creating a category.
  * Collects the name of the new category and hands it to the create callback.
- * optionally sets the category's visibility conditions with the shared
+ * Optionally sets the category's visibility conditions with the shared
  * visual ConditionEditor.
  */
 export class CategoryCreateModal extends Modal {
@@ -98,7 +98,7 @@ export class CategoryCreateModal extends Modal {
                     });
             });
 
-        // visual visibility-conditions editor (validated on save)
+        // Visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(contentEl, undefined, {
             description: t('conditions_category_desc'),
         });

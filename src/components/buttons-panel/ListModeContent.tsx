@@ -43,7 +43,7 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
     const categoryDrag = useCategoryDragOptional();
     const { createCategory } = useCategoryCreation();
     const { createButton } = useButtonCreation();
-    // in sort/edit mode a category whose own condition does not hold
+    // In sort/edit mode a category whose own condition does not hold
     // stays rendered and manageable but gets a visual marker class.
     const contextHiddenCategoryIds = useContextHiddenCategoryIds();
     const interactionMode = useInteractionMode();

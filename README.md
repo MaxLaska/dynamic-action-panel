@@ -90,7 +90,8 @@ marquee, pipette and same-colour selection, create-note-from-selection,
 export-selected, a tool library UI. Cell colours already exist in the data
 model and in the template format, but there is no colour UI yet. The design for
 selection and colours lives in
-[`docs/ocap/audits/2026-09-18-selection-color-architecture.md`](docs/ocap/audits/2026-09-18-selection-color-architecture.md).
+[`docs/ocap/audits/2026-09-18-selection-color-architecture.md`](docs/ocap/audits/2026-09-18-selection-color-architecture.md)
+(German).
 
 ## Installation
 
@@ -103,9 +104,12 @@ Not in the community plugin directory yet, so install manually or via BRAT.
 2. Put them in `YourVault/.obsidian/plugins/buttons-panel/`.
 3. Enable the plugin in *Settings → Community plugins*.
 
-The plugin folder and id are still `buttons-panel` for compatibility with
-existing installations; see
-[`docs/ocap/rebranding-dynamic-action-panel.md`](docs/ocap/rebranding-dynamic-action-panel.md).
+> **Heads-up on the plugin id.** The folder and id are still `buttons-panel`,
+> so that existing installations of this fork keep their settings. That is the
+> *same* id the original Buttons Panel uses in the community directory, so the
+> two cannot be installed side by side — installing one over the other replaces
+> it. If you use upstream Buttons Panel, back up its `data.json` first. Why the
+> id stays: [`docs/ocap/rebranding-dynamic-action-panel.md`](docs/ocap/rebranding-dynamic-action-panel.md).
 
 **From source**
 
@@ -121,6 +125,41 @@ Node 18 or newer. To deploy into a vault of your choice, put
 `VAULT_PATH=/path/to/your/vault` into a `.env` file in the project root.
 See [`docs/contributing/contributing.md`](docs/contributing/contributing.md).
 
+## Settings
+
+Open them from the gear in the navigation bar, or via
+*Settings → Community plugins → Dynamic Action Panel*.
+
+| Setting | Effect |
+|---|---|
+| Show top navigation bar | Show or hide the bar above the panel. |
+| Enable button animation | Hover animation on buttons. |
+| Show button name on hover | Full tool name as a tooltip. |
+| Auto collapse in list view | Every category starts collapsed in list view. |
+| Tabs auto wrap | Tabs wrap onto several rows instead of scrolling horizontally. |
+| Folder name editable | Click the name of an expanded folder to rename it. |
+| Show button count | Number of tools on each folder tile. |
+| Close on blank click | Click empty space inside an expanded folder to close it. |
+| Template folder | Where *Create file* looks for templates. |
+| Script folder | Where *Run script* loads `.js` files from. |
+| Create paths | Creates the two folders above if they do not exist yet. |
+
+**Date variables.** A *Create file* action resolves `{{DATE:...}}` in the file
+name using Moment formats, so `Journal/{{DATE:YYYY-MM-DD}}` creates today's
+note.
+
+**Folder view.** Categories appear as tiles. Click one to expand it, pin it to
+keep it open, and drag a tool out of an expanded folder onto another tile —
+hovering a tile briefly auto-expands it so you can drop into it.
+
+**Touch.** Swipe to scroll the panel or the tab bar; long-press a tool or a
+category to start dragging it. A quick swipe before the long press completes
+counts as scrolling, not as a drag.
+
+**Custom icons.** Paste SVG markup as a tool icon. Replace `fill="..."` with
+`fill="currentColor"` so the icon follows the Obsidian theme, and prefer
+24×24 outline icons to match the built-in Lucide set.
+
 ## Scripts
 
 A *Run script* action executes a `.js` file from your configured script folder.
@@ -131,7 +170,7 @@ reads its context from `this.$context`:
 // scripts/hello.js
 module.exports = {
     entry: main,
-    name: { en: 'Say hello', de: 'Hallo sagen' },
+    name: { en: 'Say hello', zh: '打招呼', ru: 'Поздороваться' },
     description: { en: 'Send a greeting to the notice bar.' },
     tags: ['demo'],
 };
@@ -145,8 +184,8 @@ async function main() {
 `this.$context` provides `app`, `plugin`, the `obsidian` module namespace,
 `requestUrl` (which avoids CORS) and `notice`. The entry must be a regular
 function — an arrow function has no own `this`. `name` and `description` accept
-either a plain string or an object keyed by language code, and the script
-picker shows them in your current Obsidian language.
+either a plain string or an object keyed by language code (`en`, `zh`, `ru`),
+and the script picker shows them in your current Obsidian language.
 
 Script errors are caught and shown as a notice. **Do not run scripts from
 untrusted sources.**

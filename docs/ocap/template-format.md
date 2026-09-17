@@ -1,6 +1,11 @@
-# OCAP portable template format (`ocap-template`, v1)
+# Dynamic Action Panel portable template format (`ocap-template`, v1)
 
-A **template** is one or more fully configured OCAP categories — their tools,
+> The format id `ocap-template` and the `.ocap.json` extension keep the
+> project's former name (Obsidian Contextual Action Panel) on purpose: they are
+> an external, versioned contract carried by every file already exported.
+> See `docs/ocap/rebranding-dynamic-action-panel.md`.
+
+A **template** is one or more fully configured categories — their tools,
 placements, dynamic variants, triggers, grid sizes and (future) cell colors —
 in a single portable file that can be moved into a different vault.
 
@@ -113,7 +118,7 @@ structure → check internal references → remap ids → plan the next ToolStat
 ```
 
 - **Ids in a document are references, not identities.** Every category,
-  variant and tool gets a fresh OCAP id (`freshId`) and every reference is
+  variant and tool gets a fresh id (`freshId`) and every reference is
   rewritten. Consequences: an import can never overwrite an existing object
   because an id happens to match, and the same file can be imported twice
   without any collision.

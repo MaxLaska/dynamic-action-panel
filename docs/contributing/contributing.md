@@ -48,7 +48,7 @@ We welcome contributions from the community! Here's how you can help:
 ```bash
 # Clone the repository
 git clone https://github.com/MaxLaska/obsidian-contextual-action-panel.git
-cd obsidian-buttons-panel-plugin
+cd obsidian-contextual-action-panel
 
 # Install dependencies
 npm install
@@ -86,5 +86,4 @@ Use conventional commit format:
 ### 📞 Contact
 
 - **GitHub Issues**: [Report bugs or request features](https://github.com/MaxLaska/obsidian-contextual-action-panel/issues)
-- **GitHub Discussions**: [Ask questions or share ideas](https://github.com/MaxLaska/obsidian-contextual-action-panel/discussions)
-- **Email**: [Contact the maintainer](mailto:liuqjit@163.com@163.com) (if available)
+- **Questions and ideas**: [Open an issue](https://github.com/MaxLaska/obsidian-contextual-action-panel/issues)

@@ -1,6 +1,6 @@
 // conditions.ts
 // Pure validation and evaluation of the declarative condition model
-// (src/types/conditions.ts) against an WorkspaceContextSnapshot.
+// (src/types/conditions.ts) against a WorkspaceContextSnapshot.
 //
 // Guarantees:
 // - deterministic pure functions, no exceptions for legitimate inputs;

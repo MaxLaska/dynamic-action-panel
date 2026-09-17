@@ -86,14 +86,14 @@ const DESKTOP_DRAG_ACTIVATION_DISTANCE_PX = 4;
 
 /**
  * Debug infrastructure for DnD lifecycle investigations: set
- * `window.__PANEL_DND_DEBUG = true` in the developer console to trace every
+ * `window.__DYNAMIC_ACTION_PANEL_DND_DEBUG = true` in the developer console to trace every
  * dnd-kit lifecycle transition. A pointerdown without a `pending` log means
  * the activation guard rejected the attempt; `pending` without `dragStart`
  * after movement means the sensor died before onStart. Zero cost while the
  * flag is off — callers must check `isDndDebug()` before building log args.
  */
 function isDndDebug(): boolean {
-    return (window as unknown as { __PANEL_DND_DEBUG?: boolean }).__PANEL_DND_DEBUG === true;
+    return (window as unknown as { __DYNAMIC_ACTION_PANEL_DND_DEBUG?: boolean }).__DYNAMIC_ACTION_PANEL_DND_DEBUG === true;
 }
 
 function dndDebug(...args: unknown[]): void {

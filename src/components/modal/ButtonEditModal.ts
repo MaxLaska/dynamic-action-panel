@@ -141,7 +141,7 @@ export class ButtonEditModal extends Modal {
         this.nameInput.setValue(this.tempButton.name || '');
         this.iconInput.setValue(this.tempButton.icon || '');
 
-        // inside a grid category the variant decides contextuality, so
+        // Inside a grid category the variant decides contextuality, so
         // the per-button condition editor is replaced by the target statement.
         if (isGridCategory(this.parentCategory)) {
             const stored = findStoredCategory(this.plugin, this.parentCategory.id);
@@ -153,7 +153,7 @@ export class ButtonEditModal extends Modal {
             return;
         }
 
-        // visual visibility-conditions editor (validated on save)
+        // Visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(container, this.tempButton.conditions);
     }
 

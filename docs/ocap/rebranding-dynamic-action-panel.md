@@ -34,7 +34,7 @@ identifier genuinely is about the product as a whole.
   `OCAPContextSnapshot` → `WorkspaceContextSnapshot`, `EMPTY_OCAP_CONTEXT` →
   `EMPTY_WORKSPACE_CONTEXT`, `OCAPContextService` → `WorkspaceContextService`,
   `useOCAPContext` → `useWorkspaceContext`, `OCAPVisibility*` →
-  `PanelVisibility*`, `__OCAP_DND_DEBUG` → `__PANEL_DND_DEBUG`. Console
+  `PanelVisibility*`, `__OCAP_DND_DEBUG` → `__DYNAMIC_ACTION_PANEL_DND_DEBUG`. Console
   prefixes are now `[Dynamic Action Panel]`.
 - `README.zh.md`, `README.ru.md` and `docs/contributing/contributing.zh.md`
   were removed: they were translations of the **upstream** README, never

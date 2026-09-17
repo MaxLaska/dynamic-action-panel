@@ -41,6 +41,7 @@ jobs:
                       dist/main.js
                       dist/styles.css
                       dist/manifest.json
+                      LICENSE
 
             # styles.css / main.js / manifest.json match the usual Release assets; several subjects in one provenance
             - name: Generate build provenance attestation (styles.css, main.js, manifest.json)

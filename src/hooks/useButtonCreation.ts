@@ -11,7 +11,7 @@ import type { CategoryConfig } from '@/types';
  *
  * Wraps button creation behind a single entry point.
  *
- * in a dynamic grid category a new tool is created in the variant the
+ * In a dynamic grid category a new tool is created in the variant the
  * user is currently editing. That is why there is no "contextual" checkbox in
  * the button modal: the variant selector above the grid already answers the
  * question. `selection` is the NORMALIZED selection the panel renders from

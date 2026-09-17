@@ -27,9 +27,10 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Buttons Panel 2.4.7. **Das GitHub-Repository ist noch NICHT umbenannt**;
   empfohlener Slug `dynamic-action-panel` (manueller Schritt, siehe
   Rebranding-Dokument).
-- Branch `master`. Stand nach dem Rebranding-Pass: Working Tree sauber, drei
-  Commits (internal naming / public branding / HANDOFF). Davor war `2ba2cf1`
-  gepusht und `master` mit `origin/master` synchron.
+- Branch `master`. Stand nach dem Rebranding-Pass: Working Tree sauber, fünf
+  Commits (internal naming / public branding / HANDOFF / CSS- und
+  Keyword-Nachzug / Review-Findings). Davor war `2ba2cf1` gepusht und `master`
+  mit `origin/master` synchron.
 - Settings-Version: **5** (`CURRENT_SETTINGS_VERSION`), forward-only
   Migrationskette `0 → 1 → 2 → 3 → 4 → 5` in
   `src/settings/settingsMigrations.ts`. v5 ist der Tool-Registry-Refactor
@@ -266,7 +267,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Zustand, dann den Klick (`Locked — click to edit`). Global fürs ganze Panel,
   kein per-Category-Lock.
 - **Ein Tool darf vor seiner Action existieren.** Name/Icon/Slot zuerst und
-  die Action später ist ein legitimer Zustand; Das Plugin schreibt keine
+  die Action später ist ein legitimer Zustand; das Plugin schreibt keine
   Konfigurationsreihenfolge vor. Beim Speichern werden **unberührte**
   Action-Zeilen verworfen, eine **halb** ausgefüllte blockiert weiterhin (sie
   stillschweigend zu verwerfen hieße, Eingaben wegzuwerfen). Ein Klick auf ein
@@ -449,7 +450,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   (`<scriptFolderPath>/<scriptName>`); `.js` außerhalb → `file` plus Hinweis,
   weil `Run script` es gar nicht adressieren kann; alles andere → `file` mit
   dem exakten Vault-Pfad.
-- Drag-Debugging: `window.__PANEL_DND_DEBUG = true` traced den kompletten
+- Drag-Debugging: `window.__DYNAMIC_ACTION_PANEL_DND_DEBUG = true` traced den kompletten
   dnd-kit-Lifecycle (flag-gated, kostenlos wenn aus).
 - Settings-Objekte sind immutable-per-edit (Änderung = neue Objektidentität);
   React-Memos vergleichen Identität.

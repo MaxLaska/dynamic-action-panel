@@ -174,7 +174,7 @@ export function triggeredVariants<V extends VariantFields>(category: {
  * - an absent trigger never matches — "always active" is expressed explicitly
  *   as `{ all: [] }`, never implied by missing data;
  * - a structurally invalid trigger does NOT match. This is the one place where
- *   Resolution deliberately does not fail open: a corrupt always-matching variant
+ *   the plugin deliberately does not fail open: a corrupt always-matching variant
  *   would shadow every variant below it, whereas a skipped variant only loses
  *   itself in locked mode and stays fully selectable and repairable in the
  *   management modes (where it is marked as broken).

@@ -71,12 +71,12 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
     // Context menu handler.
     const handleContextMenu = useButtonMenu(button, category);
 
-    // in sort/edit mode a button hidden by its conditions stays
+    // In sort/edit mode a button hidden by its conditions stays
     // rendered and manageable but gets a visual marker class.
     const contextHiddenIds = useContextHiddenButtonIds();
     const isContextHidden = contextHiddenIds.has(button.id);
 
-    // persistent vs. contextual marker. Management modes state both
+    // Persistent vs. contextual marker. Management modes state both
     // explicitly so the configuration is transparent; locked mode is the
     // consumption surface and only hints at contextual buttons, so a panel
     // of static tools stays visually quiet.

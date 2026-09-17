@@ -151,7 +151,7 @@ export class ButtonCreateModal extends Modal {
         this.nameInput.setValue(this.tempButton.name || '');
         this.iconInput.setValue(this.tempButton.icon || '');
 
-        // inside a grid category, contextuality is a property of the
+        // Inside a grid category, contextuality is a property of the
         // VARIANT the tool is created in, not of the individual button — so
         // the per-button condition editor is replaced by a statement of where
         // it will land.
@@ -160,7 +160,7 @@ export class ButtonCreateModal extends Modal {
             return;
         }
 
-        // visual visibility-conditions editor (validated on save)
+        // Visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(container, this.tempButton.conditions);
     }
 

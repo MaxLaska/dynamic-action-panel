@@ -37,7 +37,7 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
     const categoryDrag = useCategoryDragOptional();
     const { createCategory } = useCategoryCreation();
     const { createButton } = useButtonCreation();
-    // in sort/edit mode a category whose own condition does not hold
+    // In sort/edit mode a category whose own condition does not hold
     // stays rendered and manageable but its tile gets a visual marker class.
     const contextHiddenCategoryIds = useContextHiddenCategoryIds();
 

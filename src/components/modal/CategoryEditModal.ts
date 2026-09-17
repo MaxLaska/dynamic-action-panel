@@ -27,7 +27,7 @@ import {
 /**
  * Modal for editing a category.
  * Renames the category, submitting on Enter and rejecting an empty name.
- * additionally edits the category's visibility conditions with the
+ * Additionally edits the category's visibility conditions with the
  * shared visual ConditionEditor.
  */
 export class CategoryEditModal extends Modal {
@@ -315,7 +315,7 @@ export class CategoryEditModal extends Modal {
         // Dynamic category: priority overview of the variants
         this.renderVariantsOverview(contentEl);
 
-        // visual visibility-conditions editor (validated on save)
+        // Visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(contentEl, this.oldConditions, {
             description: t('conditions_category_desc'),
         });
