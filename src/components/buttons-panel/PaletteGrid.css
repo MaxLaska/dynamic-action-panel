@@ -8,12 +8,28 @@
    `body` prefix raises specificity so the palette wins regardless of which
    class is present and of CSS concatenation order. */
 body .buttons-panel .ocap-palette-grid {
+    /* One source of truth for the slot box: the height a cell reserves for its
+       content, plus the constant 1px cell border on both sides (see below). */
+    --ocap-grid-slot-min-height: 56px;
+    --ocap-grid-row-height: calc(var(--ocap-grid-slot-min-height) + 2px);
+
     display: grid;
     grid-template-columns: repeat(var(--ocap-grid-columns, 4), minmax(0, 1fr));
+    /* Rows are sized by the GRID, never by what a cell happens to contain right
+       now. With `auto` rows a row holding a button was 1px-border taller than
+       an all-empty row, so a drag that emptied its source row — or previewed
+       into a previously empty one — resized those rows and shifted every slot
+       below them while the drag was still held. A definite track keeps all 16
+       slot rects fixed from drag start to drop or cancel. */
+    grid-auto-rows: var(--ocap-grid-row-height);
     gap: 4px;
     width: 100%;
     align-items: stretch;
     justify-items: stretch;
+}
+
+body .buttons-panel .ocap-palette-grid.icon-left {
+    --ocap-grid-slot-min-height: 40px;
 }
 
 /* Every cell carries a constant 1px border in EVERY mode (transparent when
@@ -62,13 +78,11 @@ body .buttons-panel .ocap-grid-slot .button-text {
 }
 
 /* Empty slots keep the cell's footprint. In locked mode they are invisible
-   spacers; management modes outline them so the field is readable. */
+   spacers; management modes outline them so the field is readable. The row
+   track already guarantees the height — this is the floor for a grid rendered
+   outside `.ocap-palette-grid` (drag previews of a whole category). */
 body .buttons-panel .ocap-grid-slot--empty {
     min-height: var(--ocap-grid-slot-min-height, 56px);
-}
-
-body .buttons-panel .ocap-palette-grid.icon-left .ocap-grid-slot--empty {
-    --ocap-grid-slot-min-height: 40px;
 }
 
 /* --- Management-mode grid chrome ---------------------------------------

@@ -8,11 +8,11 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
   Buttons Panel 2.4.7.
-- Branch `master`, HEAD `fix: keep grid source stable during drag`, lokal vor
+- Branch `master`, HEAD `fix: keep grid geometry stable during drag`, lokal vor
   `origin/master` — nicht ohne Auftrag pushen.
 - Settings-Version: **3** (`CURRENT_SETTINGS_VERSION`), forward-only
   Migrationskette `0 → 1 → 2 → 3` in `src/settings/settingsMigrations.ts`.
-- Teststand: `npm test` **352/352** (Vitest, node env, `tests/`),
+- Teststand: `npm test` **356/356** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
   `node esbuild.config.mjs production` grün.
 
@@ -82,6 +82,15 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - **Grid-Geometrie ist modus- und variant-invariant:** jede Zelle trägt in
   jedem Modus einen konstanten 1px-Rahmen (transparent in locked); Chrome
   nur über Farben (`--managed`, `--sort` Container-Klassen).
+- **Slot-Geometrie ist inhaltsunabhängig und während eines Drags stabil:** die
+  Zeilenhöhe kommt aus einem definiten Track (`grid-auto-rows:
+  var(--ocap-grid-row-height)` = Slot-Token + 2px Zellrahmen), nie aus dem
+  momentanen Zellinhalt. Mit `auto`-Zeilen war eine Reihe mit Button um zwei
+  Zellrahmen höher als eine komplett leere — ein Drag, der seine Quellreihe
+  leerte oder in eine leere Reihe previewte, verschob dadurch mitten im Drag
+  alle darunterliegenden Slots (live gemessen: 1,33 px). Keine Regel, die an
+  Belegung/Ziel/Preview hängt, darf eine feste Größe setzen (gepinnt in
+  `tests/paletteGridGeometry.test.ts`).
 - Drag-Debugging: `window.__OCAP_DND_DEBUG = true` traced den kompletten
   dnd-kit-Lifecycle (flag-gated, kostenlos wenn aus).
 - Settings-Objekte sind immutable-per-edit (Änderung = neue Objektidentität);
