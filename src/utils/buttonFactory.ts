@@ -1,6 +1,7 @@
 // buttonFactory.ts
 // 按钮工厂函数，生成默认按钮配置对象。
 import { ButtonConfig } from '@/types';
+import { freshId } from '@/utils/id';
 
 /**
  * 创建一个默认的按钮配置对象。
@@ -8,7 +9,7 @@ import { ButtonConfig } from '@/types';
  */
 export function createDefaultButtonConfig(): ButtonConfig {
     return {
-        id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+        id: freshId(),
         name: '',
         icon: '',
         actions: [] as ButtonConfig['actions'],

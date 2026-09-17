@@ -10,6 +10,7 @@
 import type { ButtonConfig, CategoryConfig } from '@/types/settings';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { getCategoryVariants, isDynamicCategory } from '@/utils/categoryVariants';
+import { freshId } from '@/utils/id';
 
 /** The persisted category with this id, or null when it no longer exists. */
 export function findStoredCategory(
@@ -37,11 +38,41 @@ export function replaceStoredCategory(
     return true;
 }
 
-let copyCounter = 0;
+/** Fires the panel re-render every commit ends with. */
+export function dispatchPanelRefresh(): void {
+    activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
+}
 
-function freshId(): string {
-    copyCounter += 1;
-    return `${Date.now().toString(36)}-${copyCounter}-${Math.random().toString(36).slice(2, 9)}`;
+/**
+ * THE commit funnel for category edits: replace the stored category, persist,
+ * re-render. Every write path used to repeat this find→replace→save→refresh
+ * sequence with small variations; new domain operations hang off this one
+ * point instead. Returns false (and does nothing) when the category has
+ * disappeared in the meantime.
+ */
+export async function commitStoredCategory(
+    plugin: ButtonsPanelPlugin,
+    next: CategoryConfig
+): Promise<boolean> {
+    if (!replaceStoredCategory(plugin, next)) {
+        return false;
+    }
+    await plugin.saveSettings();
+    dispatchPanelRefresh();
+    return true;
+}
+
+/**
+ * Commit funnel for whole-array changes (reorder, add, delete of categories).
+ * The new array replaces the old one — never mutate the existing objects.
+ */
+export async function commitCategories(
+    plugin: ButtonsPanelPlugin,
+    next: CategoryConfig[]
+): Promise<void> {
+    plugin.settings.categories = next;
+    await plugin.saveSettings();
+    dispatchPanelRefresh();
 }
 
 function copyButtons(buttons: readonly ButtonConfig[]): ButtonConfig[] {

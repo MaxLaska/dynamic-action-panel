@@ -1,6 +1,5 @@
 import { useCallback } from 'react';
 import { usePluginContext } from '@/contexts/PluginContext';
-import { useRefresh } from './useRefresh';
 import { ButtonCreateModal } from '@/components/modal/ButtonCreateModal';
 import { useCategoryVariants } from '@/contexts/CategoryVariantContext';
 import { findStoredCategory } from '@/utils/categoryStore';
@@ -23,7 +22,6 @@ import type { CategoryConfig } from '@/types';
  */
 export function useButtonCreation() {
     const { plugin, app } = usePluginContext();
-    const { refresh } = useRefresh();
     const { selection } = useCategoryVariants();
 
     /**
@@ -43,9 +41,8 @@ export function useButtonCreation() {
                 app,
                 plugin,
                 stored,
+                // The modal saves through the commit funnel itself.
                 () => {
-                    void plugin.saveSettings();
-                    refresh();
                     if (onCreated) {
                         onCreated();
                     }
@@ -54,7 +51,7 @@ export function useButtonCreation() {
                 targetSlot
             ).open();
         },
-        [plugin, app, refresh, selection]
+        [plugin, app, selection]
     );
 
     return {

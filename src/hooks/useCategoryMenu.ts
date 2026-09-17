@@ -3,7 +3,7 @@ import { Menu, MenuItem } from 'obsidian';
 import { usePluginContext } from '@/contexts/PluginContext';
 import { CategoryEditModal } from '@/components/modal/CategoryEditModal';
 import { CategoryDeleteModal } from '@/components/modal/CategoryDeleteModal';
-import { duplicateCategoryConfig } from '@/utils/categoryStore';
+import { commitCategories, duplicateCategoryConfig } from '@/utils/categoryStore';
 import { isStaticGridCategory } from '@/utils/categoryVariants';
 import { openMakeDynamicModal } from '@/utils/categoryMenuUtils';
 import { t } from '@/utils/i18n';
@@ -23,10 +23,8 @@ export function useCategoryMenu(category: CategoryConfig, categories: CategoryCo
                 item.setTitle(t('edit'))
                     .setIcon('pencil')
                     .onClick(() => {
-                        new CategoryEditModal(app, plugin, category, () => {
-                            void plugin.saveSettings();
-                            activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
-                        }).open();
+                        // The modal saves through the commit funnel itself.
+                        new CategoryEditModal(app, plugin, category, () => {}).open();
                     });
             });
 
@@ -44,16 +42,15 @@ export function useCategoryMenu(category: CategoryConfig, categories: CategoryCo
                 item.setTitle(t('copy') || '复制')
                     .setIcon('copy')
                     .onClick(() => {
-                        void (async () => {
-                            // Copies every variant, not just `buttons`.
-                            const newCategory = duplicateCategoryConfig(
-                                category,
-                                categories.length
-                            );
-                            plugin.settings.categories.push(newCategory);
-                            await plugin.saveSettings();
-                            activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
-                        })();
+                        // Copies every variant, not just `buttons`.
+                        const newCategory = duplicateCategoryConfig(
+                            category,
+                            categories.length
+                        );
+                        void commitCategories(plugin, [
+                            ...plugin.settings.categories,
+                            newCategory,
+                        ]);
                     });
             });
 

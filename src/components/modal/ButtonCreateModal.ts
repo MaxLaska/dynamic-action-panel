@@ -12,7 +12,8 @@ import { ActionSequence } from '@/actions/ActionSequence';
 import { NameInput, IconInput, ConditionEditor } from '@/components/input';
 import { addButtonToGrid, findVariant } from '@/utils/categoryVariants';
 import { isGridCategory } from '@/utils/categoryGrid';
-import { findStoredCategory, replaceStoredCategory } from '@/utils/categoryStore';
+import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
+import { createDefaultButtonConfig } from '@/utils/buttonFactory';
 
 /**
  * ButtonCreateModal 按钮创建模态框类。
@@ -64,16 +65,7 @@ export class ButtonCreateModal extends Modal {
         this.onSave = onSave;
         this.targetVariantId = targetVariantId;
         this.targetSlot = targetSlot;
-        this.tempButton = {
-            id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
-            name: '',
-            icon: '',
-            actions: [],
-            order: 0,
-            executionMode: 'sequential',
-            stopOnError: true,
-            delayBetweenActions: 100,
-        };
+        this.tempButton = createDefaultButtonConfig();
         this.actionSequence = new ActionSequence(this.tempButton.actions);
         // 新建时如果没有动作，自动添加一个默认动作
         if (this.tempButton.actions.length === 0) {
@@ -302,17 +294,16 @@ export class ButtonCreateModal extends Modal {
                 new Notice(t('variant_grid_full'));
                 return;
             }
-            replaceStoredCategory(this.plugin, next);
+            await commitStoredCategory(this.plugin, next);
         } else {
             const maxOrder = Math.max(...stored.buttons.map((b) => b.order), -1);
             this.tempButton.order = maxOrder + 1;
-            replaceStoredCategory(this.plugin, {
+            await commitStoredCategory(this.plugin, {
                 ...stored,
                 buttons: [...stored.buttons, { ...this.tempButton }],
             });
         }
 
-        await this.plugin.saveSettings();
         new Notice(t('button_create_success'));
         this.close();
         this.onSave?.();

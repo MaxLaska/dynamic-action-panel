@@ -16,7 +16,7 @@ import {
     replaceButtonInGridCategory,
 } from '@/utils/categoryVariants';
 import { isGridCategory } from '@/utils/categoryGrid';
-import { findStoredCategory, replaceStoredCategory } from '@/utils/categoryStore';
+import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
 
 /**
  * ButtonEditModal 按钮编辑模态框类。
@@ -297,7 +297,7 @@ export class ButtonEditModal extends Modal {
         const stored =
             findStoredCategory(this.plugin, this.parentCategory.id) ?? this.parentCategory;
         if (isGridCategory(stored)) {
-            replaceStoredCategory(
+            await commitStoredCategory(
                 this.plugin,
                 replaceButtonInGridCategory(stored, updatedButton)
             );
@@ -308,11 +308,10 @@ export class ButtonEditModal extends Modal {
             if (index > -1) {
                 const buttons = [...stored.buttons];
                 buttons[index] = updatedButton;
-                replaceStoredCategory(this.plugin, { ...stored, buttons });
+                await commitStoredCategory(this.plugin, { ...stored, buttons });
             }
         }
 
-        await this.plugin.saveSettings();
         new Notice(t('button_update_success'));
         this.close();
         this.onSave?.();

@@ -1,8 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { usePluginContext } from '@/contexts/PluginContext';
-import { useRefresh } from './useRefresh';
 import { useCategoryVariants } from '@/contexts/CategoryVariantContext';
-import { findStoredCategory, replaceStoredCategory } from '@/utils/categoryStore';
+import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
 import { GridResizeConfirmModal } from '@/components/modal/GridResizeConfirmModal';
 import {
     gridDimensionsOf,
@@ -87,7 +86,6 @@ function planShrink(plan: GridResizePlan): { edge: GridResizeEdge; strips: numbe
  */
 export function useGridResize() {
     const { plugin, app } = usePluginContext();
-    const { refresh } = useRefresh();
     const { selection } = useCategoryVariants();
 
     /** The variant whose grid the user is editing, or null for a static grid. */
@@ -121,16 +119,15 @@ export function useGridResize() {
                 // async, and the grid may have changed while it was open.
                 const fresh = findStoredCategory(plugin, category.id);
                 const freshPlan = fresh ? planGridResize(fresh, variantId, next) : null;
-                if (!freshPlan || !replaceStoredCategory(plugin, freshPlan.category)) {
+                if (!freshPlan) {
                     options?.onSettled?.();
                     return;
                 }
-                void plugin
-                    .saveSettings()
-                    .then(() => refresh())
-                    // A failed save must release a held preview too, or it
-                    // would keep showing a size the data never got.
-                    .finally(() => options?.onSettled?.());
+                // A failed save must release a held preview too, or it would
+                // keep showing a size the data never got.
+                void commitStoredCategory(plugin, freshPlan.category).finally(() =>
+                    options?.onSettled?.()
+                );
             };
 
             if (plan.removed.length === 0) {
@@ -148,7 +145,7 @@ export function useGridResize() {
             }).open();
             return 'confirming';
         },
-        [app, plugin, refresh, targetVariantId]
+        [app, plugin, targetVariantId]
     );
 
     /** Dimensions of the grid the user is editing in this category. */

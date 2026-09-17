@@ -26,10 +26,8 @@ export function useButtonMenu(button: ButtonConfig, category: CategoryConfig) {
                 item.setTitle(t('edit'))
                     .setIcon('pencil')
                     .onClick(() => {
-                        new ButtonEditModal(app, plugin, button, category, () => {
-                            void plugin.saveSettings();
-                            activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
-                        }).open();
+                        // The modal saves through the commit funnel itself.
+                        new ButtonEditModal(app, plugin, button, category, () => {}).open();
                     });
             });
 

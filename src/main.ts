@@ -142,16 +142,17 @@ export default class ButtonsPanelPlugin extends Plugin {
     }
 
     /**
-     * 保存插件设置（异步），保存前会自动排序按钮顺序，保证数据一致性。
+     * 保存插件设置（异步）。
+     *
+     * Persisting must not silently mutate the domain objects: the historical
+     * in-place `order` sort that lived here is gone. Ordering is now
+     * guaranteed at the two right places instead — loading normalizes any
+     * legacy out-of-order arrays in memory (see normalizeSettings in
+     * settingsMigrations.ts), and every write path keeps `order` consistent
+     * with the array order it writes.
      */
     async saveSettings() {
         try {
-            // 在保存之前确保分类和按钮按照 order 值正确排序
-            this.settings.categories.sort((a, b) => a.order - b.order);
-            this.settings.categories.forEach((category) => {
-                category.buttons.sort((a, b) => a.order - b.order);
-            });
-
             await this.saveData(this.settings);
             this.updatePanels();
         } catch (error) {

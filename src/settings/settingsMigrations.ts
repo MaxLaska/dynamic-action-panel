@@ -84,6 +84,56 @@ function sanitizeCategories(value: unknown): CategoryConfig[] {
     return Array.isArray(value) ? (value as CategoryConfig[]) : [];
 }
 
+/** `order` as a sortable number; anything else sorts as 0 (stable sort keeps ties). */
+function orderValue(value: unknown): number {
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function isSortedByOrder(items: readonly { order?: unknown }[]): boolean {
+    for (let i = 1; i < items.length; i++) {
+        if (orderValue(items[i - 1]!.order) > orderValue(items[i]!.order)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * In-memory ordering normalization (pure — inputs are never mutated).
+ *
+ * saveSettings historically sorted categories and buttons by `order` in place
+ * on every save; that hidden mutation is gone, so loading is now the one
+ * place that brings legacy out-of-order arrays into their visible order. The
+ * write paths all keep `order` consistent with the array order they write,
+ * so for data this plugin saved this is a no-op (identity preserved).
+ * Variant grids are untouched — the old sort never reached them either, and
+ * grid placement orders by `order` at render time anyway.
+ */
+function normalizeCategoryOrdering(categories: CategoryConfig[]): CategoryConfig[] {
+    let anyChanged = false;
+    const normalized = categories.map((category) => {
+        if (
+            !isRecord(category) ||
+            !Array.isArray((category as CategoryConfig).buttons) ||
+            isSortedByOrder((category as CategoryConfig).buttons)
+        ) {
+            return category;
+        }
+        anyChanged = true;
+        return {
+            ...category,
+            buttons: [...(category as CategoryConfig).buttons].sort(
+                (a, b) => orderValue(a.order) - orderValue(b.order)
+            ),
+        };
+    });
+    const result = anyChanged ? normalized : categories;
+    if (isSortedByOrder(result)) {
+        return result;
+    }
+    return [...result].sort((a, b) => orderValue(a.order) - orderValue(b.order));
+}
+
 /**
  * Coerce a stored interaction mode to the two modes that exist since version 4.
  *
@@ -112,7 +162,7 @@ function normalizeSettings(raw: Record<string, unknown>): Record<string, unknown
     };
     return {
         ...raw,
-        categories: sanitizeCategories(raw['categories']),
+        categories: normalizeCategoryOrdering(sanitizeCategories(raw['categories'])),
         panelConfig: {
             ...panelConfig,
             // In-memory safety net for data this build did not migrate

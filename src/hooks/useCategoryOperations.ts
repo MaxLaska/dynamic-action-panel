@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { usePluginContext } from '@/contexts/PluginContext';
 import { useRefresh } from './useRefresh';
 import { CategoryDeleteModal } from '@/components/modal/CategoryDeleteModal';
-import { duplicateCategoryConfig } from '@/utils/categoryStore';
+import { commitCategories, duplicateCategoryConfig } from '@/utils/categoryStore';
 import type { CategoryConfig } from '@/types';
 
 /**
@@ -26,11 +26,12 @@ export function useCategoryOperations() {
             // Copies every palette layer, not just `buttons` — see
             // duplicateCategoryConfig.
             const newCategory = duplicateCategoryConfig(category, categories.length);
-            plugin.settings.categories.push(newCategory);
-            await plugin.saveSettings();
-            refresh();
+            await commitCategories(plugin, [
+                ...plugin.settings.categories,
+                newCategory,
+            ]);
         },
-        [plugin, refresh]
+        [plugin]
     );
 
     /**

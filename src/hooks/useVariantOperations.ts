@@ -1,7 +1,6 @@
 import { useCallback } from 'react';
 import { Notice } from 'obsidian';
 import { usePluginContext } from '@/contexts/PluginContext';
-import { useRefresh } from './useRefresh';
 import { VariantDeleteModal, VariantModal } from '@/components/modal/VariantModal';
 import {
     addVariant,
@@ -13,13 +12,10 @@ import {
     removeVariant,
     updateVariant,
 } from '@/utils/categoryVariants';
+import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
+import { freshId } from '@/utils/id';
 import type { CategoryConfig } from '@/types';
 import { t, tWithParams } from '@/utils/i18n';
-
-/** Ids are timestamps + entropy, like every other id in this codebase. */
-function newId(prefix: string): string {
-    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-}
 
 /**
  * Create / edit / duplicate / reorder / delete the variants of a dynamic grid
@@ -31,28 +27,23 @@ function newId(prefix: string): string {
  */
 export function useVariantOperations() {
     const { plugin, app } = usePluginContext();
-    const { refresh } = useRefresh();
 
     const replaceCategory = useCallback(
         (categoryId: string, update: (category: CategoryConfig) => CategoryConfig) => {
-            const categories = plugin.settings.categories;
-            const index = categories.findIndex((category) => category.id === categoryId);
-            if (index === -1) {
+            const stored = findStoredCategory(plugin, categoryId);
+            if (!stored) {
                 new Notice(t('category_not_found'));
                 return null;
             }
-            const next = update(categories[index]!);
-            categories[index] = next;
-            void plugin.saveSettings();
-            refresh();
+            const next = update(stored);
+            void commitStoredCategory(plugin, next);
             return next;
         },
-        [plugin, refresh]
+        [plugin]
     );
 
     const storedCategory = useCallback(
-        (categoryId: string) =>
-            plugin.settings.categories.find((c) => c.id === categoryId) ?? null,
+        (categoryId: string) => findStoredCategory(plugin, categoryId),
         [plugin]
     );
 
@@ -65,7 +56,7 @@ export function useVariantOperations() {
                 title: t('variant_create_title'),
                 fallbackTaken: findFallbackVariant(category) !== null,
                 onSubmit: ({ name, trigger, fallback }) => {
-                    const variantId = newId('var');
+                    const variantId = freshId('var');
                     replaceCategory(categoryId, (stored) =>
                         addVariant(stored, { id: variantId, name, trigger, fallback })
                     );
@@ -127,13 +118,13 @@ export function useVariantOperations() {
                 trigger: source.trigger,
                 fallbackTaken: findFallbackVariant(category) !== null,
                 onSubmit: ({ name, trigger, fallback }) => {
-                    const copyId = newId('var');
+                    const copyId = freshId('var');
                     replaceCategory(categoryId, (stored) =>
                         duplicateVariant(
                             stored,
                             sourceVariantId,
                             { id: copyId, name, trigger, fallback },
-                            (index) => newId(`btn${index}`)
+                            (index) => freshId(`btn${index}`)
                         )
                     );
                     onDuplicated?.(copyId);

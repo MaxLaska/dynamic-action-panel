@@ -1,9 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { Notice, getIcon } from 'obsidian';
 import { usePluginContext } from '@/contexts/PluginContext';
-import { useRefresh } from './useRefresh';
 import { useCategoryVariants } from '@/contexts/CategoryVariantContext';
-import { findStoredCategory, replaceStoredCategory } from '@/utils/categoryStore';
+import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
 import { addButtonToGrid, isDynamicCategory } from '@/utils/categoryVariants';
 import { createDefaultButtonConfig } from '@/utils/buttonFactory';
 import { buildVaultFileButtonDraft } from '@/utils/vaultFileButton';
@@ -31,7 +30,6 @@ import type { ButtonConfig, CategoryConfig } from '@/types';
  */
 export function useSlotFileDrop() {
     const { plugin, app } = usePluginContext();
-    const { refresh } = useRefresh();
     const { selection } = useCategoryVariants();
 
     /** Readable during `dragover`, so the slot can light up before the drop. */
@@ -74,10 +72,7 @@ export function useSlotFileDrop() {
                 new Notice(t('variant_grid_full'));
                 return;
             }
-            replaceStoredCategory(plugin, next);
-            void plugin.saveSettings().then(() => {
-                refresh();
-            });
+            void commitStoredCategory(plugin, next);
 
             new Notice(
                 draft.scriptFolderMismatch
@@ -85,7 +80,7 @@ export function useSlotFileDrop() {
                     : t('button_create_success')
             );
         },
-        [app, plugin, refresh, selection]
+        [app, plugin, selection]
     );
 
     return useMemo(

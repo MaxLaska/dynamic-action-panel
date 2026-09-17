@@ -3,8 +3,15 @@ import { CategoryEditModal } from '@/components/modal/CategoryEditModal';
 import { CategoryDeleteModal } from '@/components/modal/CategoryDeleteModal';
 import { VariantModal } from '@/components/modal/VariantModal';
 import { t } from '@/utils/i18n';
-import { duplicateCategoryConfig } from '@/utils/categoryStore';
+import {
+    commitCategories,
+    commitStoredCategory,
+    dispatchPanelRefresh,
+    duplicateCategoryConfig,
+    findStoredCategory,
+} from '@/utils/categoryStore';
 import { convertStaticGridToDynamic, isStaticGridCategory } from '@/utils/categoryVariants';
+import { freshId } from '@/utils/id';
 import type { CategoryConfig, ButtonsPanelPlugin } from '@/types';
 
 /**
@@ -27,25 +34,20 @@ export function openMakeDynamicModal(
         title: t('variant_make_dynamic_title'),
         name: category.name,
         onSubmit: ({ name, trigger, fallback }) => {
-            const stored = plugin.settings.categories.find((c) => c.id === categoryId);
+            const stored = findStoredCategory(plugin, categoryId);
             if (!stored || !isStaticGridCategory(stored)) {
                 new Notice(t('category_not_found'));
                 return;
             }
-            const variantId = `var-${Date.now().toString(36)}-${Math.random()
-                .toString(36)
-                .slice(2, 9)}`;
-            const index = plugin.settings.categories.findIndex(
-                (c) => c.id === categoryId
+            void commitStoredCategory(
+                plugin,
+                convertStaticGridToDynamic(stored, {
+                    id: freshId('var'),
+                    name,
+                    trigger,
+                    fallback,
+                })
             );
-            plugin.settings.categories[index] = convertStaticGridToDynamic(stored, {
-                id: variantId,
-                name,
-                trigger,
-                fallback,
-            });
-            void plugin.saveSettings();
-            activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
         },
     }).open();
 }
@@ -69,10 +71,8 @@ export function createCategoryMenuHandler(
             item.setTitle(t('edit'))
                 .setIcon('pencil')
                 .onClick(() => {
-                    new CategoryEditModal(app, plugin, category, () => {
-                        void plugin.saveSettings();
-                        activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
-                    }).open();
+                    // The modal saves through the commit funnel itself.
+                    new CategoryEditModal(app, plugin, category, () => {}).open();
                 });
         });
 
@@ -90,16 +90,15 @@ export function createCategoryMenuHandler(
             item.setTitle(t('copy') || '复制')
                 .setIcon('copy')
                 .onClick(() => {
-                    void (async () => {
-                        // Copies every variant, not just `buttons`.
-                        const newCategory = duplicateCategoryConfig(
-                            category,
-                            categories.length
-                        );
-                        plugin.settings.categories.push(newCategory);
-                        await plugin.saveSettings();
-                        activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
-                    })();
+                    // Copies every variant, not just `buttons`.
+                    const newCategory = duplicateCategoryConfig(
+                        category,
+                        categories.length
+                    );
+                    void commitCategories(plugin, [
+                        ...plugin.settings.categories,
+                        newCategory,
+                    ]);
                 });
         });
 
@@ -108,7 +107,7 @@ export function createCategoryMenuHandler(
                 .setIcon('trash')
                 .onClick(() => {
                     new CategoryDeleteModal(app, plugin, category, () => {
-                        activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
+                        dispatchPanelRefresh();
                     }).open();
                 });
         });

@@ -72,6 +72,7 @@ import {
 } from '@/utils/panelDragCollision';
 import { snapCenterToCursor } from '@/utils/dndModifiers';
 import { PANEL_AUTO_SCROLL_OPTIONS } from '@/utils/panelAutoScroll';
+import { commitCategories } from '@/utils/categoryStore';
 import { t } from '@/utils/i18n';
 
 /**
@@ -541,7 +542,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 }
             }
 
-            pluginInstance.settings.categories = storedCategories.map((category) => {
+            const nextCategories = storedCategories.map((category) => {
                 const ids = finalItems[category.id];
                 if (!ids) return category;
 
@@ -582,8 +583,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 };
             });
 
-            await pluginInstance.saveSettings();
-            activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
+            await commitCategories(pluginInstance, nextCategories);
         },
         []
     );
@@ -608,13 +608,14 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 }
             }
 
-            pluginInstance.settings.categories = reordered;
-            reordered.forEach((cat, idx) => {
-                cat.order = idx;
-            });
-
-            await pluginInstance.saveSettings();
-            activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
+            // Renumber immutably: a moved category is a changed category and
+            // gets a new object identity; untouched ones keep theirs.
+            await commitCategories(
+                pluginInstance,
+                reordered.map((cat, idx) =>
+                    cat.order === idx ? cat : { ...cat, order: idx }
+                )
+            );
         },
         []
     );

@@ -752,3 +752,97 @@ describe('version 4 – sort mode merges into edit mode', () => {
         );
     });
 });
+
+describe('load-time ordering normalization (the retired saveSettings sort)', () => {
+    // saveSettings used to sort categories and flow buttons by `order` in
+    // place on every save. That hidden mutation is gone; loading is now the
+    // one place that brings legacy out-of-order arrays into the order the
+    // user actually saw. Data this plugin saved is already consistent and
+    // must pass through untouched, identity included.
+
+    function currentData(): Record<string, unknown> {
+        return {
+            settingsVersion: CURRENT_SETTINGS_VERSION,
+            categories: [
+                {
+                    id: 'cat-b',
+                    name: 'B',
+                    order: 1,
+                    buttons: [
+                        { id: 'b-2', name: 'Second', actions: [], order: 1 },
+                        { id: 'b-1', name: 'First', actions: [], order: 0 },
+                    ],
+                },
+                {
+                    id: 'cat-a',
+                    name: 'A',
+                    order: 0,
+                    buttons: [
+                        { id: 'a-1', name: 'Alpha', actions: [], order: 0 },
+                        { id: 'a-2', name: 'Beta', actions: [], order: 1 },
+                    ],
+                },
+            ],
+            panelConfig: {},
+            pathConfig: {},
+        };
+    }
+
+    it('sorts out-of-order categories and flow buttons by `order` on load', () => {
+        const result = migrateSettings(currentData());
+        expect(result.status).toBe('current');
+        expect(result.changed).toBe(false);
+
+        expect(result.settings.categories.map((c) => c.id)).toEqual(['cat-a', 'cat-b']);
+        expect(result.settings.categories[1]!.buttons.map((b) => b.id)).toEqual([
+            'b-1',
+            'b-2',
+        ]);
+        // The already-sorted category keeps its identity untouched.
+        expect(result.settings.categories[0]!.buttons.map((b) => b.id)).toEqual([
+            'a-1',
+            'a-2',
+        ]);
+    });
+
+    it('keeps already-sorted arrays identical (identity preserved)', () => {
+        const data = currentData();
+        // Pre-sort the fixture the way the plugin itself would have saved it.
+        (data.categories as { order: number }[]).sort((a, b) => a.order - b.order);
+        for (const category of data.categories as { buttons: { order: number }[] }[]) {
+            category.buttons.sort((a, b) => a.order - b.order);
+        }
+
+        const result = migrateSettings(data);
+        expect(result.settings.categories).toBe(data.categories);
+        expect(result.settings.categories[0]!.buttons).toBe(
+            (data.categories as { buttons: unknown[] }[])[0]!.buttons
+        );
+    });
+
+    it('treats missing/invalid order values as 0 and keeps their relative order (stable)', () => {
+        const data = {
+            settingsVersion: CURRENT_SETTINGS_VERSION,
+            categories: [
+                {
+                    id: 'cat',
+                    name: 'C',
+                    order: 0,
+                    buttons: [
+                        { id: 'x', name: 'X', actions: [], order: 2 },
+                        { id: 'no-order-1', name: 'N1', actions: [] },
+                        { id: 'no-order-2', name: 'N2', actions: [] },
+                    ],
+                },
+            ],
+            panelConfig: {},
+            pathConfig: {},
+        };
+        const result = migrateSettings(data);
+        expect(result.settings.categories[0]!.buttons.map((b) => b.id)).toEqual([
+            'no-order-1',
+            'no-order-2',
+            'x',
+        ]);
+    });
+});

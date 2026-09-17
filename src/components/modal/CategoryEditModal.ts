@@ -16,6 +16,7 @@ import {
 } from '@/utils/categoryVariants';
 import { summarizeVariantTrigger } from '@/utils/conditionSummary';
 import { VariantModal } from '@/components/modal/VariantModal';
+import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
 
 /**
  * CategoryEditModal 分类编辑模态框类。
@@ -108,9 +109,7 @@ export class CategoryEditModal extends Modal {
 
     /** The stored category, or null if it was deleted while the modal is open. */
     private storedCategory(): CategoryConfig | null {
-        return (
-            this.plugin.settings.categories.find((c) => c.id === this.categoryId) ?? null
-        );
+        return findStoredCategory(this.plugin, this.categoryId);
     }
 
     /**
@@ -120,14 +119,12 @@ export class CategoryEditModal extends Modal {
      * cannot collide with them.
      */
     private updateStoredCategory(update: (category: CategoryConfig) => CategoryConfig): void {
-        const categories = this.plugin.settings.categories;
-        const index = categories.findIndex((c) => c.id === this.categoryId);
-        if (index === -1) {
+        const stored = this.storedCategory();
+        if (!stored) {
             new Notice(t('category_not_found'));
             return;
         }
-        categories[index] = update(categories[index]!);
-        void this.plugin.saveSettings();
+        void commitStoredCategory(this.plugin, update(stored));
         this.renderVariantRows();
     }
 
@@ -356,16 +353,15 @@ export class CategoryEditModal extends Modal {
 
         // 根据ID查找分类并用新对象替换：
         // 对象身份约定（DECISIONS.md）——内容变化必须产生新的对象引用。
-        const categories = this.plugin.settings.categories;
-        const index = categories.findIndex((c) => c.id === this.categoryId);
-        if (index === -1) {
+        const stored = this.storedCategory();
+        if (!stored) {
             new Notice(t('category_not_found'));
             return;
         }
 
         // Layout first: switching to the grid rewrites the buttons (assigning
         // slots), and it can legitimately refuse — nothing must be saved then.
-        const layoutResult = applyCategoryLayout(categories[index]!, this.selectedLayout);
+        const layoutResult = applyCategoryLayout(stored, this.selectedLayout);
         if (!layoutResult.ok) {
             new Notice(
                 layoutResult.reason === 'dynamic_category'
@@ -386,8 +382,7 @@ export class CategoryEditModal extends Modal {
             // JSON serialization on save).
             conditions: conditionsResult ? conditionsResult.conditions : undefined,
         };
-        categories[index] = updated;
-        void this.plugin.saveSettings();
+        void commitStoredCategory(this.plugin, updated);
         this.onRename();
         this.close();
     }

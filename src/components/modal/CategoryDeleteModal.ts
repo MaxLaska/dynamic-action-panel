@@ -1,6 +1,7 @@
 import { App, Modal, Setting, Notice } from 'obsidian';
 import { ButtonsPanelPlugin } from '@/types/plugin';
 import { CategoryConfig } from '@/types';
+import { commitCategories } from '@/utils/categoryStore';
 import { t, tWithParams } from '@/utils/i18n';
 
 /**
@@ -81,15 +82,12 @@ export class CategoryDeleteModal extends Modal {
                 (c) => c.id === this.category.id
             );
             if (index > -1) {
-                this.plugin.settings.categories.splice(index, 1);
-
-                // 重新计算剩余分类的order值
-                this.plugin.settings.categories.forEach((cat, i) => {
-                    cat.order = i;
-                });
-
-                // 保存设置
-                await this.plugin.saveSettings();
+                // Remove and renumber immutably — never mutate the surviving
+                // category objects (identity convention from DECISIONS.md).
+                const remaining = this.plugin.settings.categories
+                    .filter((c) => c.id !== this.category.id)
+                    .map((cat, i) => (cat.order === i ? cat : { ...cat, order: i }));
+                await commitCategories(this.plugin, remaining);
 
                 // 显示成功消息
                 const buttonCount = this.category.buttons.length;

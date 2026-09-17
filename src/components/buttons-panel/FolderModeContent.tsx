@@ -10,6 +10,7 @@ import { FolderDetailOverlay } from '@/components/buttons-panel/FolderDetailOver
 import { useCategoryCreation, useButtonCreation } from '@/hooks';
 import { AddCategoryButton } from '@/components/shared/AddCategoryButton';
 import { createCategoryMenuHandler } from '@/utils/categoryMenuUtils';
+import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
 import { categorySortableId } from '@/utils/categoryDragItems';
 import { useConfigContext } from '@/contexts/ConfigContext';
 import { useContextHiddenCategoryIds } from '@/contexts/OCAPVisibilityContext';
@@ -387,9 +388,11 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
     const handleRename = React.useCallback(
         (newName: string) => {
             if (!openCategory) return;
-            openCategory.name = newName;
-            void plugin.saveSettings();
-            activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
+            // The rendered category can be a projection copy — rename the
+            // STORED one, immutably, through the commit funnel.
+            const stored = findStoredCategory(plugin, openCategory.id);
+            if (!stored) return;
+            void commitStoredCategory(plugin, { ...stored, name: newName });
         },
         [openCategory, plugin]
     );

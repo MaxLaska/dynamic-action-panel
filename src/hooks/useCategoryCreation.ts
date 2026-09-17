@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
 import { usePluginContext } from '@/contexts/PluginContext';
-import { useRefresh } from './useRefresh';
 import { CategoryCreateModal } from '@/components/modal/CategoryCreateModal';
+import { commitCategories } from '@/utils/categoryStore';
+import { freshId } from '@/utils/id';
 import type { CategoryConfig } from '@/types';
 import type { ButtonCondition } from '@/types/conditions';
 import {
@@ -19,7 +20,6 @@ import {
  */
 export function useCategoryCreation() {
     const { plugin, app } = usePluginContext();
-    const { refresh } = useRefresh();
 
     /**
      * 创建新分类（显示创建对话框）
@@ -34,7 +34,7 @@ export function useCategoryCreation() {
             ) => {
                 void (async () => {
                     const newCategory: CategoryConfig = {
-                        id: Date.now().toString(),
+                        id: freshId('cat'),
                         name: categoryName,
                         order: plugin.settings.categories.length,
                         buttons: [],
@@ -55,16 +55,17 @@ export function useCategoryCreation() {
                         newCategory.rows = DEFAULT_GRID_DIMENSIONS.rows;
                         newCategory.columns = DEFAULT_GRID_DIMENSIONS.columns;
                     }
-                    plugin.settings.categories.push(newCategory);
-                    await plugin.saveSettings();
-                    refresh();
+                    await commitCategories(plugin, [
+                        ...plugin.settings.categories,
+                        newCategory,
+                    ]);
                     if (onCreated) {
                         onCreated(newCategory);
                     }
                 })();
             }).open();
         },
-        [plugin, app, refresh]
+        [plugin, app]
     );
 
     return {

@@ -1,15 +1,15 @@
 import { useCallback } from 'react';
 import { Notice } from 'obsidian';
 import { usePluginContext } from '@/contexts/PluginContext';
-import { useRefresh } from './useRefresh';
 import { ButtonDeleteModal } from '@/components/modal/ButtonDeleteModal';
-import { findStoredCategory, replaceStoredCategory } from '@/utils/categoryStore';
+import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
 import {
     addButtonToGrid,
     findButtonVariantId,
     removeButtonFromGridCategory,
 } from '@/utils/categoryVariants';
 import { isGridCategory } from '@/utils/categoryGrid';
+import { freshId } from '@/utils/id';
 import { t } from '@/utils/i18n';
 import type { ButtonConfig, CategoryConfig } from '@/types';
 
@@ -26,7 +26,6 @@ import type { ButtonConfig, CategoryConfig } from '@/types';
  */
 export function useButtonOperations() {
     const { plugin, app } = usePluginContext();
-    const { refresh } = useRefresh();
 
     /**
      * 复制按钮
@@ -41,7 +40,7 @@ export function useButtonOperations() {
             const newButton: ButtonConfig = {
                 ...button,
                 actions: button.actions?.map((action) => ({ ...action })) ?? [],
-                id: Date.now().toString(),
+                id: freshId(),
             };
 
             if (isGridCategory(stored)) {
@@ -51,10 +50,10 @@ export function useButtonOperations() {
                     new Notice(t('variant_grid_full'));
                     return;
                 }
-                replaceStoredCategory(plugin, next);
+                await commitStoredCategory(plugin, next);
             } else {
                 const { slot: _slot, ...rest } = newButton;
-                replaceStoredCategory(plugin, {
+                await commitStoredCategory(plugin, {
                     ...stored,
                     buttons: [
                         ...stored.buttons,
@@ -65,11 +64,8 @@ export function useButtonOperations() {
                     ],
                 });
             }
-
-            await plugin.saveSettings();
-            refresh();
         },
-        [plugin, refresh]
+        [plugin]
     );
 
     /**
@@ -85,12 +81,10 @@ export function useButtonOperations() {
                     const stored = findStoredCategory(plugin, category.id);
                     if (stored) {
                         if (isGridCategory(stored)) {
-                            replaceStoredCategory(
+                            await commitStoredCategory(
                                 plugin,
                                 removeButtonFromGridCategory(stored, button.id)
                             );
-                            await plugin.saveSettings();
-                            refresh();
                         } else {
                             const index = stored.buttons.findIndex(
                                 (b) => b.id === button.id
@@ -99,13 +93,11 @@ export function useButtonOperations() {
                                 const buttons = stored.buttons.filter(
                                     (b) => b.id !== button.id
                                 );
-                                replaceStoredCategory(plugin, {
+                                await commitStoredCategory(plugin, {
                                     ...stored,
                                     // 删除后重排所有按钮的 order 为 0,1,2...
                                     buttons: buttons.map((b, i) => ({ ...b, order: i })),
                                 });
-                                await plugin.saveSettings();
-                                refresh();
                             }
                         }
                     }
@@ -115,7 +107,7 @@ export function useButtonOperations() {
                 })();
             }).open();
         },
-        [plugin, app, refresh]
+        [plugin, app]
     );
 
     return {
