@@ -16,21 +16,32 @@ body .buttons-panel .ocap-palette-grid {
     justify-items: stretch;
 }
 
+/* Every cell carries a constant 1px border in EVERY mode (transparent when
+   the mode shows no chrome), so the grid geometry never shifts between
+   locked, edit and sort mode — only colors change. */
 .buttons-panel .ocap-grid-slot {
     display: flex;
     align-items: stretch;
     justify-content: stretch;
     min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid transparent;
     border-radius: var(--radius-s);
 }
 
-/* The button fills its cell so the grid stays perfectly regular. */
+/* The button fills its cell so the grid stays perfectly regular. The
+   descendant selector covers the drag placeholder wrapper too, so the live
+   drop preview has exactly the final geometry (no left-aligned preview). */
 body .buttons-panel .ocap-grid-slot > .sortable-button-item,
 body .buttons-panel .ocap-grid-slot > button.buttons-panel-simple-button {
     width: 100%;
 }
 
-body .buttons-panel .ocap-grid-slot > .sortable-button-item > button.buttons-panel-simple-button {
+body .buttons-panel .ocap-grid-slot .sortable-button-item button.buttons-panel-simple-button {
+    width: 100%;
+}
+
+body .buttons-panel .ocap-grid-slot .button-drag-grid-placeholder {
     width: 100%;
 }
 
@@ -60,10 +71,36 @@ body .buttons-panel .ocap-palette-grid.icon-left .ocap-grid-slot--empty {
     --ocap-grid-slot-min-height: 40px;
 }
 
-.buttons-panel .ocap-grid-slot--outlined {
-    border: 1px dashed var(--background-modifier-border);
+/* --- Management-mode grid chrome ---------------------------------------
+   The 4x4 field must read as 16 real cells: every cell gets a visible
+   border and a faint ground, empty cells are hollow (dashed, no fill),
+   occupied cells are solid. Sort mode is the drag surface and shows the
+   field at full strength; edit mode uses the same geometry, slightly
+   calmer. Locked mode keeps the transparent base border (no chrome). */
+.buttons-panel .ocap-palette-grid--managed .ocap-grid-slot--filled {
+    border-color: var(--background-modifier-border);
+    background-color: var(--background-secondary);
+}
+
+.buttons-panel .ocap-palette-grid--managed .ocap-grid-slot--empty {
+    border-style: dashed;
+    border-color: var(--background-modifier-border);
     background-color: transparent;
-    opacity: 0.6;
+    opacity: 0.7;
+}
+
+/* Sort mode: the drop field. Cells are unmistakable; empty cells invite. */
+.buttons-panel .ocap-palette-grid--sort .ocap-grid-slot--filled {
+    border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+}
+
+.buttons-panel .ocap-palette-grid--sort .ocap-grid-slot--empty {
+    opacity: 0.9;
+}
+
+.buttons-panel .ocap-palette-grid--sort .ocap-grid-slot--empty:hover {
+    background-color: var(--background-modifier-hover);
+    opacity: 1;
 }
 
 /* --- Dynamic category variants ------------------------------------------ */
@@ -81,6 +118,7 @@ body .buttons-panel .ocap-palette-grid.icon-left .ocap-grid-slot--empty {
 
 .buttons-panel .ocap-variant-editing-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
     min-width: 0;
@@ -96,8 +134,11 @@ body .buttons-panel .ocap-palette-grid.icon-left .ocap-grid-slot--empty {
    thing the user must never have to guess. */
 .buttons-panel select.ocap-variant-select {
     font-weight: var(--font-semibold, 600);
-    max-width: 60%;
-    min-width: 0;
+    max-width: 100%;
+    /* The variant name must stay readable even in a narrow sidebar — the row
+       wraps instead of squeezing the name away. */
+    min-width: 6em;
+    flex: 0 1 auto;
     text-overflow: ellipsis;
 }
 
@@ -182,12 +223,6 @@ body .buttons-panel .ocap-palette-grid.icon-left .ocap-grid-slot--empty {
     font-style: italic;
 }
 
-/* Management modes outline every cell, filled ones included, so the 4x4 field
-   reads as one regular grid instead of only showing its holes. */
-.buttons-panel .ocap-palette-grid--managed .ocap-grid-slot--filled {
-    border: 1px dashed var(--background-modifier-border);
-}
-
 /* Variant priority overview in the category modal. */
 .buttons-panel .ocap-variants-list {
     margin: -6px 0 12px;
@@ -239,10 +274,12 @@ body .buttons-panel .ocap-palette-grid.icon-left .ocap-grid-slot--empty {
     color: var(--text-normal);
 }
 
-/* The slot the pointer currently targets during a drag. */
-.buttons-panel .ocap-grid-slot--drop-target,
-.buttons-panel .ocap-grid-slot--filled.ocap-grid-slot--drop-target {
+/* The slot the pointer currently targets during a drag. Outranks every
+   mode-specific cell chrome; the border width never changes, so targeting a
+   cell does not shift the grid. */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot--drop-target {
     border: 1px solid var(--interactive-accent);
+    border-style: solid;
     background-color: var(--background-modifier-hover);
     opacity: 1;
 }

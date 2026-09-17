@@ -80,6 +80,24 @@ import { t } from '@/utils/i18n';
  * it is exceeded, which would abort exactly the fast drag gestures this enables.
  */
 const DESKTOP_DRAG_ACTIVATION_DISTANCE_PX = 4;
+
+/**
+ * Debug infrastructure for DnD lifecycle investigations: set
+ * `window.__OCAP_DND_DEBUG = true` in the developer console to trace every
+ * dnd-kit lifecycle transition. A pointerdown without a `pending` log means
+ * the activation guard rejected the attempt; `pending` without `dragStart`
+ * after movement means the sensor died before onStart. Zero cost while the
+ * flag is off — callers must check `isDndDebug()` before building log args.
+ */
+function isDndDebug(): boolean {
+    return (window as unknown as { __OCAP_DND_DEBUG?: boolean }).__OCAP_DND_DEBUG === true;
+}
+
+function dndDebug(...args: unknown[]): void {
+    if (isDndDebug()) {
+        console.debug('[OCAP-DND]', ...args);
+    }
+}
 /** 标签视图：悬停目标标签满此时长后才视为可放置位置 */
 const CATEGORY_TAB_DROP_HOVER_MS = 400;
 
@@ -318,9 +336,18 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     );
 
     useEffect(() => {
-        if (activeButtonId) return;
+        if (activeButtonId) {
+            dndDebug('items-rebuild skipped (drag active)', activeButtonId);
+            return;
+        }
         const next = buildButtonDragItems(categories, gridViews);
-        setItems((prev) => (itemsShallowEqual(prev, next) ? prev : next));
+        setItems((prev) => {
+            const same = itemsShallowEqual(prev, next);
+            if (isDndDebug()) {
+                dndDebug('items-rebuild', same ? 'unchanged' : 'changed', JSON.stringify(next));
+            }
+            return same ? prev : next;
+        });
     }, [categories, gridViews, activeButtonId, enabled]);
 
     useEffect(() => {
@@ -596,6 +623,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     const handleDragStart = useCallback(
         (event: DragStartEvent) => {
             const activeId = String(event.active.id);
+            dndDebug('dragStart', activeId);
             const categoryId = parseCategorySortableId(activeId);
             if (categoryId) {
                 lastAppliedCategoryDragOverRef.current = null;
@@ -703,6 +731,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         async (event: DragEndEvent) => {
             const { active, over } = event;
             const activeId = String(active.id);
+            dndDebug('dragEnd', activeId, 'over:', over ? String(over.id) : null);
 
             if (parseCategorySortableId(activeId)) {
                 // ... category drag end logic unchanged ...
@@ -868,6 +897,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     );
 
     const handleDragCancel = useCallback(() => {
+        dndDebug('dragCancel');
         dragForceCancelledRef.current = true;
         cancelDragOverFrame();
         dragStartItemsRef.current = null;
@@ -978,6 +1008,8 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                     onDragOver={handleDragOver}
                     onDragEnd={(e) => void handleDragEnd(e)}
                     onDragCancel={handleDragCancel}
+                    onDragPending={(e) => dndDebug('pending', String(e.id))}
+                    onDragAbort={(e) => dndDebug('ABORT', String(e.id))}
                 >
                     {children}
                     <DragOverlay dropAnimation={null} modifiers={[snapCenterToCursor]}>

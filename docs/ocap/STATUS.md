@@ -1,12 +1,13 @@
 # OCAP – Status
 
-Last updated: 2026-09-17 (Phase 5 – Dynamic Category Variants)
+Last updated: 2026-09-17 (Phase 5.1 – Variant Grid DnD robustness & UX polish)
 
 ## Current state
 
 - GitHub fork `MaxLaska/obsidian-contextual-action-panel`, local repo in `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`, branch `master`.
-- Stabilization phase 1 complete (baseline `4d233de`); Phase 2 Context Engine foundation (`5995ee5`); Phase 3 visual condition rules (`a88d92e`); desktop DnD activation fix (`3267842`); Phase 4a palette grid (`31199ae`); Phase 4b palette context layers (`90f5b38`). Details in git history and `docs/ocap/audits/`.
-- **Phase 5 (dynamic category variants) is implemented and live-verified.** The Phase 4b layer model (Base/Pinned + context profiles + locked/reserved slots) was **retired after a manual UX test** — too much invisible state. A grid category is now either STATIC (one full grid) or DYNAMIC (complete, independent variants; first matching trigger wins, explicit fallback, else hidden). Settings version 3 with a forward-only migration that reproduces the old runtime grids exactly. 324 unit tests; 107 automated live checks in an isolated Obsidian 1.13.7 (0 errors). Full detail: `docs/ocap/audits/2026-09-17-dynamic-category-variants.md`.
+- Stabilization phase 1 complete (baseline `4d233de`); Phase 2 Context Engine foundation (`5995ee5`); Phase 3 visual condition rules (`a88d92e`); desktop DnD activation fix (`3267842`); Phase 4a palette grid (`31199ae`); Phase 4b palette context layers (`90f5b38`); Phase 5 dynamic category variants (`3177f1d`). Details in git history and `docs/ocap/audits/`.
+- **Phase 5 (dynamic category variants) is implemented and live-verified.** The Phase 4b layer model (Base/Pinned + context profiles + locked/reserved slots) was **retired after a manual UX test** — too much invisible state. A grid category is now either STATIC (one full grid) or DYNAMIC (complete, independent variants; first matching trigger wins, explicit fallback, else hidden). Settings version 3 with a forward-only migration that reproduces the old runtime grids exactly. Full detail: `docs/ocap/audits/2026-09-17-dynamic-category-variants.md`.
+- **Phase 5.1 (polish round after the manual user test) is complete.** The intermittent "drag dead after a variant switch" bug is root-caused and structurally fixed: empty-slot droppables used to mount/unmount per variant switch, so a drag started right after a switch raced their dnd-kit registration/measurement and the drop fell through to the container zone (self-healing on any later re-render — hence the "re-select sort mode" workaround). **Every grid cell is now a permanent droppable** (`GridSlotCell` renders filled and empty cells, keyed by slot), which also makes the whole cell the drop hitbox. Plus: explicit 4×4 grid chrome in the management modes with mode-invariant geometry, drag preview/overlay geometrically identical to the final slot rendering, priority wording ("wins earlier/later"), variant bar readable at narrow widths. 340 unit tests; ~215 automated live drags/checks in an isolated Obsidian 1.13.7 (0 errors). Full detail: `docs/ocap/audits/2026-09-17-variant-grid-dnd-ux-polish.md`.
 
 ## Phase 5 architecture – dynamic category variants
 
@@ -40,6 +41,7 @@ Last updated: 2026-09-17 (Phase 5 – Dynamic Category Variants)
 - `projectCategoriesForContext` returns `gridViews` (locked: runtime resolution; sort/edit: the selected variant) — `panelProjection.ts`.
 - Drag state mirrors the ONE grid on screen; a drag in `Source` cannot touch `Topic`. `BlockedSlots`, pinned/reserved/locked cells are gone. Only remaining grid rejection: flow → occupied slot (reverted + Notice).
 - **Drag previews and drops are computed from the drag-start baseline** (`ButtonDragContext`): crossing occupied cells leaves no trail of intermediate swaps; release over the dragged tool itself keeps the preview; a pending rAF drag-over is flushed synchronously at drop. (Fixes a pre-existing Phase-4a defect found live.)
+- **Every grid cell is a permanent droppable** (Phase 5.1): `GridSlotCell` renders filled AND empty cells keyed by slot, so the 16 droppable nodes and their measured rects survive variant switches — the root cause of the intermittent "drag dead after variant switch" bug. Collision ranking (button > slot > zones) unchanged; the whole cell is the drop hitbox. Grid chrome: `--managed` (edit+sort) shows all 16 cells (solid filled / dashed empty), `--sort` at full strength; constant 1px cell border in every mode keeps geometry mode-invariant. Flag-gated DnD lifecycle tracing: `window.__OCAP_DND_DEBUG = true`.
 
 ### Settings – version 3
 
@@ -51,9 +53,9 @@ Last updated: 2026-09-17 (Phase 5 – Dynamic Category Variants)
 - Phase 3: one central rendering projection; locked filters / management marks; `ConditionEditor` (visual builder + explicit-apply JSON) shared by all modals; category `conditions` = visibility only.
 - Phase 4a: 4×4 grid, 16 stable slots, slot lives on the button, holes are real, `placeButtonsOnGrid` self-heals deterministically; positional drop semantics (move to empty / swap occupied / flow→grid empty-only / grid→flow list insert); desktop DnD distance activation (4px, no long press).
 
-## Verification (2026-09-17, Phase 5)
+## Verification (2026-09-17, after Phase 5.1)
 
-- `npm test`: **324/324 PASS** (14 files). New: `categoryVariants` 54, `variantDrag` 9; `settingsMigrations` 38 (full v2→v3 surface incl. malformed data, idempotence, id uniqueness, config preservation); `gridVisibility` rewritten onto variants; `categoryGrid` conversions updated.
+- `npm test`: **340/340 PASS** (15 files). Phase 5 added `categoryVariants` 54, `variantDrag` 9, `settingsMigrations` 38; Phase 5.1 added `variantGridDnd` 16 (slot droppables on occupied cells, collision ranking, A→B→A drag-state round-trip, duplicate id-disjointness, `selectedVariantOf` normalization incl. deletion).
 - `npm run lint`: PASS (0 problems) · `npx tsc --noEmit`: PASS · production build: PASS.
 
 ## Live smoke test (2026-09-17, Phase 5, 107 checks PASS, 0 errors)
@@ -67,6 +69,10 @@ Automated via CDP against an isolated Obsidian 1.13.7 (scratch `--user-data-dir`
 - **Views/markers (11):** tabs+folder render 16-cell variant grids; locked click executes once; `layers`/`list` title icons correct.
 
 Two defects were found and fixed during the run (⇄ flip after implicit selection; cumulative drag-preview swaps — a pre-existing 4a defect). Detail: `docs/ocap/audits/2026-09-17-dynamic-category-variants.md`.
+
+## Live verification (2026-09-17, Phase 5.1 — DnD stress, ~215 checks PASS, 0 errors)
+
+Isolated Obsidian 1.13.7 (scratch `--user-data-dir`, snapshot vault, own fixture A/B/Z). Every drag validated by post-drop DOM occupancy; after each switch the harness waited only until the new grid was rendered, then dragged immediately. Results: 40/40 A/B switch+drag; 35/35 A/B/Z rotation; 6/6 create/duplicate(UI)/delete/priority + drags; 20/20 quick-⇄+drag; 30/30 sort/edit/sort transitions; 50/50 switch+drag stress; 30/30 quick-⇄ stress; 30/30 clean-build re-run. Regression: locked runtime resolution (A/B/fallback), script click once, static grid, tabs-view grid + drags, runtime preselection, reload byte-identity. Preview alignment measured: preview/overlay/final byte-equal size, centered within 0.1px. 4-column invariant verified at widths 500→150px, slot 16 drag at 150px. Before the fix the same harness reproduced the user's bug deterministically. Detail: `docs/ocap/audits/2026-09-17-variant-grid-dnd-ux-polish.md`.
 
 ## Caveats / open points
 

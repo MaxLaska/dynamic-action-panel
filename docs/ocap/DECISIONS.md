@@ -413,6 +413,27 @@ shows a dynamic category as an empty grid.
 **Reason:** A real semantic transformation of stored data; the old runtime
 behavior is preserved exactly, with zero data loss.
 
+## 2026-09-17 – Every grid cell is a permanent droppable; the cell is the hitbox
+
+**Decision:** A 4×4 grid renders all 16 cells through one keyed component
+(`GridSlotCell`), filled or empty, and every cell registers a dnd-kit
+droppable (`slot:<categoryId>:<slot>`) whenever sorting is enabled — occupied
+cells included. Droppables must never be mounted per *empty* slot again.
+
+**Reason:** Slot droppables that mount/unmount with the occupancy race their
+own registration/measurement when the occupancy changes right before a drag —
+this was the root cause of the intermittent "drag dead after a variant
+switch" bug (live-reproduced: the drop resolved to the container zone for the
+whole drag and was ignored, self-healing on any later re-render). Stable cell
+nodes make the race structurally impossible, and they make the WHOLE cell the
+drop target, which is what a positional grid should offer anyway. The
+collision ranking (button > slot > area zones) keeps the drop semantics
+unchanged when the pointer is over a button.
+
+**Consequence:** grid geometry must stay identical in every interaction mode
+(constant cell border, chrome via colors only), so the persistent cells never
+shift between locked/edit/sort.
+
 ## Open decisions
 
 The following are still open:

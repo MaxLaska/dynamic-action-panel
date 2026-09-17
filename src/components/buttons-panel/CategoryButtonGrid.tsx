@@ -164,42 +164,27 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
             contentClass,
             'ocap-palette-grid',
             showSlotOutlines && 'ocap-palette-grid--managed',
+            sortableEnabled && 'ocap-palette-grid--sort',
         ]
             .filter(Boolean)
             .join(' ');
 
-        const cells = gridSlots.map((button, slot) => {
-            if (button) {
-                // The live drag state already shows the post-drop arrangement,
-                // so the target cell is usually filled by then — it still gets
-                // the target ring so "this is where it lands" stays explicit.
-                return (
-                    <div
-                        className={[
-                            'ocap-grid-slot',
-                            'ocap-grid-slot--filled',
-                            dropTargetSlot === slot && 'ocap-grid-slot--drop-target',
-                        ]
-                            .filter(Boolean)
-                            .join(' ')}
-                        key={`slot-${slot}`}
-                        data-slot={slot}
-                    >
-                        {renderButton(button, slot, 'none')}
-                    </div>
-                );
-            }
-            return (
-                <GridSlotCell
-                    key={`slot-${slot}`}
-                    categoryId={category.id}
-                    slot={slot}
-                    droppableEnabled={sortableEnabled}
-                    isDropTarget={dropTargetSlot === slot}
-                    showOutline={showSlotOutlines}
-                />
-            );
-        });
+        // Every cell is the same keyed component whether filled or empty, so
+        // the 16 droppable cell nodes survive variant switches (see
+        // GridSlotCell). The target cell keeps its ring even when the live
+        // preview already fills it — "this is where it lands" stays explicit.
+        const cells = gridSlots.map((button, slot) => (
+            <GridSlotCell
+                key={`slot-${slot}`}
+                categoryId={category.id}
+                slot={slot}
+                droppableEnabled={sortableEnabled}
+                isDropTarget={dropTargetSlot === slot}
+                showOutline={showSlotOutlines}
+            >
+                {button ? renderButton(button, slot, 'none') : null}
+            </GridSlotCell>
+        ));
 
         const overflowSection = gridOverflow.length > 0 && (
             <div className="ocap-palette-grid-overflow">

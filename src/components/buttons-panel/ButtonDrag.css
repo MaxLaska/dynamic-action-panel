@@ -55,6 +55,12 @@
 body button.buttons-panel-simple-button.button-drag-overlay,
 body .buttons-panel .buttons-panel-container button.buttons-panel-simple-button.button-drag-overlay {
     box-sizing: border-box;
+    /* The overlay wrapper is sized by dnd-kit to the measured source rect
+       (the full grid cell for a grid tool); filling it keeps the floating
+       button geometrically identical to its cell rendering, so nothing
+       resizes or jumps sideways on release. */
+    width: 100%;
+    height: 100%;
     opacity: 0.92;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     cursor: grabbing;
