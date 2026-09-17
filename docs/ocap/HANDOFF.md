@@ -8,27 +8,95 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
   Buttons Panel 2.4.7.
-- Branch `master`, HEAD `fix: hold the resize preview until the commit lands`,
+- Branch `master`, HEAD `refactor: introduce tool registry and placements`,
   lokal vor `origin/master` — nicht ohne Auftrag pushen.
-- Settings-Version: **4** (`CURRENT_SETTINGS_VERSION`), forward-only
-  Migrationskette `0 → 1 → 2 → 3 → 4` in `src/settings/settingsMigrations.ts`.
-  Ein Tool ohne Action ist **kein** Schemawechsel — `actions: []` war immer
-  darstellbar, nur die Save-Validierung hat es verhindert.
-- Teststand: `npm test` **491/491** (Vitest, node env, `tests/`),
+- Settings-Version: **5** (`CURRENT_SETTINGS_VERSION`), forward-only
+  Migrationskette `0 → 1 → 2 → 3 → 4 → 5` in
+  `src/settings/settingsMigrations.ts`. v5 ist der Tool-Registry-Refactor
+  (Definition + Placement getrennt, siehe Abschnitt 2a und
+  `docs/ocap/audits/2026-09-17-architecture-audit-target-model.md`).
+- **Produktiv-Vault (`A1_Nexus`) ist NOCH NICHT auf v5:** der v5-Build wurde
+  bewusst nicht dorthin deployt, weil der erste Start die produktive
+  `data.json` migrieren würde. Ein separater Deploy-Auftrag (Backup →
+  Deploy → erster v5-Start → Verifikation) steht aus. Eine byte-genaue Kopie
+  der produktiven v4-`data.json` liegt als Fixture unter
+  `tests/fixtures/data-v4-real.json` und ist in
+  `tests/realDataMigration.test.ts` verlustfrei gepinnt.
+- Teststand: `npm test` **541/541** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
   `node esbuild.config.mjs production` grün.
+- Achtung: `npm run build` deployt zusätzlich nach `VAULT_PATH` aus `.env`
+  (aktuell der Smoke-Vault `ocap-smoke`). Für reine Verifikation
+  `node esbuild.config.mjs production` direkt verwenden.
+
+## 2a. Persistenzmodell v5: Tool-Registry + Placements
+
+- **Gespeichert wird seit v5 in zwei Hälften:** die funktionale
+  `ToolDefinition` (id, name, icon als SVG-Markup, actions,
+  executionMode/stopOnError/delay, customCss, conditions, `library?`)
+  liegt genau EINMAL im Root-Record `settings.tools` (Key = Tool-ID);
+  die Platzierung ist ein `ToolPlacement` (`{ toolId, slot? }`) in
+  `category.placements` bzw. `variant.placements` (`StoredCategory` /
+  `StoredVariant` in `src/types/settings.ts`).
+- **Grid-Position hat nur noch eine Wahrheit:** `placement.slot` (row-major).
+  Es gibt kein `order`-Feld mehr auf Grid-Placements; die Selbstheilung
+  kaputter Slots nutzt die Placement-Array-Reihenfolge als Tiebreaker
+  (dieselbe `placeButtonsOnGrid`-Implementierung wie immer, über
+  Index-Platzhalter — `placeStoredGrid` in `src/domain/tools.ts`).
+- **Flow-Kategorien nutzen dasselbe Modell** (F4): slotlose Placements,
+  Array-Reihenfolge = sichtbare Reihenfolge; per-Tool-`conditions` liegen auf
+  der Definition und wirken unverändert nur in Flow.
+- **`ButtonConfig`/`CategoryConfig`/`CategoryVariant` sind seit v5 die
+  RUNTIME-VIEW-Shapes:** die EINE Materialisierungsgrenze ist
+  `ButtonsPanelView.getCategoriesForRender()` →
+  `materializeCategoriesForRuntime` (`src/domain/tools.ts`, per-Kategorie
+  gememoized über Objekt-Identität). Renderer, DnD-State, Projektion und
+  Modals konsumieren weiter exakt die alten Shapes; jeder Write-Pfad löst
+  die STORED Category per id auf.
+- **Alle Mutationen laufen über pure Domain-Ops**
+  (`src/domain/categoryOps.ts`, Zustand `{ tools, categories }`) und den
+  Commit-Funnel (`commitToolState` / `commitStoredCategory` /
+  `commitCategories` in `src/utils/categoryStore.ts`). Kein Hook/Modal
+  editiert Placement-Arrays oder die Registry von Hand.
+- **Lifecycle/GC (F1):** Create (`+`, File-Drop, Copy) registriert Definition
+  UND Placement in einem Schritt, ohne `library`-Flag. Eine
+  Nicht-Library-Definition wird genau dann entfernt, wenn eine EXPLIZITE
+  Remove-/Delete-Operation (Tool löschen, Variant löschen, Kategorie
+  löschen, bestätigter Resize-Cut) ihre letzte Referenz nimmt (`gcTools`).
+  Moves, Swaps, Drag-Rewrites und Previews sammeln NIE; ein
+  Cross-Category-Move kann keine Definition verlieren. Keine Refcounts,
+  keine Hintergrund-GC — Referenzen werden live aus dem State bestimmt.
+- **`library: true` ist ein UI-loses Domain-Feld** (F3): die Definition
+  überlebt dann auch mit 0 Placements und überlebt jede GC. Edit-Roundtrips
+  durch die View-Shape erhalten das Flag (`updateToolDefinition`).
+- **Copy/Duplicate sind Vollkopien (F2):** Button-Copy, Duplicate Variant
+  und Copy Category erzeugen frische Tool-IDs mit tief kopierten
+  Definitionen — niemals implizites Sharing; Kopien starten ohne
+  `library`-Flag. Geteilte Definitionen entstehen erst später durch
+  explizites Platzieren desselben Library-Tools.
+- **Migration v4→v5** (`migrateV4toV5`): Button-IDs werden zu Tool-IDs
+  (unverändert), Grids werden vor der Zerlegung mit der bestehenden
+  Selbstheilung materialisiert (nichts verrutscht), `rows`/`columns` gehen
+  Feld-für-Feld durch (fehlend bleibt Legacy-4×4), vault-weite doppelte IDs
+  werden deterministisch geheilt (`--dupN`), inerte `buttons` dynamischer
+  Kategorien überleben als inerte Placements. Kein migriertes Tool bekommt
+  `library`. Importe (später) remappen grundsätzlich auf frische IDs (F5).
+- **Fehlende Datei-Referenzen sind kein Fehlerzustand:** Action-Parameter
+  tragen Vault-Pfade unverändert; das Runtime scheitert lazy mit Notice
+  (`File not found: …`, live verifiziert).
 
 ## 2. Produktmodell
 
-- Eine Grid-Kategorie ist **statisch** (ein volles Grid in `category.buttons`)
-  oder **dynamisch** (`category.variants`).
+- Eine Grid-Kategorie ist **statisch** (ein volles Grid, gespeichert als
+  `category.placements`) oder **dynamisch** (`category.variants`).
 - Eine dynamische Kategorie hält mehrere **vollständige, unabhängige
   Variants**: eigene Grids inkl. eigener Größe, eigene Button-IDs, nichts
   geteilt.
 - **Das Grid ist größenveränderlich: `rows` × `columns`, 1×1 bis 5×5.** Slots
   sind flache, zeilenweise gelesene Indizes (`slot = row * columns + column`),
-  weiterhin stabile Identitäten (`ButtonConfig.slot`). Leere Slots bleiben
-  leer; nichts rutscht nach.
+  weiterhin stabile Identitäten (seit v5 `ToolPlacement.slot`; in der
+  Runtime-View weiterhin als `ButtonConfig.slot` sichtbar). Leere Slots
+  bleiben leer; nichts rutscht nach.
 - **Größe gehört zu genau dem Grid, das sie beschreibt:** `rows`/`columns`
   liegen auf der **Variant** (dynamisch) bzw. auf der **Kategorie** (statisch).
   Eine dynamische Kategorie trägt selbst keine Größe — sonst gäbe es zwei
@@ -46,9 +114,10 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - **Verkleinert wird nur am Rand:** die äußerste rechte Spalte und die unterste
   Reihe. Ist der Streifen leer, verschwindet er sofort; hält er Tools, fragt
   eine Obsidian-Modal-Bestätigung (`GridResizeConfirmModal`) und nennt sie
-  namentlich. **Bestätigt gelöscht heißt heute wirklich gelöscht** — ein Tool
-  existiert nur auf seinem Grid. Sobald eine Tool-Library Definition und
-  Placement trennt, ist genau diese Modal die Stelle, die sich ändert.
+  namentlich. **Seit v5 entfernt die Bestätigung die PLACEMENTS des
+  Streifens; die Definitionen werden per GC-Regel entfernt** — d. h. genau
+  dann, wenn sie weder `library: true` tragen noch anderswo platziert sind.
+  Ohne Library-Flag ist das sichtbar exakt das alte Verhalten (Tool weg).
 - **Zwei Gesten auf EINER Resize-Semantik:** Klick und Drag enden beide in
   `resizeGridTo` → `planGridResize`. Es gibt keine zweite Resize-Logik; die
   Edge-Zone ist reine Interaktionsschicht.
@@ -299,10 +368,31 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 
 ## 4. Wichtigste Source-Dateien
 
-- `src/utils/categoryVariants.ts` — pure Kern: Variant-Auflösung
-  (`resolveDynamicCategoryVariant`, `resolveGridViewForContext/-Variant`),
-  Variant-Ops (add/update/move/duplicate/remove), Drag-Write-back,
-  Konvertierungen.
+- `src/domain/tools.ts` — **Registry-Hälfte des v5-Modells** (pur):
+  `buttonToDefinition`/`definitionToButton`, Materialisierung
+  (`materializeCategoriesForRuntime`, gememoized), `placeStoredGrid`
+  (eine Selbstheilung für beide Welten), Dekomposition, `findToolVariantId`,
+  `collectReferencedToolIds`, **`gcTools` (DIE GC-Regel)**.
+- `src/domain/categoryOps.ts` — **alle v5-Schreiboperationen** (pur, über
+  `ToolState = { tools, categories }`): `createToolInCategory`,
+  `updateToolDefinition`, `copyToolInCategory`, `removeToolFromCategory`,
+  Drag-Write-back (`applySlotIdsToStoredCategory`,
+  `applyFlowIdsToStoredCategory` — nie GC), `planStoredGridResize` +
+  `commitStoredGridResize`, Variant-Ops (add/duplicate/remove mit GC),
+  `duplicateCategoryInState`, `deleteCategoryFromState`,
+  `convertStoredStaticGridToDynamic`, `applyStoredCategoryLayout`.
+- `src/utils/id.ts` — der EINE Id-Generator (`freshId`, zählerbasiert
+  kollisionssicher); alle Create/Copy/Duplicate-Pfade nutzen ihn.
+- `src/utils/categoryStore.ts` — **Commit-Funnel**: `findStoredCategory`,
+  `commitStoredCategory`, `commitCategories`, `toolStateOf`,
+  `commitToolState`, `dispatchPanelRefresh`. Jeder Write endet hier.
+- `src/utils/categoryVariants.ts` — pure Kern der READ-Seite + shape-
+  generische Accessors (arbeiten auf Stored- UND View-Shape):
+  Variant-Auflösung (`resolveDynamicCategoryVariant`,
+  `resolveGridViewForContext/-Variant`), Metadaten-Ops
+  (update/move/removeVariant), Condition-Lifting und die
+  View-Konvertierungskerne (`composeFullVariant`, `convertCategoryToGrid`,
+  `convertStaticGridToFlow`) für Migrationen und Layout-Wechsel.
 - `src/context/panelProjection.ts` — zentrale Projektion Settings + Kontext +
   Modus → gerenderte Kategorien, Marker-Sets, `gridViews`.
 - `src/context/conditions.ts` — Condition-Interpreter (fail-open) +
@@ -362,7 +452,13 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Variant-Selection-State und DnD-Provider.
 - `src/components/buttons-panel/PaletteGrid.css` — Grid-/Zellen-/Variant-Bar-
   Styling inkl. Geometrie-Invarianz.
-- `src/settings/settingsMigrations.ts` — versionierte Migrationskette.
+- `src/settings/settingsMigrations.ts` — versionierte Migrationskette inkl.
+  `migrateV4toV5` (Registry-Split) und Load-Normalisierung der Reihenfolge
+  (ersetzt den entfallenen in-place-Sort in `saveSettings`).
+- `tests/fixtures/data-v4-real.json` + `tests/realDataMigration.test.ts` —
+  byte-genaue Kopie der produktiven v4-`data.json`, Migration verlustfrei
+  gepinnt (der erste produktive v5-Start transformiert exakt dieses
+  Dokument).
 - `src/components/modal/VariantModal.ts` + `CategoryEditModal.ts` — Variant-
   Anlage/-Bearbeitung; das Category-Modal hält die editierbare Variant-/
   Trigger-Übersicht (nutzt dieselbe `VariantModal` und dieselben puren
@@ -511,10 +607,50 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Der Condition-Editor startet mit `File name` (verständlichste Regel) und
   erklärt `File name` und `View type` mit einer Hint-Zeile — `View type` wurde
   im Nutzertest als „Node Type" missverstanden.
+- **v5-Smoke live verifiziert** (isolierte Obsidian 1.13.7, frisches
+  Scratch-Profil, CDP mit echten Maus-Events, Fehlermonitore aktiv:
+  **0 Konsolenfehler/Exceptions über alle Phasen**; Datenbasis: byte-genaue
+  Kopie der produktiven v4-`data.json`):
+  - Erster v5-Start migriert **genau einmal**: Disk `settingsVersion: 5`,
+    3 Tools unter ihren Original-IDs, keine `buttons`-Arrays mehr; alle 4
+    Kategorien, Variant 2×3 mit Slots 0/3, Legacy-Variants ohne
+    Größenfelder; Panel rendert alle Buttons mit Original-Namen/Icons.
+  - Klick auf `Open file` mit hier fehlender Datei → `File not found: …`
+    (Lazy-Fail, kein invalider Zustand).
+  - Slot-`+` (Zeile 1, Spalte 2) → Modal → Name → Save: Tool mit
+    `actions: []`, ohne `library`, exakt auf Slot 1 der editierten Variant;
+    Klick darauf → `No action assigned.`; Schwester-Variant byte-gleich.
+  - Move (Slot 1→2, Loch bleibt) und Swap (0↔3) korrekt; Registry dabei
+    unverändert (Definitionen werden von Drags nie berührt).
+  - Resize-Klick 2×3→2×4 koordinatenstabil (Slot 3→4); Drag-Shrink der
+    belegten unteren Reihe: **eine** Confirmation mit Namensliste, Cancel
+    byte-gleich, Remove entfernt das Placement **und** GC't die Definition
+    (Registry 4→3).
+  - Copy Button: neue Definition mit frischer ID auf dem niedrigsten freien
+    Slot; Delete der Kopie entfernt Placement + Definition (GC).
+  - `Make dynamic…` auf dem Legacy-Static-Grid erzeugt die erste Variant;
+    Duplicate Variant kopiert Größe + Slots mit **disjunkten neuen
+    Tool-IDs** (Registry +2); Copy Category kopiert alle 3 Variants mit
+    komplett neuen Definitionen (Registry 5→9), Original unberührt.
+  - Window-Reload: Settings-State identisch, `data.json` **byte-gleich**
+    (keine zweite Migration), Panel rendert unverändert.
+  - Nicht UI-getrieben in diesem Smoke (Codepfade identisch zu vorher und
+    unit-getestet): echter File-Explorer-Drop, Run Script, Variant
+    Delete/Move, Cross-Category-Drag.
 
 ## 6. Offene Punkte / nächste Baustellen
 
-1. **Slot-Hotkeys** (nächstes geplantes Feature) — Slot-Identität ist stabil
+0. **Produktiv-Deployment des v5-Builds steht aus** (bewusst nicht gemacht:
+   erster Start migriert die produktive `data.json`). Separater Auftrag:
+   Backup der kompletten Plugin-Installation inkl. v4-`data.json` → Deploy →
+   erster v5-Start → Post-Migration-Verifikation → ggf. Rollback.
+   Danach folgen die Audit-Phasen B–D: Library-Semantik sichtbar machen
+   (Promote/„aus Grid entfernen, Tool behalten“), Accent-/Farb-Felder
+   (additiv), Export-/Import-Fundament (`src/export/`, portables Schema mit
+   eigener `schemaVersion`, Import remappt IDs — F5). KEINE Library-UI,
+   kein Export, keine Farben sind bisher gebaut; `library` ist ein reines
+   Domain-Feld ohne UI.
+1. **Slot-Hotkeys** (geplantes Feature) — Slot-Identität ist stabil
    und variant-unabhängig; nur die Keybinding-Schicht fehlt.
 2. **Toggle-Tools** (OFF/ON mit eigenen Actions/Appearance) — braucht einen
    Tool-Typ-Begriff auf `ButtonConfig`.
@@ -573,10 +709,12 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
      Geste ist vorbei), während die Geometrie noch kurz gehalten wird. Das ist
      gewollt, aber es ist der einzige verbliebene Zustandswechsel in dieser
      Sekunde.
-9. Bewusst nicht umgesetzt (kommt später): Tool-/Button-Library und die
-   Trennung von Button-Definition und Placement, Panel-Templates, JSON
-   Import/Export, per-Category-Lock, „Pin active dynamic variant",
-   Toggle-Tools, Slot-Hotkeys, Icon-Picker, ZotFlow-Annotationen auf Slots.
+9. Bewusst nicht umgesetzt (kommt später): die sichtbare Tool-Library-UI
+   (die Trennung Definition/Placement selbst ist seit v5 GEBAUT),
+   Panel-Templates, JSON Import/Export, per-Category-Lock, „Pin active
+   dynamic variant", Toggle-Tools, Slot-Hotkeys, Icon-Picker,
+   ZotFlow-Annotationen auf Slots, Placement-Overrides (lokaler
+   Name/Icon), Farben/Accents.
 
 ## 7. Arbeitsregel für neue Sessions
 
