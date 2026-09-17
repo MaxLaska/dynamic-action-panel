@@ -15,7 +15,7 @@ import { useButtonDragOptional } from '@/contexts/ButtonDragContext';
 import { ButtonDragEmptySlot } from '@/components/buttons-panel/ButtonDragEmptySlot';
 import { GridSlotCell } from '@/components/buttons-panel/GridSlotCell';
 import {
-    GridResizeControls,
+    GridResizeEdgeZone,
     GridResizeReadout,
 } from '@/components/buttons-panel/GridResizeControls';
 import { VariantSelector } from '@/components/buttons-panel/VariantSelector';
@@ -278,19 +278,15 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
             </div>
         );
 
-        // Edit mode frames the grid with its resize controls: columns to the
-        // right, rows below. They are siblings of the slot grid, never cells
-        // of it (see GridResizeControls), and they are absent in locked mode,
-        // where the panel is pure content.
+        // Edit mode frames the grid with its two graspable EDGES: the whole
+        // right border resizes columns, the whole bottom border resizes rows.
+        // Both are siblings of the slot grid, never cells of it, and they are
+        // absent in locked mode, where the panel is pure content.
         //
-        // The frame stays MOUNTED while a drag is in flight and only refuses
-        // to act: unmounting it would hand its gutter back to the grid and
-        // widen every cell mid-drag — exactly the moving-slot-rect problem the
-        // definite row track solves vertically.
-        //
-        // The stepper `−`/`+` and the drag handle share the strip: `+` IS the
-        // handle (click adds one, press-and-drag snaps to any size), so there
-        // is one affordance per gesture instead of a second widget.
+        // The frame stays MOUNTED while a button drag is in flight and only
+        // refuses to act: unmounting it would hand its gutter back to the grid
+        // and widen every cell mid-drag — exactly the moving-slot-rect problem
+        // the definite row track solves vertically.
         const availability = gridResizeAvailability(dimensions);
         const onResize = isDragging
             ? undefined
@@ -302,7 +298,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
             <div className="ocap-grid-frame">
                 <div className="ocap-grid-frame-main">
                     {gridEl}
-                    <GridResizeControls
+                    <GridResizeEdgeZone
                         edge="column"
                         dimensions={dimensions}
                         availability={availability}
@@ -311,7 +307,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                         dragging={resizingEdge === 'column'}
                     />
                 </div>
-                <GridResizeControls
+                <GridResizeEdgeZone
                     edge="row"
                     dimensions={dimensions}
                     availability={availability}

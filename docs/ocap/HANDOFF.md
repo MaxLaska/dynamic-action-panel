@@ -8,13 +8,13 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
   Buttons Panel 2.4.7.
-- Branch `master`, HEAD `feat: add drag resizing for action grids`, lokal vor
+- Branch `master`, HEAD `feat: make the whole grid edge graspable`, lokal vor
   `origin/master` — nicht ohne Auftrag pushen.
 - Settings-Version: **4** (`CURRENT_SETTINGS_VERSION`), forward-only
   Migrationskette `0 → 1 → 2 → 3 → 4` in `src/settings/settingsMigrations.ts`.
   Ein Tool ohne Action ist **kein** Schemawechsel — `actions: []` war immer
   darstellbar, nur die Save-Validierung hat es verhindert.
-- Teststand: `npm test` **478/478** (Vitest, node env, `tests/`),
+- Teststand: `npm test` **488/488** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
   `node esbuild.config.mjs production` grün.
 
@@ -49,15 +49,23 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   namentlich. **Bestätigt gelöscht heißt heute wirklich gelöscht** — ein Tool
   existiert nur auf seinem Grid. Sobald eine Tool-Library Definition und
   Placement trennt, ist genau diese Modal die Stelle, die sich ändert.
-- **Zwei Gesten auf EINER Resize-Semantik:** der Stepper (`−` / `+`) und der
-  Notion-artige Drag-Handle enden beide in `resizeGridTo` → `planGridResize`.
-  Es gibt keine zweite Resize-Logik; der Handle ist reine Interaktionsschicht.
-- **Das `+` IST der Handle:** Klick fügt eine Spalte/Reihe hinzu, Drücken und
-  Ziehen rastet auf ganze Spalten/Reihen. Deshalb ist er am Maximum **nicht
-  deaktiviert** (ein disabled Button bekommt keine Pointer-Events, und Ziehen
-  ist von 5 aus der einzige Weg zurück) — nur sein Glyph ist gedimmt und das
-  Tooltip sagt, dass ein Klick dort nichts tut. `−` bleibt unverändert als
-  diskrete Ein-Klick-Verkleinerung.
+- **Zwei Gesten auf EINER Resize-Semantik:** Klick und Drag enden beide in
+  `resizeGridTo` → `planGridResize`. Es gibt keine zweite Resize-Logik; die
+  Edge-Zone ist reine Interaktionsschicht.
+- **Der ganze Rand des Grids ist der Griff:** die **komplette rechte Kante**
+  (volle Grid-Höhe) resized Spalten, die **komplette untere Kante** (volle
+  Breite) Reihen. Kein Zielen auf ein Icon mehr. Ein Klick auf die Zone fügt
+  eins hinzu, ein Ziehen rastet auf ganze Spalten/Reihen — das `+` in der
+  Mitte der Zone ist nur noch die sichtbare Marke für den Klick, nicht mehr
+  die Hitbox.
+- **Die Zone ist nie `disabled`** (ein disabled Button bekommt keine
+  Pointer-Events, und Ziehen nach innen ist von 5×5 aus der einzige Weg
+  zurück) — am Maximum verblasst nur das `+` und das Tooltip sagt, dass ein
+  Klick dort nichts tut.
+- **Die `−`-Stepper sind entfallen.** Verkleinern ist Ziehen nach innen; die
+  Sicherheitslogik (leer → sofort, belegt → eine Confirmation, Cancel →
+  unverändert) hängt am Commit-Pfad, nicht am Control, und ist deshalb
+  unverändert.
 - **Ein Drag schreibt nichts.** Er erzeugt eine Preview; **genau ein** Commit
   passiert beim Pointer-Up, durch dieselbe Bestätigung wie der Stepper. Ein
   Drag über mehrere Streifen fragt **einmal** mit der Gesamtzahl
@@ -161,9 +169,20 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   schmaler (live gemessen: 15 px Versatz / 5 px Zellbreite bei 4 Spalten);
   vertikal bleibt alles gleich (dy = dh = 0 px). Bewusst so: eine dauerhaft
   reservierte Rinne würde im normalen (locked) Gebrauch Platz verschenken.
-  **Der Rahmen wird beim Drag NICHT ausgehängt** — die Buttons werden nur
+  **Der Rahmen wird beim Drag NICHT ausgehängt** — die Zonen werden nur
   deaktiviert; ihn zu entfernen gäbe die Rinne mitten im Drag ans Grid zurück
-  und verbreiterte jede Zelle.
+  und verbreiterte jede Zelle. Die Rinne ist seit dem Edge-Pass **16 px**
+  (vorher 18 + 2 px Gap), das Grid ist im Edit-Mode also 4 px breiter als
+  zuvor.
+- **Die Edge-Zone überlappt das Grid NICHT.** Sie beginnt exakt an dessen
+  Rand und liegt vollständig in der Rinne (live geprüft: 3 px innerhalb der
+  Grid-Kante trifft die Zelle, 3 px außerhalb die Zone). Würde sie überlappen,
+  schluckte sie Klicks, Button-Drags und Datei-Drops der äußersten Zellen.
+- **Obsidian gibt jedem `button` eine feste Höhe (30 px)** — und eine
+  Cross-Size, die nicht `auto` ist, nimmt das Flex-Item von `stretch` aus. Die
+  „volle Höhe" der rechten Zone war dadurch 30 px neben einem 182 px hohen
+  Grid; `height: auto` gibt sie zurück (gepinnt in
+  `tests/paletteGridGeometry.test.ts`).
 - **Der Resize-Drag ist bewusst KEIN dnd-kit-Drag** (`useGridResizeDrag`):
   schlichte Pointer-Events mit `setPointerCapture`. Die Geste besitzt ihren
   Pointer von down bis up und braucht nichts, wofür dnd-kit existiert — keine
@@ -195,7 +214,20 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   `.ocap-grid-frame` und `pointer-events: none`: sie annotiert die Preview und
   darf sie niemals umbrechen oder den Drag schlucken. Sie erscheint, sobald
   die Geste zum Drag wird — auch bei 0 Schritten, denn genau dann hat der
-  Nutzer noch keine ganze Zelle zurückgelegt.
+  Nutzer noch keine ganze Zelle zurückgelegt. Sie sitzt **über** der oberen
+  rechten Grid-Ecke, also außerhalb der Grid-Box: damit verdeckt sie keine
+  Zelle mehr (bei 1×1 war das vorher die einzige).
+- **Das Edit-Raster ist reine Farbe.** Jede Zelle trägt ohnehin in jedem Modus
+  einen 1px-Rahmen (transparent in locked), also ändern die sichtbaren Linien
+  nur dessen `border-color`; der äußere Grid-Rahmen ist ein `outline`, das
+  niemals am Layout teilnimmt. Live gemessen: Zell-Rects mit und ohne
+  `--managed` **worstΔ 0 px** bei identischer Grid-Box. Die Linienfarbe kommt
+  aus `rgba(var(--mono-rgb-100), 0.28)` — weiß im dunklen, schwarz im hellen
+  Theme, ohne hartkodiertes Weiß.
+- **Hover darf am Raster nur den Grund ändern, nie den Rahmen.** `:hover`
+  fügt dem Selektor eine Klassenebene hinzu und würde sonst die
+  Drop-Target-/File-Target-Ringe überstimmen, die versprechen, wo ein Drop
+  landet (live geprüft: der Ring ist beim Datei-Hover weiterhin akzentfarben).
 - **Slot-Geometrie ist inhaltsunabhängig und während eines Drags stabil:** die
   Zeilenhöhe kommt aus einem definiten Track (`grid-auto-rows:
   var(--ocap-grid-row-height)` = Slot-Token + 2px Zellrahmen), nie aus dem
@@ -273,9 +305,9 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - `src/components/buttons-panel/CategoryButtonGrid.tsx` — rendert das Grid
   einer Kategorie inkl. Variant-Selector-Einbindung, SortableContext und
   (nur im Edit-Mode) des Resize-Rahmens.
-- `src/components/buttons-panel/GridResizeControls.tsx` — die beiden
-  Control-Streifen (−/+ rechts für Spalten, −/+ unten für Reihen; das `+` ist
-  zugleich der Drag-Handle) plus die `GridResizeReadout`-Anzeige.
+- `src/components/buttons-panel/GridResizeControls.tsx` — `GridResizeEdgeZone`
+  (die ganze rechte bzw. untere Kante als Griff, mit dem `+` als sichtbarer
+  Klick-Marke) plus die `GridResizeReadout`-Anzeige.
 - `src/hooks/useGridResizeDrag.ts` — die **Pointer-Schicht**: Capture,
   Snapping, Preview-State, Klick-vs.-Drag, Escape/Cancel. Schreibt nichts.
 - `src/hooks/useGridResize.ts` — löst Ziel-Kategorie und -Variant wie `+` und
@@ -425,6 +457,28 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
     belegte Zelle lehnt den `dragover` weiter ab).
   - Dynamic Variant: `VarA` per Drag auf 2×5 (A2 4 → 6, gleiche Zeile/Spalte),
     `VarB` blieb byte-gleich 2×2. Nach Reload alles unverändert.
+- **Greifbare Kante + Edit-Raster live verifiziert** (gleicher Aufbau, echte
+  CDP-Maus-Events, **0 Fehler**):
+  - Rechte Zone = volle Grid-Höhe, untere = volle Breite; Drag **von oben,
+    Mitte und unten** der rechten Kante und **von links, Mitte und rechts** der
+    unteren — jedes Mal korrekt resized (3→4→5 Spalten bzw. Reihen).
+  - Hit-Test: alle sechs Randpunkte treffen die Zone, die **Mitte der
+    äußersten Zelle** bleibt die Zelle; 3 px innerhalb der Grid-Kante = Zelle,
+    3 px außerhalb = Zone.
+  - Am Maximum: Label `Maximum of 5 columns — drag to resize`, Zone **nicht**
+    disabled, Klick fügt nichts hinzu, Ziehen nach innen funktioniert (5→3,
+    leere Spalten, keine Nachfrage).
+  - Belegter Shrink: eine Confirmation `Remove 2 columns? 2 tools will be
+    deleted.`, Cancel byte-gleich, Remove schneidet nur den Streifen ab.
+  - Minimum: weit nach innen ziehen bleibt bei 1 Spalte bzw. 1 Reihe.
+  - Klick auf die Zone (Mitte **und** oberer Rand) → genau +1.
+  - **Kein `−`-Control mehr im DOM.**
+  - Raster: Zell-Rects mit/ohne `--managed` **worstΔ 0 px**, Grid-Box
+    identisch; Zellrahmen im Edit `rgba(255,255,255,0.28)`, in locked
+    vollständig transparent und `outline: none`; locked hat 0 Zonen, 0 Frames,
+    0 `+`.
+  - Danach unverändert: Swap hin und zurück, Slot-`+`, PDF-Drop auf die
+    **äußerste** Zelle (Ring weiterhin akzentfarben).
 - Der Condition-Editor startet mit `File name` (verständlichste Regel) und
   erklärt `File name` und `View type` mit einer Hint-Zeile — `View type` wurde
   im Nutzertest als „Node Type" missverstanden.
@@ -475,10 +529,17 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
      ist, zeigt das Grid also schon wieder die **alte** Größe. Bewusst so —
      es ist bis zum `Remove` tatsächlich noch nichts passiert — aber es ist
      ein Kandidat für späteren Feinschliff.
-   - Der Drag-Handle ist Maus-/Pointer-first. Per Tastatur bleibt nur das
-     Stepper-Paar (`−` / `+`); es gibt keine Pfeiltasten-Variante des Drags.
-   - Die Größenanzeige liegt über der oberen rechten Zelle des Grids. Bei
-     einem 1×1-Grid verdeckt sie während des Drags dessen einzige Zelle.
+   - Die Edge-Zone ist Maus-/Pointer-first. Per Tastatur aktiviert sie nur
+     ihr `+` (+1); es gibt keine Pfeiltasten-Variante des Drags und keine
+     Tastatur-Verkleinerung mehr, seit `−` entfallen ist.
+   - **Ein Klick irgendwo auf der Zone fügt eins hinzu**, nicht nur auf dem
+     `+`. Bewusst so — eine control-große Fläche, die Klicks ignoriert, ist
+     ein Bug, kein Polish — aber es macht ein versehentliches +1 etwas
+     wahrscheinlicher als vorher. Trivial rückgängig zu machen, zerstört nie
+     Daten.
+   - Die Linienstärke des Edit-Rasters (`--ocap-grid-line`, aktuell 0.28) ist
+     bewusst deutlich gewählt und soll nach manuellem Test ggf. nachjustiert
+     werden — sie steht als **ein** Token am `--managed`-Container.
 9. Bewusst nicht umgesetzt (kommt später): Tool-/Button-Library und die
    Trennung von Button-Definition und Placement, Panel-Templates, JSON
    Import/Export, per-Category-Lock, „Pin active dynamic variant",

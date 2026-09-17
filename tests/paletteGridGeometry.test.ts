@@ -94,3 +94,106 @@ describe('palette grid geometry', () => {
         }
     });
 });
+
+/**
+ * Edit mode must read as a construction — visible cell boundaries — WITHOUT
+ * moving a single pixel. The cell border already exists in every mode
+ * (transparent in locked), so making the raster visible may only ever change a
+ * colour; the outer frame is an `outline`, which never takes part in layout.
+ */
+describe('edit-mode raster is colour-only', () => {
+    const managedRules = rules.filter((r) => /\.ocap-palette-grid--managed/.test(r.selector));
+
+    it('has managed-mode rules at all', () => {
+        expect(managedRules.length).toBeGreaterThan(0);
+    });
+
+    it('frames the whole grid with an outline, never a border', () => {
+        const frame = managedRules.find((r) => /--managed$/.test(r.selector));
+        expect(frame, 'no rule for the managed grid container').toBeTruthy();
+        expect(frame!.body).toMatch(/outline:\s*1px solid var\(--ocap-grid-line\)/);
+        // A border (or padding) on the container would shrink the cell tracks.
+        expect(frame!.body).not.toMatch(/(?:^|[;\s])(border|padding)\s*:/);
+    });
+
+    it('derives the line colour from the theme, not from a hard-coded white', () => {
+        const frame = managedRules.find((r) => /--managed$/.test(r.selector))!;
+        expect(frame.body).toMatch(/--ocap-grid-line:\s*rgba\(var\(--mono-rgb-100\)/);
+    });
+
+    it('only recolours the cell border it already had', () => {
+        const sizing = /(?:^|[;\s])((?:min-|max-)?(?:height|width)|padding[a-z-]*|margin[a-z-]*|border(?:-[a-z]+)?-width|border)\s*:\s*([^;]+)/g;
+        for (const rule of managedRules) {
+            // The container rule is covered by the outline test above.
+            if (/--managed$/.test(rule.selector)) continue;
+            for (const match of rule.body.matchAll(sizing)) {
+                expect.fail(
+                    `${rule.selector} changes ${match[1]} (${String(match[2]).trim()}) — edit chrome must be colour-only`
+                );
+            }
+        }
+    });
+
+    it('lets the drop-target and file-target rings outrank the hover chrome', () => {
+        // `:hover` adds a class level to the selector; if the hover rule also
+        // set a border colour it would beat the accent rings that promise
+        // where a drop lands.
+        const hover = managedRules.find((r) => /--empty:hover/.test(r.selector));
+        expect(hover, 'no managed hover rule').toBeTruthy();
+        expect(hover!.body).not.toMatch(/border/);
+    });
+});
+
+/**
+ * The graspable edges. They must be big enough to grab anywhere along the
+ * grid's border, and strictly outside the slot grid — a zone overlapping the
+ * cells would swallow clicks, button drags and file drops that belong to the
+ * outermost column/row.
+ */
+describe('grid resize edges', () => {
+    const edgeRules = rules.filter((r) => /\.ocap-grid-edge/.test(r.selector));
+
+    it('names the axis it resizes through the cursor', () => {
+        const column = edgeRules.find((r) => /button\.ocap-grid-edge--column$/.test(r.selector));
+        const row = edgeRules.find((r) => /button\.ocap-grid-edge--row$/.test(r.selector));
+        expect(column?.body).toMatch(/cursor:\s*ew-resize/);
+        expect(row?.body).toMatch(/cursor:\s*ns-resize/);
+    });
+
+    it('spans the whole edge it belongs to', () => {
+        const column = edgeRules.find((r) => /button\.ocap-grid-edge--column$/.test(r.selector));
+        const row = edgeRules.find((r) => /button\.ocap-grid-edge--row$/.test(r.selector));
+        // Full height of the grid / full width of the grid.
+        expect(column?.body).toMatch(/align-self:\s*stretch/);
+        // Obsidian gives every button a fixed height, which silently opts the
+        // item out of `stretch` — the band was 30px tall next to a 182px grid
+        // until the height was handed back.
+        expect(column?.body).toMatch(/height:\s*auto/);
+        expect(row?.body).toMatch(/width:\s*100%/);
+    });
+
+    it('is a band wide enough to hit without aiming', () => {
+        const frame = rules.find((r) => /\.ocap-grid-frame$/.test(r.selector));
+        const size = /--ocap-grid-edge-size:\s*(\d+)px/.exec(frame?.body ?? '')?.[1];
+        expect(Number(size)).toBeGreaterThanOrEqual(12);
+    });
+
+    it('never lives inside the slot grid', () => {
+        for (const rule of edgeRules) {
+            expect(
+                /\.ocap-palette-grid[^,]*\.ocap-grid-edge/.test(rule.selector),
+                rule.selector
+            ).toBe(false);
+        }
+    });
+
+    it('keeps the readout out of the grid box and out of the way', () => {
+        const readout = rules.find((r) => /\.ocap-grid-resize-readout$/.test(r.selector));
+        expect(readout, 'no readout rule').toBeTruthy();
+        expect(readout!.body).toMatch(/position:\s*absolute/);
+        expect(readout!.body).toMatch(/pointer-events:\s*none/);
+        // Lifted above the grid's top edge, so it cannot cover the cells it
+        // describes — a 1x1 grid used to lose its only cell behind it.
+        expect(readout!.body).toMatch(/transform:\s*translateY\(calc\(-100%/);
+    });
+});
