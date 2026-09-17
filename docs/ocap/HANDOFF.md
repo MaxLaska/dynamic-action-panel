@@ -8,8 +8,11 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
   Buttons Panel 2.4.7.
-- Branch `master`, HEAD `feat: add portable OCAP template export and import`,
-  lokal vor `origin/master` — nicht ohne Auftrag pushen.
+- Branch `master`. Verifizierter Stand: `2ba2cf1`
+  (`docs: design generic grid selection architecture`), Working Tree sauber,
+  `master` und `origin/master` synchron — die 15 bis dahin lokalen Commits
+  wurden erfolgreich auf `origin/master` gepusht. Darauf folgt nur noch der
+  Docs-Commit mit dieser Statusangabe, ebenfalls gepusht.
 - Settings-Version: **5** (`CURRENT_SETTINGS_VERSION`), forward-only
   Migrationskette `0 → 1 → 2 → 3 → 4 → 5` in
   `src/settings/settingsMigrations.ts`. v5 ist der Tool-Registry-Refactor
