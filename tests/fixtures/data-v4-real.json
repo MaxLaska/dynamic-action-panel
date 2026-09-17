@@ -1,0 +1,134 @@
+{
+  "categories": [
+    {
+      "id": "1789568809468",
+      "name": "Test",
+      "order": 0,
+      "buttons": [
+        {
+          "id": "1789568812369czt939w",
+          "name": "MyBtn",
+          "icon": "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\">\n<path fill=\"#fff\" d=\"M14 4l4 4h14v22h-32v-26z\"></path>\n</svg>",
+          "actions": [
+            {
+              "type": "file",
+              "parameters": {
+                "filePath": "A2_Bib/Bieker, Westerholt (2021) - Soziale Arbeit studieren/Bieker-Westerholt-2021-Soziale_Arbeit_studieren-Aufl_5.pdf"
+              }
+            }
+          ],
+          "order": 0,
+          "executionMode": "sequential",
+          "stopOnError": true,
+          "delayBetweenActions": 100
+        }
+      ]
+    },
+    {
+      "id": "1789647493370",
+      "name": "xcvb",
+      "order": 1,
+      "buttons": [],
+      "layout": "grid",
+      "variants": [
+        {
+          "id": "var-mu5i31lo-veah4fk",
+          "name": "xcvb",
+          "trigger": {
+            "all": []
+          },
+          "buttons": [
+            {
+              "id": "1789655682022v4nlqte",
+              "name": "Cover_Image-Bieker-Westerholt-Soziale_Arbeit_studieren",
+              "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"svg-icon lucide-file\"><path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\"></path><path d=\"M14 2v5a1 1 0 0 0 1 1h5\"></path></svg>",
+              "actions": [
+                {
+                  "type": "file",
+                  "parameters": {
+                    "filePath": "A2_Bib/Bieker, Westerholt (2021) - Soziale Arbeit studieren/Cover_Image-Bieker-Westerholt-Soziale_Arbeit_studieren.jpg"
+                  }
+                }
+              ],
+              "order": 0,
+              "executionMode": "sequential",
+              "stopOnError": true,
+              "delayBetweenActions": 100,
+              "slot": 0
+            },
+            {
+              "id": "1789655673148enofed1",
+              "name": "Bieker-Westerholt-2021-Soziale_Arbeit_studieren-Aufl_5.zf",
+              "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"svg-icon lucide-file\"><path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\"></path><path d=\"M14 2v5a1 1 0 0 0 1 1h5\"></path></svg>",
+              "actions": [
+                {
+                  "type": "file",
+                  "parameters": {
+                    "filePath": "A2_Bib/Bieker, Westerholt (2021) - Soziale Arbeit studieren/Annotation/Bieker-Westerholt-2021-Soziale_Arbeit_studieren-Aufl_5.zf.json"
+                  }
+                }
+              ],
+              "order": 1,
+              "executionMode": "sequential",
+              "stopOnError": true,
+              "delayBetweenActions": 100,
+              "slot": 3
+            }
+          ],
+          "rows": 2,
+          "columns": 3
+        },
+        {
+          "id": "var-mu5i9gpo-3f6gk7s",
+          "name": "xcvb copy",
+          "trigger": {
+            "all": []
+          },
+          "buttons": []
+        }
+      ]
+    },
+    {
+      "id": "1789647804000",
+      "name": "bvncvcvbhnm",
+      "order": 2,
+      "buttons": [],
+      "layout": "grid",
+      "variants": [
+        {
+          "id": "var-mu5i4eej-b3dehd9",
+          "name": "bvncvcvbhnmhhh",
+          "trigger": {
+            "all": []
+          },
+          "buttons": []
+        }
+      ]
+    },
+    {
+      "id": "1789647873155",
+      "name": "hhhh",
+      "order": 3,
+      "buttons": [],
+      "layout": "grid"
+    }
+  ],
+  "panelConfig": {
+    "displayStyle": "icon_left",
+    "panelViewType": "list",
+    "enableAnimation": false,
+    "showButtonTooltip": true,
+    "interactionMode": "edit",
+    "showTopNavBar": true,
+    "tabsWrap": false,
+    "listAutoCollapse": false,
+    "folderDetailNameEditable": true,
+    "folderShowBtnCount": true,
+    "folderCloseOnBlankClick": false
+  },
+  "pathConfig": {
+    "templateFolderPath": "templates/",
+    "scriptFolderPath": "scripts/"
+  },
+  "settingsVersion": 4
+}

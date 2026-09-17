@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { migrateSettings } from '@/settings/settingsMigrations';
-import { CURRENT_SETTINGS_VERSION, DEFAULT_SETTINGS } from '@/types/settings';
+import {
+    CURRENT_SETTINGS_VERSION,
+    DEFAULT_SETTINGS,
+    type ButtonsPanelPluginSettings,
+    type CategoryConfig,
+} from '@/types/settings';
+import { materializeCategoriesForRuntime } from '@/domain/tools';
+
+/**
+ * Effective (view) categories of migrated settings — what the panel renders.
+ * Since v5 the chain ends in registry + placements; the historical assertions
+ * of this file check the EFFECTIVE outcome, which must be identical, so they
+ * read through the same materialization the runtime uses.
+ */
+function viewCategories(settings: ButtonsPanelPluginSettings): CategoryConfig[] {
+    return materializeCategoriesForRuntime(settings.categories, settings.tools);
+}
 
 /** Realistic upstream (unversioned) data.json payload. */
 function makeLegacyData(): Record<string, unknown> {
@@ -74,12 +90,18 @@ describe('migrateSettings', () => {
         const legacy = makeLegacyData();
         const result = migrateSettings(legacy);
 
-        expect(result.settings.categories).toBe(legacy.categories);
-        expect(result.settings.categories).toHaveLength(2);
-        expect(result.settings.categories[0]!.buttons[0]!.name).toBe('Open daily note');
-        expect(result.settings.categories[0]!.buttons[1]!.id).toBe('btn-2');
+        const view = viewCategories(result.settings);
+        expect(view).toHaveLength(2);
+        expect(view[0]!.buttons[0]!.name).toBe('Open daily note');
+        expect(view[0]!.buttons[1]!.id).toBe('btn-2');
         // Buttons without conditions stay condition-free (static behavior).
-        expect(result.settings.categories[0]!.buttons[0]!.conditions).toBeUndefined();
+        expect(view[0]!.buttons[0]!.conditions).toBeUndefined();
+        // v5: the definitions live ONCE in the registry, keyed by the old ids.
+        expect(Object.keys(result.settings.tools).sort()).toEqual(['btn-1', 'btn-2']);
+        expect(result.settings.categories[0]!.placements).toEqual([
+            { toolId: 'btn-1' },
+            { toolId: 'btn-2' },
+        ]);
     });
 
     it('deep-merges missing nested defaults without overwriting stored values', () => {
@@ -134,13 +156,28 @@ describe('migrateSettings', () => {
         expect(JSON.parse(JSON.stringify(second.settings))).toEqual(persisted);
     });
 
-    it('loads already-current settings without marking them changed', () => {
-        const legacy = makeLegacyData();
-        const current = { ...legacy, settingsVersion: CURRENT_SETTINGS_VERSION };
+    it('loads already-current (v5) settings without marking them changed', () => {
+        const current = {
+            settingsVersion: CURRENT_SETTINGS_VERSION,
+            tools: { a: { id: 'a', name: 'A', actions: [] } },
+            categories: [
+                {
+                    id: 'c',
+                    name: 'C',
+                    order: 0,
+                    layout: 'grid',
+                    placements: [{ toolId: 'a', slot: 0 }],
+                },
+            ],
+            panelConfig: {},
+            pathConfig: {},
+        };
         const result = migrateSettings(current);
         expect(result.status).toBe('current');
         expect(result.changed).toBe(false);
-        expect(result.settings.categories).toBe(legacy['categories']);
+        // Untouched data really stays untouched (identity included).
+        expect(result.settings.categories).toBe(current.categories);
+        expect(result.settings.tools).toBe(current.tools);
     });
 
     it('treats invalid settingsVersion values as unversioned', () => {
@@ -186,7 +223,7 @@ describe('migrateSettings', () => {
 describe('palette grid fields are carried through', () => {
     it('loads legacy categories without layout/slot unchanged', () => {
         const result = migrateSettings(makeLegacyData());
-        const category = result.settings.categories[0]!;
+        const category = viewCategories(result.settings)[0]!;
 
         expect(category.layout).toBeUndefined();
         expect(category.buttons[0]!.slot).toBeUndefined();
@@ -220,10 +257,16 @@ describe('palette grid fields are carried through', () => {
 
         expect(result.status).toBe('migrated');
         expect(result.settings.settingsVersion).toBe(CURRENT_SETTINGS_VERSION);
-        expect(result.settings.categories[0]!.layout).toBe('grid');
-        expect(result.settings.categories[0]!.buttons.map((b) => b.slot)).toEqual([0, 7]);
+        const category = viewCategories(result.settings)[0]!;
+        expect(category.layout).toBe('grid');
+        expect(category.buttons.map((b) => b.slot)).toEqual([0, 7]);
         // Nothing contextual in this grid, so no variant is invented.
-        expect(result.settings.categories[0]!.variants).toBeUndefined();
+        expect(category.variants).toBeUndefined();
+        // v5: the slots live on the placements.
+        expect(result.settings.categories[0]!.placements).toEqual([
+            { toolId: 'a', slot: 0 },
+            { toolId: 'b', slot: 7 },
+        ]);
     });
 });
 
@@ -243,9 +286,9 @@ function variantGrid(variant: {
 // Version 3: dynamic category variants, reached from v1 data through the
 // retired v2 layer model. A v1 grid category with per-button conditions ends
 // as a DYNAMIC category whose variants reproduce the old effective grids.
-describe('chain v1 → v4 (through the retired layer model)', () => {
+describe('chain v1 → v5 (through the retired layer model)', () => {
     it('is the current settings version', () => {
-        expect(CURRENT_SETTINGS_VERSION).toBe(4);
+        expect(CURRENT_SETTINGS_VERSION).toBe(5);
     });
 
     function gridData(buttons: unknown[], extra: Record<string, unknown> = {}) {
@@ -276,7 +319,7 @@ describe('chain v1 → v4 (through the retired layer model)', () => {
             ])
         );
 
-        const category = result.settings.categories[0]!;
+        const category = viewCategories(result.settings)[0]!;
         expect(category.buttons).toEqual([]);
 
         const variants = category.variants!;
@@ -310,7 +353,7 @@ describe('chain v1 → v4 (through the retired layer model)', () => {
                 { id: 'a', name: 'A', actions: [], order: 0, slot: 0, conditions: broken },
             ])
         );
-        const category = result.settings.categories[0]!;
+        const category = viewCategories(result.settings)[0]!;
         expect(category.variants).toBeUndefined();
         expect(category.buttons[0]!.conditions).toEqual(broken);
     });
@@ -342,14 +385,14 @@ describe('chain v1 → v4 (through the retired layer model)', () => {
             panelConfig: {},
             pathConfig: {},
         };
-        const category = migrateSettings(stored).settings.categories[0]!;
+        const category = viewCategories(migrateSettings(stored).settings)[0]!;
         expect(category.variants).toBeUndefined();
         expect(category.buttons[0]!.conditions).toEqual(MD);
         expect(category.buttons.map((b) => b.slot)).toEqual([undefined, undefined]);
     });
 
     it('handles an empty grid category', () => {
-        const category = migrateSettings(gridData([])).settings.categories[0]!;
+        const category = viewCategories(migrateSettings(gridData([])).settings)[0]!;
         expect(category.buttons).toEqual([]);
         expect(category.variants).toBeUndefined();
     });
@@ -380,7 +423,7 @@ describe('chain v1 → v4 (through the retired layer model)', () => {
             order: i,
             ...(i % 2 === 0 ? {} : { conditions: MD }),
         }));
-        const category = migrateSettings(gridData(buttons)).settings.categories[0]!;
+        const category = viewCategories(migrateSettings(gridData(buttons)).settings)[0]!;
         // Every original button name survives somewhere (base copies may be
         // duplicated across variants, so compare unique names).
         const names = new Set([
@@ -450,7 +493,7 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
         const result = migrateSettings(
             v2Data(v2Grid(base, [sourceProfile, topicProfile]))
         );
-        const category = result.settings.categories[0]!;
+        const category = viewCategories(result.settings)[0]!;
 
         expect(result.status).toBe('migrated');
         expect(category.buttons).toEqual([]);
@@ -490,7 +533,7 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
         const result = migrateSettings(
             v2Data(v2Grid(base, [sourceProfile, topicProfile]))
         );
-        const variants = result.settings.categories[0]!.variants!;
+        const variants = viewCategories(result.settings)[0]!.variants!;
         const ids = variants.flatMap((v) => v.buttons.map((b) => b.id));
         expect(new Set(ids).size).toBe(ids.length);
         // Profile-owned tools keep their original ids.
@@ -514,7 +557,7 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
             },
         ];
         const result = migrateSettings(v2Data(v2Grid(richBase, [sourceProfile])));
-        const composed = result.settings.categories[0]!.variants![0]!;
+        const composed = viewCategories(result.settings)[0]!.variants![0]!;
         const copy = composed.buttons.find((b) => b.name === 'Home')!;
         expect(copy).toMatchObject({
             icon: 'home',
@@ -532,14 +575,14 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
         // order); `{ all: [] }` reproduces exactly that.
         const always = { id: 'p-always', name: 'Always', buttons: [] };
         const result = migrateSettings(v2Data(v2Grid(base, [always])));
-        const variants = result.settings.categories[0]!.variants!;
+        const variants = viewCategories(result.settings)[0]!.variants!;
         expect(variants[0]!.trigger).toEqual({ all: [] });
         expect(variants[0]!.fallback).toBeUndefined();
     });
 
     it('no base buttons -> no fallback variant', () => {
         const result = migrateSettings(v2Data(v2Grid([], [sourceProfile])));
-        const variants = result.settings.categories[0]!.variants!;
+        const variants = viewCategories(result.settings)[0]!.variants!;
         expect(variants).toHaveLength(1);
         expect(variants.some((v) => v.fallback === true)).toBe(false);
     });
@@ -547,7 +590,7 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
     it('an empty profile still becomes a variant holding the base grid', () => {
         const empty = { id: 'p-empty', name: 'Empty', conditions: TYPE_A, buttons: [] };
         const result = migrateSettings(v2Data(v2Grid(base, [empty])));
-        const variants = result.settings.categories[0]!.variants!;
+        const variants = viewCategories(result.settings)[0]!.variants!;
         expect(variantGrid(variants[0]!)).toEqual([
             ['Home', 0],
             ['Search', 2],
@@ -562,7 +605,7 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
             buttons: [{ id: 'x', name: 'X', actions: [], order: 0, slot: 0 }],
         };
         const result = migrateSettings(v2Data(v2Grid(base, [clashing])));
-        const composed = result.settings.categories[0]!.variants![0]!;
+        const composed = viewCategories(result.settings)[0]!.variants![0]!;
         const x = composed.buttons.find((b) => b.name === 'X')!;
         expect(x.slot).toBe(1); // lowest slot the base leaves free
         expect(composed.buttons).toHaveLength(3);
@@ -580,14 +623,14 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
                 ])
             )
         );
-        const variants = result.settings.categories[0]!.variants!;
+        const variants = viewCategories(result.settings)[0]!.variants!;
         // Source + fallback; the dead entries produce nothing.
         expect(variants.map((v) => v.name)).toEqual(['Source', 'Default']);
     });
 
     it('a v2 grid without profiles stays a static grid', () => {
         const result = migrateSettings(v2Data(v2Grid(base)));
-        const category = result.settings.categories[0]!;
+        const category = viewCategories(result.settings)[0]!;
         expect(category.variants).toBeUndefined();
         expect(category.buttons.map((b) => [b.id, b.slot])).toEqual([
             ['b1', 0],
@@ -603,7 +646,7 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
             buttons: [{ id: 'f', name: 'F', actions: [], order: 0, conditions: MD }],
         };
         const result = migrateSettings(v2Data(v2Grid(base, [sourceProfile]), [flow]));
-        const migratedFlow = result.settings.categories[1]!;
+        const migratedFlow = viewCategories(result.settings)[1]!;
         expect(migratedFlow.variants).toBeUndefined();
         expect(migratedFlow.buttons[0]!.conditions).toEqual(MD);
     });
@@ -612,7 +655,7 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
         const result = migrateSettings(
             v2Data(v2Grid(base, [topicProfile, sourceProfile]))
         );
-        const variants = result.settings.categories[0]!.variants!;
+        const variants = viewCategories(result.settings)[0]!.variants!;
         expect(variants.map((v) => v.name)).toEqual(['Topic', 'Source', 'Default']);
     });
 
@@ -633,19 +676,20 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
     it('does not rewrite data that is already at the current version', () => {
         const stored = {
             settingsVersion: CURRENT_SETTINGS_VERSION,
+            tools: { a: { id: 'a', name: 'A', actions: [] } },
             categories: [
                 {
                     id: 'dyn',
                     name: 'Dyn',
                     order: 0,
                     layout: 'grid',
-                    buttons: [],
+                    placements: [],
                     variants: [
                         {
                             id: 'v1',
                             name: 'Source',
                             trigger: TYPE_A,
-                            buttons: [{ id: 'a', name: 'A', actions: [], order: 0, slot: 0 }],
+                            placements: [{ toolId: 'a', slot: 0 }],
                         },
                     ],
                 },
@@ -669,7 +713,7 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
             contextProfiles: { not: 'an array' },
         });
         const result = migrateSettings(malformed);
-        const category = result.settings.categories[0]!;
+        const category = viewCategories(result.settings)[0]!;
         expect(category.id).toBe('weird');
         expect(category.variants).toBeUndefined();
         expect((category as unknown as Record<string, unknown>)['contextProfiles']).toBe(
@@ -719,7 +763,10 @@ describe('version 4 – sort mode merges into edit mode', () => {
     it('changes nothing else in the document', () => {
         const stored = v3Data('sort');
         const result = migrateSettings(stored);
-        expect(result.settings.categories).toEqual(stored.categories);
+        // The effective content is untouched (the v5 step only changes the
+        // representation: definition + placement instead of one button).
+        const view = viewCategories(result.settings)[0]!;
+        expect(view.buttons.map((b) => [b.id, b.name])).toEqual([['b', 'B']]);
         expect(result.settings.panelConfig.displayStyle).toBe('icon_left');
     });
 
@@ -755,14 +802,15 @@ describe('version 4 – sort mode merges into edit mode', () => {
 
 describe('load-time ordering normalization (the retired saveSettings sort)', () => {
     // saveSettings used to sort categories and flow buttons by `order` in
-    // place on every save. That hidden mutation is gone; loading is now the
-    // one place that brings legacy out-of-order arrays into the order the
-    // user actually saw. Data this plugin saved is already consistent and
-    // must pass through untouched, identity included.
+    // place on every save. That hidden mutation is gone; loading (and, for
+    // pre-v5 flow buttons, the v5 migration's `buttonsInOrder`) is what
+    // brings legacy out-of-order arrays into the order the user actually saw.
+    // Data this plugin saved is already consistent and must pass through
+    // untouched, identity included.
 
-    function currentData(): Record<string, unknown> {
+    function v4Data(): Record<string, unknown> {
         return {
-            settingsVersion: CURRENT_SETTINGS_VERSION,
+            settingsVersion: 4,
             categories: [
                 {
                     id: 'cat-b',
@@ -788,41 +836,45 @@ describe('load-time ordering normalization (the retired saveSettings sort)', () 
         };
     }
 
-    it('sorts out-of-order categories and flow buttons by `order` on load', () => {
-        const result = migrateSettings(currentData());
-        expect(result.status).toBe('current');
-        expect(result.changed).toBe(false);
-
+    it('unsorted v4 flow data migrates into the visible order (categories AND buttons)', () => {
+        const result = migrateSettings(v4Data());
         expect(result.settings.categories.map((c) => c.id)).toEqual(['cat-a', 'cat-b']);
-        expect(result.settings.categories[1]!.buttons.map((b) => b.id)).toEqual([
+        // Flow placements are written in `order` sequence, not array sequence.
+        expect(result.settings.categories[1]!.placements.map((p) => p.toolId)).toEqual([
             'b-1',
             'b-2',
         ]);
-        // The already-sorted category keeps its identity untouched.
-        expect(result.settings.categories[0]!.buttons.map((b) => b.id)).toEqual([
-            'a-1',
-            'a-2',
-        ]);
     });
 
-    it('keeps already-sorted arrays identical (identity preserved)', () => {
-        const data = currentData();
-        // Pre-sort the fixture the way the plugin itself would have saved it.
-        (data.categories as { order: number }[]).sort((a, b) => a.order - b.order);
-        for (const category of data.categories as { buttons: { order: number }[] }[]) {
-            category.buttons.sort((a, b) => a.order - b.order);
-        }
-
-        const result = migrateSettings(data);
-        expect(result.settings.categories).toBe(data.categories);
-        expect(result.settings.categories[0]!.buttons).toBe(
-            (data.categories as { buttons: unknown[] }[])[0]!.buttons
-        );
-    });
-
-    it('treats missing/invalid order values as 0 and keeps their relative order (stable)', () => {
-        const data = {
+    it('sorts out-of-order v5 categories by `order` on load, identity kept when sorted', () => {
+        const unsorted = {
             settingsVersion: CURRENT_SETTINGS_VERSION,
+            tools: { t: { id: 't', name: 'T', actions: [] } },
+            categories: [
+                { id: 'cat-b', name: 'B', order: 1, placements: [{ toolId: 't' }] },
+                { id: 'cat-a', name: 'A', order: 0, placements: [] },
+            ],
+            panelConfig: {},
+            pathConfig: {},
+        };
+        const result = migrateSettings(unsorted);
+        expect(result.status).toBe('current');
+        expect(result.settings.categories.map((c) => c.id)).toEqual(['cat-a', 'cat-b']);
+
+        const sorted = {
+            ...unsorted,
+            categories: [...unsorted.categories].sort((a, b) => a.order - b.order),
+        };
+        const untouched = migrateSettings(sorted);
+        expect(untouched.settings.categories).toBe(sorted.categories);
+    });
+
+    it('keeps the visible (array) order for buttons with missing order values', () => {
+        // Exactly what the retired sort and the flow renderer did with a
+        // missing `order`: the comparator yields no movement, so the array
+        // order — the order the user actually saw — is what survives.
+        const data = {
+            settingsVersion: 4,
             categories: [
                 {
                     id: 'cat',
@@ -839,10 +891,255 @@ describe('load-time ordering normalization (the retired saveSettings sort)', () 
             pathConfig: {},
         };
         const result = migrateSettings(data);
-        expect(result.settings.categories[0]!.buttons.map((b) => b.id)).toEqual([
+        expect(result.settings.categories[0]!.placements.map((p) => p.toolId)).toEqual([
+            'x',
             'no-order-1',
             'no-order-2',
-            'x',
         ]);
+    });
+});
+
+describe('version 5 – tool registry + placements', () => {
+    function v4Grid(
+        categories: Record<string, unknown>[]
+    ): Record<string, unknown> {
+        return { settingsVersion: 4, categories, panelConfig: {}, pathConfig: {} };
+    }
+
+    it('splits a static grid into definitions + slotted placements, ids preserved', () => {
+        const result = migrateSettings(
+            v4Grid([
+                {
+                    id: 'g',
+                    name: 'G',
+                    order: 0,
+                    layout: 'grid',
+                    rows: 2,
+                    columns: 3,
+                    buttons: [
+                        {
+                            id: 'a',
+                            name: 'Alpha',
+                            icon: '<svg/>',
+                            actions: [{ type: 'file', parameters: { filePath: 'x.md' } }],
+                            order: 0,
+                            slot: 4,
+                            customCss: 'color: red',
+                            executionMode: 'parallel',
+                            stopOnError: false,
+                            delayBetweenActions: 250,
+                        },
+                    ],
+                },
+            ])
+        );
+        const category = result.settings.categories[0]!;
+        expect(category.placements).toEqual([{ toolId: 'a', slot: 4 }]);
+        // The dimension fields pass through field-for-field.
+        expect(category.rows).toBe(2);
+        expect(category.columns).toBe(3);
+        // The definition carries EVERY functional field, none positional.
+        expect(result.settings.tools['a']).toEqual({
+            id: 'a',
+            name: 'Alpha',
+            icon: '<svg/>',
+            actions: [{ type: 'file', parameters: { filePath: 'x.md' } }],
+            customCss: 'color: red',
+            executionMode: 'parallel',
+            stopOnError: false,
+            delayBetweenActions: 250,
+        });
+        // No migrated tool is auto-enrolled into the future library.
+        expect(result.settings.tools['a']).not.toHaveProperty('library');
+    });
+
+    it('legacy grids without dimension fields STAY dimension-free (4x4 semantics)', () => {
+        const result = migrateSettings(
+            v4Grid([
+                {
+                    id: 'g',
+                    name: 'G',
+                    order: 0,
+                    layout: 'grid',
+                    buttons: [{ id: 'p', name: 'P', actions: [], order: 0, slot: 15 }],
+                },
+            ])
+        );
+        const category = result.settings.categories[0]!;
+        expect(category.rows).toBeUndefined();
+        expect(category.columns).toBeUndefined();
+        // Slot 15 only exists on the legacy 4x4 — it survived, so the
+        // migration read the dimensions correctly.
+        expect(category.placements).toEqual([{ toolId: 'p', slot: 15 }]);
+    });
+
+    it('materializes missing/duplicate slots exactly like the runtime rendered them', () => {
+        const result = migrateSettings(
+            v4Grid([
+                {
+                    id: 'g',
+                    name: 'G',
+                    order: 0,
+                    layout: 'grid',
+                    buttons: [
+                        { id: 'dup1', name: 'D1', actions: [], order: 0, slot: 2 },
+                        { id: 'dup2', name: 'D2', actions: [], order: 1, slot: 2 },
+                        { id: 'none', name: 'N', actions: [], order: 2 },
+                    ],
+                },
+            ])
+        );
+        // dup1 keeps 2; dup2 and the slotless one get the lowest free slots
+        // in order sequence — the same self-healing the renderer applies.
+        expect(result.settings.categories[0]!.placements).toEqual([
+            { toolId: 'dup2', slot: 0 },
+            { toolId: 'none', slot: 1 },
+            { toolId: 'dup1', slot: 2 },
+        ]);
+    });
+
+    it('migrates every variant grid independently and keeps the trigger/fallback data', () => {
+        const result = migrateSettings(
+            v4Grid([
+                {
+                    id: 'dyn',
+                    name: 'Dyn',
+                    order: 0,
+                    layout: 'grid',
+                    buttons: [],
+                    variants: [
+                        {
+                            id: 'v1',
+                            name: 'Source',
+                            trigger: TYPE_A,
+                            rows: 2,
+                            columns: 2,
+                            buttons: [{ id: 'a', name: 'A', actions: [], order: 0, slot: 3 }],
+                        },
+                        {
+                            id: 'v2',
+                            name: 'Default',
+                            fallback: true,
+                            buttons: [{ id: 'b', name: 'B', actions: [], order: 0, slot: 0 }],
+                        },
+                    ],
+                },
+            ])
+        );
+        const category = result.settings.categories[0]!;
+        expect(category.placements).toEqual([]);
+        const variants = category.variants!;
+        expect(variants[0]).toMatchObject({
+            id: 'v1',
+            trigger: TYPE_A,
+            rows: 2,
+            columns: 2,
+            placements: [{ toolId: 'a', slot: 3 }],
+        });
+        expect(variants[1]).toMatchObject({
+            id: 'v2',
+            fallback: true,
+            placements: [{ toolId: 'b', slot: 0 }],
+        });
+        expect(variants[1]!.rows).toBeUndefined();
+        expect(Object.keys(result.settings.tools).sort()).toEqual(['a', 'b']);
+    });
+
+    it('migrates flow categories too: order preserved, conditions on the definition', () => {
+        const result = migrateSettings(
+            v4Grid([
+                {
+                    id: 'flow',
+                    name: 'Flow',
+                    order: 0,
+                    buttons: [
+                        { id: 'later', name: 'Later', actions: [], order: 5 },
+                        { id: 'first', name: 'First', actions: [], order: 0, conditions: MD },
+                    ],
+                },
+            ])
+        );
+        const category = result.settings.categories[0]!;
+        expect(category.placements).toEqual([{ toolId: 'first' }, { toolId: 'later' }]);
+        expect(result.settings.tools['first']!.conditions).toEqual(MD);
+    });
+
+    it('heals duplicate legacy ids: first keeps the id, later ones get a suffix', () => {
+        const result = migrateSettings(
+            v4Grid([
+                {
+                    id: 'g1',
+                    name: 'G1',
+                    order: 0,
+                    layout: 'grid',
+                    buttons: [{ id: 'dup', name: 'One', actions: [], order: 0, slot: 0 }],
+                },
+                {
+                    id: 'g2',
+                    name: 'G2',
+                    order: 1,
+                    layout: 'grid',
+                    buttons: [{ id: 'dup', name: 'Two', actions: [], order: 0, slot: 0 }],
+                },
+            ])
+        );
+        expect(result.settings.categories[0]!.placements).toEqual([
+            { toolId: 'dup', slot: 0 },
+        ]);
+        expect(result.settings.categories[1]!.placements).toEqual([
+            { toolId: 'dup--dup2', slot: 0 },
+        ]);
+        expect(result.settings.tools['dup']!.name).toBe('One');
+        expect(result.settings.tools['dup--dup2']!.name).toBe('Two');
+    });
+
+    it('carries inert buttons of a dynamic category as inert placements (no data loss)', () => {
+        const result = migrateSettings(
+            v4Grid([
+                {
+                    id: 'dyn',
+                    name: 'Dyn',
+                    order: 0,
+                    layout: 'grid',
+                    buttons: [{ id: 'stray', name: 'Stray', actions: [], order: 0 }],
+                    variants: [
+                        { id: 'v', name: 'V', trigger: TYPE_A, buttons: [] },
+                    ],
+                },
+            ])
+        );
+        expect(result.settings.categories[0]!.placements).toEqual([{ toolId: 'stray' }]);
+        expect(result.settings.tools['stray']).toBeDefined();
+    });
+
+    it('round-trips: migrate -> persist -> reload is current, unchanged and equal', () => {
+        const once = migrateSettings(
+            v4Grid([
+                {
+                    id: 'g',
+                    name: 'G',
+                    order: 0,
+                    layout: 'grid',
+                    rows: 1,
+                    columns: 3,
+                    buttons: [{ id: 'a', name: 'A', actions: [], order: 0, slot: 1 }],
+                },
+                {
+                    id: 'flow',
+                    name: 'Flow',
+                    order: 1,
+                    buttons: [{ id: 'f', name: 'F', actions: [], order: 0 }],
+                },
+            ])
+        );
+        expect(once.status).toBe('migrated');
+        const persisted = JSON.parse(JSON.stringify(once.settings)) as Record<
+            string,
+            unknown
+        >;
+        const reloaded = migrateSettings(persisted);
+        expect(reloaded.status).toBe('current');
+        expect(reloaded.changed).toBe(false);
+        expect(JSON.parse(JSON.stringify(reloaded.settings))).toEqual(persisted);
     });
 });

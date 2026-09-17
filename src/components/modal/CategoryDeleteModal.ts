@@ -1,7 +1,8 @@
 import { App, Modal, Setting, Notice } from 'obsidian';
 import { ButtonsPanelPlugin } from '@/types/plugin';
 import { CategoryConfig } from '@/types';
-import { commitCategories } from '@/utils/categoryStore';
+import { commitToolState, toolStateOf } from '@/utils/categoryStore';
+import { deleteCategoryFromState } from '@/domain/categoryOps';
 import { t, tWithParams } from '@/utils/i18n';
 
 /**
@@ -82,12 +83,12 @@ export class CategoryDeleteModal extends Modal {
                 (c) => c.id === this.category.id
             );
             if (index > -1) {
-                // Remove and renumber immutably — never mutate the surviving
-                // category objects (identity convention from DECISIONS.md).
-                const remaining = this.plugin.settings.categories
-                    .filter((c) => c.id !== this.category.id)
-                    .map((cat, i) => (cat.order === i ? cat : { ...cat, order: i }));
-                await commitCategories(this.plugin, remaining);
+                // Remove + renumber immutably, and garbage-collect the tools
+                // that lived only in this category (library tools survive).
+                await commitToolState(
+                    this.plugin,
+                    deleteCategoryFromState(toolStateOf(this.plugin), this.category.id)
+                );
 
                 // 显示成功消息
                 const buttonCount = this.category.buttons.length;

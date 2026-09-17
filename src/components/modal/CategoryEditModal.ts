@@ -1,11 +1,11 @@
 import { App, Modal, Setting, Notice, TextComponent, setIcon } from 'obsidian';
 import { ButtonsPanelPlugin } from '@/types/plugin';
 import { CategoryConfig } from '@/types';
+import type { StoredCategory } from '@/types/settings';
 import { t, tWithParams } from '@/utils/i18n';
 import { ConditionEditor } from '@/components/input';
 import { getCategoryLayout, type CategoryLayout } from '@/utils/categoryGrid';
 import {
-    applyCategoryLayout,
     findFallbackVariant,
     findVariant,
     getCategoryVariants,
@@ -14,9 +14,15 @@ import {
     triggeredVariants,
     updateVariant,
 } from '@/utils/categoryVariants';
+import { applyStoredCategoryLayout } from '@/domain/categoryOps';
 import { summarizeVariantTrigger } from '@/utils/conditionSummary';
 import { VariantModal } from '@/components/modal/VariantModal';
-import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
+import {
+    commitStoredCategory,
+    commitToolState,
+    findStoredCategory,
+    toolStateOf,
+} from '@/utils/categoryStore';
 
 /**
  * CategoryEditModal 分类编辑模态框类。
@@ -108,7 +114,7 @@ export class CategoryEditModal extends Modal {
     }
 
     /** The stored category, or null if it was deleted while the modal is open. */
-    private storedCategory(): CategoryConfig | null {
+    private storedCategory(): StoredCategory | null {
         return findStoredCategory(this.plugin, this.categoryId);
     }
 
@@ -118,7 +124,7 @@ export class CategoryEditModal extends Modal {
      * fields and are read fresh on save, so writing variants through here
      * cannot collide with them.
      */
-    private updateStoredCategory(update: (category: CategoryConfig) => CategoryConfig): void {
+    private updateStoredCategory(update: (category: StoredCategory) => StoredCategory): void {
         const stored = this.storedCategory();
         if (!stored) {
             new Notice(t('category_not_found'));
@@ -215,7 +221,9 @@ export class CategoryEditModal extends Modal {
 
             row.createSpan({
                 cls: 'ocap-variants-count',
-                text: tWithParams('variant_tools_count', { count: variant.buttons.length }),
+                text: tWithParams('variant_tools_count', {
+                    count: variant.placements?.length ?? 0,
+                }),
             });
         }
     }
@@ -359,9 +367,14 @@ export class CategoryEditModal extends Modal {
             return;
         }
 
-        // Layout first: switching to the grid rewrites the buttons (assigning
-        // slots), and it can legitimately refuse — nothing must be saved then.
-        const layoutResult = applyCategoryLayout(stored, this.selectedLayout);
+        // Layout first: switching to the grid rewrites the placements
+        // (assigning slots, lifting conditions into variants), and it can
+        // legitimately refuse — nothing must be saved then.
+        const layoutResult = applyStoredCategoryLayout(
+            toolStateOf(this.plugin),
+            this.categoryId,
+            this.selectedLayout
+        );
         if (!layoutResult.ok) {
             new Notice(
                 layoutResult.reason === 'dynamic_category'
@@ -374,15 +387,22 @@ export class CategoryEditModal extends Modal {
             return;
         }
 
-        const updated: CategoryConfig = {
-            ...layoutResult.category,
-            name: this.newName.trim(),
-            // Explicitly assign (possibly undefined) so clearing the editor
-            // removes previously saved conditions (undefined is dropped by
-            // JSON serialization on save).
-            conditions: conditionsResult ? conditionsResult.conditions : undefined,
-        };
-        void commitStoredCategory(this.plugin, updated);
+        const state = layoutResult.state;
+        const categories = state.categories.map((category) =>
+            category.id !== this.categoryId
+                ? category
+                : {
+                      ...category,
+                      name: this.newName.trim(),
+                      // Explicitly assign (possibly undefined) so clearing the
+                      // editor removes previously saved conditions (undefined
+                      // is dropped by JSON serialization on save).
+                      conditions: conditionsResult
+                          ? conditionsResult.conditions
+                          : undefined,
+                  }
+        );
+        void commitToolState(this.plugin, { tools: state.tools, categories });
         this.onRename();
         this.close();
     }

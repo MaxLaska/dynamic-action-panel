@@ -15,9 +15,10 @@
 // unchanged and stays covered by gridDragItems/variantGridDnd.
 
 import { describe, expect, it } from 'vitest';
-import type { ButtonConfig, CategoryConfig, CategoryVariant } from '@/types/settings';
+import type { ButtonConfig, StoredCategory, ToolPlacement } from '@/types/settings';
 import { ActionSequence } from '@/actions/ActionSequence';
-import { addButtonToGrid, findVariant } from '@/utils/categoryVariants';
+import { findVariant } from '@/utils/categoryVariants';
+import { createToolInCategory, type ToolState } from '@/domain/categoryOps';
 import { LEGACY_GRID_SLOT_COUNT } from '@/utils/categoryGrid';
 import {
     buildVaultFileButtonDraft,
@@ -26,6 +27,7 @@ import {
 } from '@/utils/vaultFileButton';
 import { parseDraggedLinkText } from '@/utils/obsidianFileDrag';
 import { t } from '@/utils/i18n';
+import { p, registryOf, stateOf, storedGrid, storedVariant, tool } from './helpers/stored';
 
 // --- helpers -----------------------------------------------------------------
 
@@ -35,22 +37,36 @@ function button(id: string, order: number, slot?: number): ButtonConfig {
     return b;
 }
 
-function variant(id: string, buttons: ButtonConfig[]): CategoryVariant {
-    return { id, name: id, buttons };
-}
-
-function staticGrid(buttons: ButtonConfig[]): CategoryConfig {
-    return { id: 'cat', name: 'Tools', order: 0, buttons, layout: 'grid' };
-}
-
-function dynamicCategory(variants: CategoryVariant[]): CategoryConfig {
-    return { id: 'cat', name: 'Tools', order: 0, buttons: [], layout: 'grid', variants };
-}
-
-function fullGrid(): ButtonConfig[] {
-    return Array.from({ length: LEGACY_GRID_SLOT_COUNT }, (_, slot) =>
-        button(`b${slot}`, slot, slot)
+/** State with one static grid holding the given placements. */
+function gridState(placements: ToolPlacement[]): ToolState {
+    return stateOf(
+        registryOf(...placements.map((placement) => tool(placement.toolId))),
+        storedGrid(placements)
     );
+}
+
+function dynamicState(
+    variants: { id: string; placements: ToolPlacement[] }[]
+): ToolState {
+    const category: StoredCategory = {
+        id: 'cat',
+        name: 'Tools',
+        order: 0,
+        layout: 'grid',
+        placements: [],
+        variants: variants.map((v) => storedVariant(v.id, { all: [] }, v.placements)),
+    };
+    const all = variants.flatMap((v) => v.placements);
+    return stateOf(registryOf(...all.map((placement) => tool(placement.toolId))), category);
+}
+
+function fullGrid(): ToolPlacement[] {
+    return Array.from({ length: LEGACY_GRID_SLOT_COUNT }, (_, slot) => p(`b${slot}`, slot));
+}
+
+/** The category's placements after the create, or null when refused. */
+function placedIn(next: ToolState | null): ToolPlacement[] | null {
+    return next?.categories[0]!.placements ?? null;
 }
 
 function vaultFile(path: string): DroppedVaultFile {
@@ -124,69 +140,81 @@ describe('saving a tool without an action', () => {
 
 describe('creating a tool in a chosen slot', () => {
     it('places the tool in exactly the requested slot of a static grid', () => {
-        const next = addButtonToGrid(staticGrid([]), null, button('new', 0), 9);
+        const next = createToolInCategory(gridState([]), 'cat', null, button('new', 0), 9);
 
-        expect(next?.buttons.find((b) => b.id === 'new')?.slot).toBe(9);
+        expect(placedIn(next)).toEqual([p('new', 9)]);
+        // The definition was registered in the same step.
+        expect(next!.tools['new']).toBeDefined();
     });
 
     it('still uses the lowest free slot when no slot is requested', () => {
-        const next = addButtonToGrid(staticGrid([button('a', 0, 0)]), null, button('new', 0));
+        const next = createToolInCategory(
+            gridState([p('a', 0)]),
+            'cat',
+            null,
+            button('new', 0)
+        );
 
-        expect(next?.buttons.find((b) => b.id === 'new')?.slot).toBe(1);
+        expect(placedIn(next)).toEqual([p('a', 0), p('new', 1)]);
     });
 
     it('leaves the holes below the requested slot empty', () => {
-        const next = addButtonToGrid(staticGrid([]), null, button('new', 0), 7);
+        const next = createToolInCategory(gridState([]), 'cat', null, button('new', 0), 7);
 
-        expect(next?.buttons).toHaveLength(1);
-        expect(next?.buttons[0]?.slot).toBe(7);
+        expect(placedIn(next)).toEqual([p('new', 7)]);
     });
 
     it('keeps the tool when the requested slot turned out to be taken', () => {
-        const next = addButtonToGrid(
-            staticGrid([button('a', 0, 3)]),
+        const next = createToolInCategory(
+            gridState([p('a', 3)]),
+            'cat',
             null,
             button('new', 0),
             3
         );
 
-        expect(next?.buttons.find((b) => b.id === 'new')?.slot).toBe(0);
+        expect(placedIn(next)).toEqual([p('a', 3), p('new', 0)]);
     });
 
     it('ignores an out-of-range slot instead of corrupting the grid', () => {
-        const next = addButtonToGrid(staticGrid([]), null, button('new', 0), 99);
+        const next = createToolInCategory(gridState([]), 'cat', null, button('new', 0), 99);
 
-        expect(next?.buttons.find((b) => b.id === 'new')?.slot).toBe(0);
+        expect(placedIn(next)).toEqual([p('new', 0)]);
     });
 
     it('refuses a full 4x4 grid — there is no 17th slot to aim at', () => {
-        expect(addButtonToGrid(staticGrid(fullGrid()), null, button('new', 0), 5)).toBeNull();
-        expect(addButtonToGrid(staticGrid(fullGrid()), null, button('new', 0))).toBeNull();
+        expect(
+            createToolInCategory(gridState(fullGrid()), 'cat', null, button('new', 0), 5)
+        ).toBeNull();
+        expect(
+            createToolInCategory(gridState(fullGrid()), 'cat', null, button('new', 0))
+        ).toBeNull();
     });
 
     it('creates in the EDITED variant, never in the first one', () => {
-        const category = dynamicCategory([
-            variant('source', [button('s0', 0, 0)]),
-            variant('topic', []),
+        const state = dynamicState([
+            { id: 'source', placements: [p('s0', 0)] },
+            { id: 'topic', placements: [] },
         ]);
 
-        const next = addButtonToGrid(category, 'topic', button('new', 0), 6);
+        const next = createToolInCategory(state, 'cat', 'topic', button('new', 0), 6)!;
 
-        expect(findVariant(next!, 'topic')?.buttons.map((b) => [b.id, b.slot])).toEqual([
-            ['new', 6],
-        ]);
+        expect(
+            findVariant(next.categories[0]!, 'topic')?.placements
+        ).toEqual([p('new', 6)]);
         // The other variant is a complete, independent grid: untouched.
-        expect(findVariant(next!, 'source')?.buttons.map((b) => b.id)).toEqual(['s0']);
+        expect(findVariant(next.categories[0]!, 'source')?.placements).toEqual([p('s0', 0)]);
     });
 
     it('a full variant refuses while its sibling still has room', () => {
-        const category = dynamicCategory([variant('full', fullGrid()), variant('free', [])]);
+        const state = dynamicState([
+            { id: 'full', placements: fullGrid() },
+            { id: 'free', placements: [] },
+        ]);
 
-        expect(addButtonToGrid(category, 'full', button('new', 0), 2)).toBeNull();
-        expect(
-            findVariant(addButtonToGrid(category, 'free', button('new', 0), 2)!, 'free')
-                ?.buttons[0]?.slot
-        ).toBe(2);
+        expect(createToolInCategory(state, 'cat', 'full', button('new', 0), 2)).toBeNull();
+        const next = createToolInCategory(state, 'cat', 'free', button('new', 0), 2)!;
+        expect(findVariant(next.categories[0]!, 'free')?.placements).toEqual([p('new', 2)]);
     });
 });
 

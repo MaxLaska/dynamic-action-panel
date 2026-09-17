@@ -12,6 +12,8 @@
 import React from 'react';
 import { ItemView, WorkspaceLeaf, debounce } from 'obsidian';
 import { ButtonsPanelPlugin, CategoryConfig, PanelConfig } from '@/types';
+import type { StoredCategory } from '@/types/settings';
+import { materializeCategoriesForRuntime } from '@/domain/tools';
 import { t } from '@/utils/i18n';
 import { NavigationBarRenderer } from '@/views/renderers/NavigationBarRenderer';
 import { ReactRoot } from '@/utils/ReactRoot';
@@ -23,8 +25,8 @@ import { ButtonsPanelApp } from '@/components/buttons-panel/ButtonsPanelApp';
  * 通过组合多个模块化组件实现高内聚低耦合。
  */
 export class ButtonsPanelView extends ItemView {
-    /** 当前面板的分类数据 */
-    private categories: CategoryConfig[] = [];
+    /** 当前面板的分类数据 (stored shape; the render path materializes views) */
+    private categories: StoredCategory[] = [];
     /** 面板的显示设置 */
     private panelConfig: PanelConfig;
     /** 导航栏搜索关键字（仅内存状态，不写入设置） */
@@ -50,7 +52,7 @@ export class ButtonsPanelView extends ItemView {
     constructor(
         leaf: WorkspaceLeaf,
         plugin: ButtonsPanelPlugin,
-        categories: CategoryConfig[],
+        categories: StoredCategory[],
         panelConfig: PanelConfig
     ) {
         super(leaf);
@@ -171,7 +173,7 @@ export class ButtonsPanelView extends ItemView {
      * 更新分类数据并重新渲染
      * @param categories 新的分类配置数组
      */
-    updateCategories(categories: CategoryConfig[]): void {
+    updateCategories(categories: StoredCategory[]): void {
         try {
             // 确保 categories 是有效的数组
             this.categories = Array.isArray(categories) ? categories : [];
@@ -200,12 +202,20 @@ export class ButtonsPanelView extends ItemView {
     }
 
     /**
-     * 供 React 渲染用的分类列表：浅拷贝数组以触发依赖 categories 引用的子树更新，
-     * 分类对象本身仍与 plugin.settings 共享，保证创建/编辑模态框写入正确数据。
+     * 供 React 渲染用的分类列表 — THE materialization boundary of the v5
+     * model: the React tree consumes CategoryConfig view copies (buttons
+     * joined from placements + the tool registry), while every write path
+     * resolves the stored category by id through findStoredCategory. An
+     * unchanged stored category with an unchanged registry keeps its view
+     * identity (memoized in src/domain/tools.ts), so memoized subtrees stay
+     * stable across unrelated commits.
      */
     private getCategoriesForRender(): CategoryConfig[] {
         this.syncDataFromPlugin();
-        return [...this.categories];
+        return materializeCategoriesForRuntime(
+            this.plugin.settings.categories,
+            this.plugin.settings.tools
+        );
     }
 
     private createAppElement(): React.ReactElement {

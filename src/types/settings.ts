@@ -38,12 +38,27 @@ import type { ButtonCondition } from '@/types/conditions';
  *      'edit', which now carries drag AND editing, and the panel toggles
  *      between 'locked' and 'edit'. Stored `panelConfig.interactionMode` of
  *      'sort' migrates to 'edit'; nothing else changes.
+ * - 5: tool registry + placements. A stored button is split into its two
+ *      halves: the functional ToolDefinition (name, icon, actions, execution
+ *      settings) lives once in the root `tools` registry, and a ToolPlacement
+ *      (`{ toolId, slot? }`) inside the category/variant says where it sits.
+ *      Grid position has exactly one truth (`slot`); flow order is the
+ *      placement array order. Button ids become tool ids unchanged. See
+ *      docs/ocap/audits/2026-09-17-architecture-audit-target-model.md.
  */
-export const CURRENT_SETTINGS_VERSION = 4;
+export const CURRENT_SETTINGS_VERSION = 5;
 
 /**
  * ButtonConfig 按钮配置对象类型。
  * 描述单个按钮的所有属性。
+ *
+ * Since settings version 5 this is the RUNTIME VIEW shape (and the shape of
+ * pre-v5 stored data inside the migration chain): the persisted model splits
+ * a button into a ToolDefinition in the root registry plus a ToolPlacement
+ * inside its category/variant, and the projection materializes objects of
+ * this shape for the renderers (`id` = the tool id, `order` = the placement
+ * array index, `slot` = the placement's slot). Renderers, drag state and
+ * modals keep consuming exactly this shape.
  */
 export interface ButtonConfig {
     /** 按钮唯一ID */
@@ -94,6 +109,97 @@ export interface ButtonConfig {
     slot?: number;
 }
 
+// --- v5 stored model: tool registry + placements ------------------------------
+
+/**
+ * The functional half of a tool, stored ONCE in the root `tools` registry and
+ * referenced from placements by id. Everything that says what the tool IS and
+ * DOES lives here; where it sits lives on the ToolPlacement.
+ *
+ * Field-for-field this is a ButtonConfig without its positional fields
+ * (`order`, `slot`), plus the `library` lifecycle flag.
+ */
+export interface ToolDefinition {
+    /** Globally unique tool id (former button id for migrated data). */
+    id: string;
+    name: string;
+    /** Stored SVG markup (same convention as ButtonConfig.icon). */
+    icon?: string;
+    actions: ButtonAction[];
+    executionMode?: 'sequential' | 'parallel';
+    stopOnError?: boolean;
+    delayBetweenActions?: number;
+    customCss?: string;
+    /** Flow-only visibility condition; inert inside grid categories. */
+    conditions?: ButtonCondition;
+    /**
+     * Library membership (domain field only — there is no library UI yet).
+     * Absent/false: an ad-hoc tool that is garbage-collected when its last
+     * placement is removed, exactly matching the pre-v5 behavior where a
+     * button existed only on its grid. True: the definition survives with
+     * zero placements and will appear in the future library.
+     */
+    library?: boolean;
+}
+
+/** The root tool registry: id -> definition. */
+export type ToolRegistry = Record<string, ToolDefinition>;
+
+/**
+ * One placed tool. Deliberately WITHOUT an own id (`(container, slot)`
+ * identifies a grid placement, the array position a flow placement) and
+ * without any name/icon/action overrides — those are ToolDefinition
+ * properties.
+ */
+export interface ToolPlacement {
+    toolId: string;
+    /**
+     * Grid categories: the row-major slot (the single truth of the position —
+     * there is no `order` on grid placements anymore). Absent on flow
+     * placements, where the placement array order IS the order, and on
+     * corrupt/overflow grid data, which the render-time self-healing places
+     * deterministically (array order is the tiebreaker).
+     */
+    slot?: number;
+}
+
+/**
+ * One stored variant of a dynamic grid category (v5 shape): identical to the
+ * runtime CategoryVariant except that its grid is `placements` into the tool
+ * registry instead of embedded buttons.
+ */
+export interface StoredVariant extends GridDimensionFields {
+    id: string;
+    name: string;
+    trigger?: ButtonCondition;
+    fallback?: boolean;
+    placements: ToolPlacement[];
+}
+
+/**
+ * One stored category (v5 shape). Same fields and semantics as the runtime
+ * CategoryConfig, with `placements` (and stored variants) instead of embedded
+ * buttons. The runtime view is materialized from this plus the registry —
+ * see src/domain/tools.ts.
+ */
+export interface StoredCategory extends GridDimensionFields {
+    id: string;
+    name: string;
+    order: number;
+    /**
+     * - flow category: all placements, array order = visible order;
+     * - STATIC grid category: the one grid (each placement carries its slot);
+     * - DYNAMIC grid category: unused and kept empty (every tool lives inside
+     *   exactly one variant); non-empty data is carried as inert placements,
+     *   mirroring how inert `buttons` were treated before v5.
+     */
+    placements: ToolPlacement[];
+    /** Stored variants of a DYNAMIC grid category; absent = static/flow. */
+    variants?: StoredVariant[];
+    conditions?: ButtonCondition;
+    layout?: 'flow' | 'grid';
+}
+
 /**
  * Dimensions of ONE grid, stored on the object that owns that grid: on the
  * category for a static grid, on the variant for a dynamic one (a variant IS a
@@ -129,6 +235,10 @@ export interface GridDimensionFields {
  *
  * Fully JSON-serializable: no functions, no runtime references, no shared
  * object graphs.
+ *
+ * Since settings version 5 this is the RUNTIME VIEW shape (materialized from
+ * StoredVariant + the tool registry) and the pre-v5 shape inside the
+ * migration chain.
  */
 export interface CategoryVariant extends GridDimensionFields {
     /** Stable id, independent of the name and of the variant's position. */
@@ -161,6 +271,11 @@ export interface CategoryVariant extends GridDimensionFields {
 /**
  * CategoryConfig 分类配置对象类型。
  * 包含分类信息和该分类下的所有按钮。
+ *
+ * Since settings version 5 this is the RUNTIME VIEW shape (materialized from
+ * StoredCategory + the tool registry — see src/domain/tools.ts) and the
+ * pre-v5 shape inside the migration chain. Renderers and drag state consume
+ * this; write paths operate on StoredCategory and the registry.
  */
 export interface CategoryConfig extends GridDimensionFields {
     /** 分类唯一ID */
@@ -283,8 +398,13 @@ export interface ButtonsPanelPluginSettings {
      * data) and migrated by src/settings/settingsMigrations.ts.
      */
     settingsVersion: number;
-    /** 分类数组 */
-    categories: CategoryConfig[];
+    /**
+     * The tool registry (since v5): every tool of the vault, keyed by id.
+     * Placements reference into this; nothing else stores tool data.
+     */
+    tools: ToolRegistry;
+    /** 分类数组 (stored v5 shape; the runtime view is materialized from it) */
+    categories: StoredCategory[];
     /** 面板设置 */
     panelConfig: PanelConfig;
     /** 路径设置 */
@@ -297,6 +417,7 @@ export interface ButtonsPanelPluginSettings {
  */
 export const DEFAULT_SETTINGS: ButtonsPanelPluginSettings = {
     settingsVersion: CURRENT_SETTINGS_VERSION,
+    tools: {},
     categories: [],
     panelConfig: {
         displayStyle: 'icon_top',

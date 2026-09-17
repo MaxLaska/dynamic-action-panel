@@ -4,13 +4,17 @@ import { CategoryDeleteModal } from '@/components/modal/CategoryDeleteModal';
 import { VariantModal } from '@/components/modal/VariantModal';
 import { t } from '@/utils/i18n';
 import {
-    commitCategories,
     commitStoredCategory,
+    commitToolState,
     dispatchPanelRefresh,
-    duplicateCategoryConfig,
     findStoredCategory,
+    toolStateOf,
 } from '@/utils/categoryStore';
-import { convertStaticGridToDynamic, isStaticGridCategory } from '@/utils/categoryVariants';
+import { isStaticGridCategory } from '@/utils/categoryVariants';
+import {
+    convertStoredStaticGridToDynamic,
+    duplicateCategoryInState,
+} from '@/domain/categoryOps';
 import { freshId } from '@/utils/id';
 import type { CategoryConfig, ButtonsPanelPlugin } from '@/types';
 
@@ -41,7 +45,7 @@ export function openMakeDynamicModal(
             }
             void commitStoredCategory(
                 plugin,
-                convertStaticGridToDynamic(stored, {
+                convertStoredStaticGridToDynamic(stored, {
                     id: freshId('var'),
                     name,
                     trigger,
@@ -57,7 +61,9 @@ export function openMakeDynamicModal(
  */
 export function createCategoryMenuHandler(
     category: CategoryConfig,
-    categories: CategoryConfig[],
+    // Only the count is needed (the copy's order); both the stored and the
+    // materialized view array satisfy this.
+    categories: readonly { id: string }[],
     plugin: ButtonsPanelPlugin,
     app: App
 ): (e: MouseEvent) => void {
@@ -90,15 +96,17 @@ export function createCategoryMenuHandler(
             item.setTitle(t('copy') || '复制')
                 .setIcon('copy')
                 .onClick(() => {
-                    // Copies every variant, not just `buttons`.
-                    const newCategory = duplicateCategoryConfig(
-                        category,
-                        categories.length
+                    // Copies every variant AND its tool definitions (fresh
+                    // ids — the copy is fully independent, see F2).
+                    const result = duplicateCategoryInState(
+                        toolStateOf(plugin),
+                        category.id,
+                        categories.length,
+                        freshId
                     );
-                    void commitCategories(plugin, [
-                        ...plugin.settings.categories,
-                        newCategory,
-                    ]);
+                    if (result) {
+                        void commitToolState(plugin, result.state);
+                    }
                 });
         });
 

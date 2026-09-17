@@ -2,8 +2,9 @@ import { useCallback, useMemo } from 'react';
 import { Notice, getIcon } from 'obsidian';
 import { usePluginContext } from '@/contexts/PluginContext';
 import { useCategoryVariants } from '@/contexts/CategoryVariantContext';
-import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
-import { addButtonToGrid, isDynamicCategory } from '@/utils/categoryVariants';
+import { commitToolState, findStoredCategory, toolStateOf } from '@/utils/categoryStore';
+import { isDynamicCategory } from '@/utils/categoryVariants';
+import { createToolInCategory } from '@/domain/categoryOps';
 import { createDefaultButtonConfig } from '@/utils/buttonFactory';
 import { buildVaultFileButtonDraft } from '@/utils/vaultFileButton';
 import {
@@ -47,7 +48,10 @@ export function useSlotFileDrop() {
                 return;
             }
 
-            const stored = findStoredCategory(plugin, category.id) ?? category;
+            const stored = findStoredCategory(plugin, category.id);
+            if (!stored) {
+                return;
+            }
             // Same target resolution as the `+`: the variant on screen.
             const variantId = isDynamicCategory(stored)
                 ? (selection[stored.id]?.current ?? null)
@@ -67,12 +71,21 @@ export function useSlotFileDrop() {
                 actions: [draft.action],
             };
 
-            const next = addButtonToGrid(stored, variantId, button, slot);
+            // One step: register the tool definition AND place it in exactly
+            // this slot of exactly the edited variant (ad-hoc: no library
+            // flag — removing the placement later removes the tool again).
+            const next = createToolInCategory(
+                toolStateOf(plugin),
+                stored.id,
+                variantId,
+                button,
+                slot
+            );
             if (!next) {
                 new Notice(t('variant_grid_full'));
                 return;
             }
-            void commitStoredCategory(plugin, next);
+            void commitToolState(plugin, next);
 
             new Notice(
                 draft.scriptFolderMismatch

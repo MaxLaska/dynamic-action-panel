@@ -18,9 +18,17 @@ import {
     CategoryVariant,
     CURRENT_SETTINGS_VERSION,
     DEFAULT_SETTINGS,
+    ToolPlacement,
+    ToolRegistry,
 } from '@/types/settings';
 import type { ButtonCondition } from '@/types/conditions';
-import { LEGACY_GRID_DIMENSIONS, placeButtonsOnGrid } from '@/utils/categoryGrid';
+import {
+    LEGACY_GRID_DIMENSIONS,
+    buttonsInOrder,
+    placeButtonsOnGrid,
+    readGridDimensions,
+    type GridDimensions,
+} from '@/utils/categoryGrid';
 import {
     composeFallbackVariant,
     composeFullVariant,
@@ -70,6 +78,7 @@ function readStoredVersion(raw: Record<string, unknown>): number {
 function cloneDefaults(): ButtonsPanelPluginSettings {
     return {
         ...DEFAULT_SETTINGS,
+        tools: {},
         categories: [],
         panelConfig: { ...DEFAULT_SETTINGS.panelConfig },
         pathConfig: { ...DEFAULT_SETTINGS.pathConfig },
@@ -78,10 +87,12 @@ function cloneDefaults(): ButtonsPanelPluginSettings {
 
 /**
  * Conservative category sanitization: keep the user's array as-is if it is an
- * array (never drop or rewrite user buttons), fall back to [] otherwise.
+ * array (never drop or rewrite user buttons/placements), fall back to []
+ * otherwise. The entries are whatever shape the surrounding pipeline stage
+ * holds (pre-v5 buttons or v5 placements), so this stays shape-agnostic.
  */
-function sanitizeCategories(value: unknown): CategoryConfig[] {
-    return Array.isArray(value) ? (value as CategoryConfig[]) : [];
+function sanitizeCategories(value: unknown): Record<string, unknown>[] {
+    return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 }
 
 /** `order` as a sortable number; anything else sorts as 0 (stable sort keeps ties). */
@@ -106,23 +117,27 @@ function isSortedByOrder(items: readonly { order?: unknown }[]): boolean {
  * place that brings legacy out-of-order arrays into their visible order. The
  * write paths all keep `order` consistent with the array order they write,
  * so for data this plugin saved this is a no-op (identity preserved).
- * Variant grids are untouched — the old sort never reached them either, and
- * grid placement orders by `order` at render time anyway.
+ * v5 categories carry `placements` (whose array order IS the order) instead
+ * of `buttons`, so only the category-level sort applies to them. Variant
+ * grids are untouched — the old sort never reached them either, and grid
+ * placement orders by `order`/array order at render time anyway.
  */
-function normalizeCategoryOrdering(categories: CategoryConfig[]): CategoryConfig[] {
+function normalizeCategoryOrdering(
+    categories: Record<string, unknown>[]
+): Record<string, unknown>[] {
     let anyChanged = false;
     const normalized = categories.map((category) => {
+        const buttons = isRecord(category) ? category['buttons'] : undefined;
         if (
-            !isRecord(category) ||
-            !Array.isArray((category as CategoryConfig).buttons) ||
-            isSortedByOrder((category as CategoryConfig).buttons)
+            !Array.isArray(buttons) ||
+            isSortedByOrder(buttons as { order?: unknown }[])
         ) {
             return category;
         }
         anyChanged = true;
         return {
             ...category,
-            buttons: [...(category as CategoryConfig).buttons].sort(
+            buttons: [...(buttons as ButtonConfig[])].sort(
                 (a, b) => orderValue(a.order) - orderValue(b.order)
             ),
         };
@@ -131,7 +146,16 @@ function normalizeCategoryOrdering(categories: CategoryConfig[]): CategoryConfig
     if (isSortedByOrder(result)) {
         return result;
     }
-    return [...result].sort((a, b) => orderValue(a.order) - orderValue(b.order));
+    return [...result].sort(
+        (a, b) =>
+            orderValue((a as { order?: unknown }).order) -
+            orderValue((b as { order?: unknown }).order)
+    );
+}
+
+/** The root tool registry, defensively normalized ({} when absent/invalid). */
+function sanitizeTools(value: unknown): Record<string, unknown> {
+    return isRecord(value) ? value : {};
 }
 
 /**
@@ -162,6 +186,7 @@ function normalizeSettings(raw: Record<string, unknown>): Record<string, unknown
     };
     return {
         ...raw,
+        tools: sanitizeTools(raw['tools']),
         categories: normalizeCategoryOrdering(sanitizeCategories(raw['categories'])),
         panelConfig: {
             ...panelConfig,
@@ -427,11 +452,168 @@ function migrateV3toV4(data: Record<string, unknown>): Record<string, unknown> {
     };
 }
 
+// --- Version 5 (tool registry + placements) -----------------------------------
+
+/**
+ * The v4 -> v5 splitter: registers one ToolDefinition per button (the button
+ * id becomes the tool id) and returns the placement referencing it.
+ *
+ * Duplicate ids across the whole vault (only possible in hand-edited data —
+ * the runtime always generated fresh ids) are healed deterministically: the
+ * first occurrence keeps its id, later ones get a `--dupN` suffix, so no tool
+ * can overwrite another's registry entry. A button without a usable id gets a
+ * deterministic positional one.
+ */
+class ToolCollector {
+    readonly tools: ToolRegistry = {};
+    private nameless = 0;
+
+    register(button: ButtonConfig, slot?: number): ToolPlacement {
+        let id =
+            typeof button.id === 'string' && button.id.length > 0
+                ? button.id
+                : `tool-${(this.nameless += 1)}`;
+        if (this.tools[id] !== undefined) {
+            let n = 2;
+            while (this.tools[`${id}--dup${n}`] !== undefined) {
+                n += 1;
+            }
+            id = `${id}--dup${n}`;
+        }
+        const { order: _order, slot: _slot, id: _id, ...functional } = button;
+        this.tools[id] = { id, ...functional };
+        return slot !== undefined ? { toolId: id, slot } : { toolId: id };
+    }
+}
+
+/**
+ * Decompose one grid's buttons into placements, MATERIALIZED first through
+ * the same self-healing placement the runtime used to render this exact data
+ * (missing/duplicate slots healed, nothing moves): every placed button gets
+ * its explicit slot, overflow (hand-edited data with more buttons than
+ * slots) is carried as slotless placements in order — the render-time
+ * self-healing keeps treating it exactly as before.
+ */
+function gridButtonsToPlacements(
+    collector: ToolCollector,
+    buttons: ButtonConfig[],
+    dimensions: GridDimensions
+): ToolPlacement[] {
+    const placement = placeButtonsOnGrid(buttons, dimensions);
+    const placements: ToolPlacement[] = [];
+    placement.slots.forEach((button, slot) => {
+        if (button) {
+            placements.push(collector.register(button, slot));
+        }
+    });
+    for (const button of placement.overflow) {
+        placements.push(collector.register(button));
+    }
+    return placements;
+}
+
+/** Flow buttons -> ordered slotless placements (array order = flow order). */
+function flowButtonsToPlacements(
+    collector: ToolCollector,
+    buttons: ButtonConfig[]
+): ToolPlacement[] {
+    return buttonsInOrder(buttons).map((button) => collector.register(button));
+}
+
+function readButtons(value: unknown): ButtonConfig[] {
+    return Array.isArray(value) ? (value as ButtonConfig[]) : [];
+}
+
+/**
+ * 4 -> 5: split every stored button into a ToolDefinition (root `tools`
+ * registry) and a ToolPlacement (inside its category/variant).
+ *
+ * - button ids become tool ids unchanged (references, tests and fixtures stay
+ *   readable); vault-wide duplicates are healed (see ToolCollector);
+ * - grid data is materialized through the existing self-healing first, so the
+ *   migration bakes in exactly the arrangement the user saw — nothing moves;
+ * - `rows`/`columns` pass through field-for-field: absent stays absent
+ *   (legacy 4x4 semantics), present stays present;
+ * - flow categories migrate too (one storage model — decided in F4): the
+ *   placement array order is the flow order, per-button `conditions` move to
+ *   the definition and keep their exact semantics;
+ * - no migrated tool gets `library: true` — everything behaves exactly as
+ *   before: a tool lives and dies with its placement;
+ * - a dynamic category's own (unused) `buttons` are carried as inert
+ *   placements, mirroring how inert buttons were treated before.
+ */
+function migrateV4toV5(data: Record<string, unknown>): Record<string, unknown> {
+    const categories = Array.isArray(data['categories'])
+        ? (data['categories'] as unknown[])
+        : [];
+    const collector = new ToolCollector();
+
+    const migrated = categories.map((raw) => {
+        if (!isRecord(raw)) {
+            return raw;
+        }
+        const category = raw as unknown as CategoryConfig;
+        const { buttons: _buttons, variants: _variants, ...rest } = category;
+
+        if (category.layout === 'grid' && Array.isArray(category.variants)) {
+            // Dynamic grid: every variant is its own complete grid.
+            const variants = category.variants.map((variant) => {
+                const { buttons: _variantButtons, ...variantRest } = variant;
+                return {
+                    ...variantRest,
+                    placements: gridButtonsToPlacements(
+                        collector,
+                        readButtons(variant.buttons),
+                        readGridDimensions(variant)
+                    ),
+                };
+            });
+            return {
+                ...rest,
+                // Normally empty; hand-edited leftovers become inert
+                // placements instead of being dropped.
+                placements: flowButtonsToPlacements(
+                    collector,
+                    readButtons(category.buttons)
+                ),
+                variants,
+            };
+        }
+
+        if (category.layout === 'grid') {
+            return {
+                ...rest,
+                placements: gridButtonsToPlacements(
+                    collector,
+                    readButtons(category.buttons),
+                    readGridDimensions(category)
+                ),
+            };
+        }
+
+        return {
+            ...rest,
+            placements: flowButtonsToPlacements(
+                collector,
+                readButtons(category.buttons)
+            ),
+        };
+    });
+
+    return {
+        ...data,
+        tools: collector.tools,
+        categories: migrated,
+        settingsVersion: 5,
+    };
+}
+
 const MIGRATION_STEPS: readonly MigrationStep[] = [
     { from: 0, apply: migrateV0toV1 },
     { from: 1, apply: migrateV1toV2 },
     { from: 2, apply: migrateV2toV3 },
     { from: 3, apply: migrateV3toV4 },
+    { from: 4, apply: migrateV4toV5 },
 ];
 
 /**

@@ -27,6 +27,7 @@ import { isCoarsePointerDevice } from '@/utils/isCoarsePointerDevice';
 import { setPanelTouchDragLock } from '@/utils/touchDragLock';
 import { Notice, setIcon, type App } from 'obsidian';
 import type { ButtonConfig, CategoryConfig } from '@/types';
+import type { StoredCategory } from '@/types/settings';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { usePluginContext } from '@/contexts/PluginContext';
 import { SimpleButton } from '@/components/button/Button';
@@ -52,11 +53,11 @@ import {
     placeButtonsOnGrid,
     type CategoryLayout,
 } from '@/utils/categoryGrid';
+import { gridDimensionsOf, type ResolvedGridView } from '@/utils/categoryVariants';
 import {
-    applySlotIdsToGridCategory,
-    gridDimensionsOf,
-    type ResolvedGridView,
-} from '@/utils/categoryVariants';
+    applyFlowIdsToStoredCategory,
+    applySlotIdsToStoredCategory,
+} from '@/domain/categoryOps';
 import type { VariantSelectionMap } from '@/context/panelProjection';
 import {
     applyCategoryDragOver,
@@ -526,13 +527,11 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     const persistItems = useCallback(
         async (finalItems: ButtonDragItems, pluginInstance: ButtonsPanelPlugin) => {
             const storedCategories = pluginInstance.settings.categories;
-            // Buttons of every variant, so a drag state referencing a
-            // variant's tool resolves just like any other.
-            const allButtons = collectButtonsById(storedCategories);
+            const tools = pluginInstance.settings.tools;
             const selection = variantSelectionRef.current ?? {};
 
-            // Every button the drag state accounts for. Buttons outside this
-            // set were never part of the drag (e.g. grid overflow from
+            // Every tool id the drag state accounts for. Placements outside
+            // this set were never part of the drag (e.g. grid overflow from
             // hand-edited data) and must stay in their category instead of
             // being dropped by the rewrite below.
             const placedIds = new Set<string>();
@@ -542,6 +541,9 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 }
             }
 
+            // A move/swap rewrites PLACEMENTS only: the tool definitions stay
+            // in the registry untouched, so a cross-category move can never
+            // lose a tool, and no garbage collection runs here.
             const nextCategories = storedCategories.map((category) => {
                 const ids = finalItems[category.id];
                 if (!ids) return category;
@@ -551,36 +553,16 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                     // index IS the slot, tools arriving from another category
                     // join the selected variant (or the static grid), and
                     // every off-screen variant is left completely untouched.
-                    return applySlotIdsToGridCategory(
+                    return applySlotIdsToStoredCategory(
                         category,
                         ids,
-                        allButtons,
+                        tools,
                         selection[category.id] ?? null,
                         placedIds
                     );
                 }
 
-                const nextButtons: ButtonConfig[] = [];
-                for (const id of ids) {
-                    if (id === null) continue;
-                    const button = allButtons.get(id);
-                    if (!button) continue;
-                    const { slot: _slot, ...rest } = button;
-                    nextButtons.push(rest);
-                }
-                // Preserve buttons of this category that no container claimed.
-                for (const button of category.buttons) {
-                    if (!placedIds.has(button.id)) {
-                        nextButtons.push(button);
-                    }
-                }
-                return {
-                    ...category,
-                    buttons: nextButtons.map((button, index) => ({
-                        ...button,
-                        order: index,
-                    })),
-                };
+                return applyFlowIdsToStoredCategory(category, ids, tools, placedIds);
             });
 
             await commitCategories(pluginInstance, nextCategories);
@@ -597,7 +579,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             const byId = new Map(
                 pluginInstance.settings.categories.map((c) => [c.id, c])
             );
-            const reordered: CategoryConfig[] = [];
+            const reordered: StoredCategory[] = [];
             for (const id of orderedIds) {
                 const cat = byId.get(id);
                 if (cat) reordered.push(cat);

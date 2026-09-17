@@ -4,19 +4,20 @@
  */
 import type { App } from 'obsidian';
 import { Modal, Setting, Notice } from 'obsidian';
-import { ButtonConfig, CategoryConfig } from '@/types';
+import { ButtonConfig } from '@/types';
 import type { ButtonAction } from '@/types/action';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { t } from '@/utils/i18n';
 import { ActionSequence } from '@/actions/ActionSequence';
 import { NameInput, IconInput, ConditionEditor } from '@/components/input';
-import { renderGridTargetNotice } from '@/components/modal/ButtonCreateModal';
 import {
-    findButtonVariantId,
-    replaceButtonInGridCategory,
-} from '@/utils/categoryVariants';
+    renderGridTargetNotice,
+    type ButtonModalCategoryRef,
+} from '@/components/modal/ButtonCreateModal';
 import { isGridCategory } from '@/utils/categoryGrid';
-import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
+import { commitToolState, findStoredCategory, toolStateOf } from '@/utils/categoryStore';
+import { updateToolDefinition } from '@/domain/categoryOps';
+import { findToolVariantId } from '@/domain/tools';
 
 /**
  * ButtonEditModal 按钮编辑模态框类。
@@ -28,7 +29,7 @@ export class ButtonEditModal extends Modal {
     // 待编辑的按钮对象
     button: ButtonConfig;
     // 按钮所属分类
-    parentCategory: CategoryConfig;
+    parentCategory: ButtonModalCategoryRef;
     // 保存成功回调
     onSave?: () => void;
     // 临时按钮对象，用于保存修改前的值
@@ -54,7 +55,7 @@ export class ButtonEditModal extends Modal {
 		app: App,
 		plugin: ButtonsPanelPlugin,
         button: ButtonConfig,
-        parentCategory: CategoryConfig,
+        parentCategory: ButtonModalCategoryRef,
         onSave?: () => void
     ) {
         super(app);
@@ -143,13 +144,11 @@ export class ButtonEditModal extends Modal {
         // OCAP: inside a grid category the variant decides contextuality, so
         // the per-button condition editor is replaced by the target statement.
         if (isGridCategory(this.parentCategory)) {
-            const stored =
-                findStoredCategory(this.plugin, this.parentCategory.id) ??
-                this.parentCategory;
+            const stored = findStoredCategory(this.plugin, this.parentCategory.id);
             renderGridTargetNotice(
                 container,
-                stored,
-                findButtonVariantId(stored, this.button.id)
+                stored ?? this.parentCategory,
+                stored ? findToolVariantId(stored, this.button.id) : null
             );
             return;
         }
@@ -291,26 +290,13 @@ export class ButtonEditModal extends Modal {
         // edited button content (see areButtonItemPropsEqual in ButtonItem).
         const updatedButton: ButtonConfig = { ...this.button, ...this.tempButton };
 
-        // Write into the stored category — the modal may have been opened with
-        // a projection copy — and, in a grid category, into whichever variant
-        // holds the button.
-        const stored =
-            findStoredCategory(this.plugin, this.parentCategory.id) ?? this.parentCategory;
-        if (isGridCategory(stored)) {
-            await commitStoredCategory(
-                this.plugin,
-                replaceButtonInGridCategory(stored, updatedButton)
-            );
-        } else {
-            const index = stored.buttons.findIndex(
-                (b: ButtonConfig) => b.id === this.button.id
-            );
-            if (index > -1) {
-                const buttons = [...stored.buttons];
-                buttons[index] = updatedButton;
-                await commitStoredCategory(this.plugin, { ...stored, buttons });
-            }
-        }
+        // v5: an edit changes only the TOOL DEFINITION in the registry —
+        // the placement (which grid/variant/slot or flow position holds it)
+        // is untouched, so this one write covers grid and flow alike.
+        await commitToolState(
+            this.plugin,
+            updateToolDefinition(toolStateOf(this.plugin), updatedButton)
+        );
 
         new Notice(t('button_update_success'));
         this.close();

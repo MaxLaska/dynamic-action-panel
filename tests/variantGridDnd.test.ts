@@ -30,10 +30,10 @@ import {
     type ButtonDragItems,
 } from '@/utils/buttonDragItems';
 import { buttonDragCollisionDetection } from '@/utils/buttonDragCollision';
-import {
-    duplicateVariant,
-    resolveGridViewForVariant,
-} from '@/utils/categoryVariants';
+import { resolveGridViewForVariant } from '@/utils/categoryVariants';
+import { duplicateVariantInState } from '@/domain/categoryOps';
+import { materializeCategoriesForRuntime } from '@/domain/tools';
+import { p, registryOf, stateOf, storedVariant, tool } from './helpers/stored';
 import {
     selectedVariantOf,
     type VariantSelectionState,
@@ -250,13 +250,33 @@ describe('variant switches and the drag state', () => {
     });
 
     it('a duplicated variant is id-disjoint from its source but slot-identical', () => {
-        const category = makeDynamic();
-        const withCopy = duplicateVariant(
-            category,
+        // v5: the duplicate op works on the stored shape + registry.
+        const stored = {
+            id: 'dyn',
+            name: 'Dyn',
+            order: 0,
+            layout: 'grid' as const,
+            placements: [],
+            variants: [
+                storedVariant('va', IN_NOTES, [p('a1', 0), p('a2', 1)]),
+                storedVariant('vb', IN_OTHER, [p('b1', 0), p('b2', 3)]),
+            ],
+        };
+        const state = stateOf(
+            registryOf(tool('a1'), tool('a2'), tool('b1'), tool('b2')),
+            stored
+        );
+        const next = duplicateVariantInState(
+            state,
+            'dyn',
             'va',
             { id: 'va-copy', name: 'va copy', trigger: IN_NOTES },
             (index) => `copy-btn-${index}`
         );
+        const withCopy = materializeCategoriesForRuntime(
+            next.categories,
+            next.tools
+        )[0]!;
         const copy = withCopy.variants!.find((v) => v.id === 'va-copy')!;
         const source = itemsFor([withCopy], { dyn: 'va' });
         const dup = itemsFor([withCopy], { dyn: copy.id });

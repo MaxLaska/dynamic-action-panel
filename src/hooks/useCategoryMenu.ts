@@ -3,7 +3,9 @@ import { Menu, MenuItem } from 'obsidian';
 import { usePluginContext } from '@/contexts/PluginContext';
 import { CategoryEditModal } from '@/components/modal/CategoryEditModal';
 import { CategoryDeleteModal } from '@/components/modal/CategoryDeleteModal';
-import { commitCategories, duplicateCategoryConfig } from '@/utils/categoryStore';
+import { commitToolState, toolStateOf } from '@/utils/categoryStore';
+import { duplicateCategoryInState } from '@/domain/categoryOps';
+import { freshId } from '@/utils/id';
 import { isStaticGridCategory } from '@/utils/categoryVariants';
 import { openMakeDynamicModal } from '@/utils/categoryMenuUtils';
 import { t } from '@/utils/i18n';
@@ -42,15 +44,17 @@ export function useCategoryMenu(category: CategoryConfig, categories: CategoryCo
                 item.setTitle(t('copy') || '复制')
                     .setIcon('copy')
                     .onClick(() => {
-                        // Copies every variant, not just `buttons`.
-                        const newCategory = duplicateCategoryConfig(
-                            category,
-                            categories.length
+                        // Copies every variant AND its tool definitions
+                        // (fresh ids — fully independent, see F2).
+                        const result = duplicateCategoryInState(
+                            toolStateOf(plugin),
+                            category.id,
+                            categories.length,
+                            freshId
                         );
-                        void commitCategories(plugin, [
-                            ...plugin.settings.categories,
-                            newCategory,
-                        ]);
+                        if (result) {
+                            void commitToolState(plugin, result.state);
+                        }
                     });
             });
 

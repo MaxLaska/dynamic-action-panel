@@ -3,7 +3,7 @@ import { usePluginContext } from '@/contexts/PluginContext';
 import { CategoryCreateModal } from '@/components/modal/CategoryCreateModal';
 import { commitCategories } from '@/utils/categoryStore';
 import { freshId } from '@/utils/id';
-import type { CategoryConfig } from '@/types';
+import type { StoredCategory } from '@/types/settings';
 import type { ButtonCondition } from '@/types/conditions';
 import {
     DEFAULT_CATEGORY_LAYOUT,
@@ -26,18 +26,18 @@ export function useCategoryCreation() {
      * @param onCreated 创建成功后的回调
      */
     const createCategory = useCallback(
-        (onCreated?: (category: CategoryConfig) => void) => {
+        (onCreated?: (category: StoredCategory) => void) => {
             new CategoryCreateModal(app, plugin, (
                 categoryName: string,
                 conditions: ButtonCondition | undefined,
                 layout: CategoryLayout
             ) => {
                 void (async () => {
-                    const newCategory: CategoryConfig = {
+                    const newCategory: StoredCategory = {
                         id: freshId('cat'),
                         name: categoryName,
                         order: plugin.settings.categories.length,
-                        buttons: [],
+                        placements: [],
                     };
                     if (conditions !== undefined) {
                         newCategory.conditions = conditions;

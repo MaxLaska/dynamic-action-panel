@@ -2,7 +2,9 @@ import { useCallback } from 'react';
 import { usePluginContext } from '@/contexts/PluginContext';
 import { useRefresh } from './useRefresh';
 import { CategoryDeleteModal } from '@/components/modal/CategoryDeleteModal';
-import { commitCategories, duplicateCategoryConfig } from '@/utils/categoryStore';
+import { commitToolState, toolStateOf } from '@/utils/categoryStore';
+import { duplicateCategoryInState } from '@/domain/categoryOps';
+import { freshId } from '@/utils/id';
 import type { CategoryConfig } from '@/types';
 
 /**
@@ -23,13 +25,17 @@ export function useCategoryOperations() {
      */
     const copyCategory = useCallback(
         async (category: CategoryConfig, categories: CategoryConfig[]) => {
-            // Copies every palette layer, not just `buttons` — see
-            // duplicateCategoryConfig.
-            const newCategory = duplicateCategoryConfig(category, categories.length);
-            await commitCategories(plugin, [
-                ...plugin.settings.categories,
-                newCategory,
-            ]);
+            // Copies every variant AND its tool definitions (fresh ids — the
+            // copy is fully independent of its source, see F2).
+            const result = duplicateCategoryInState(
+                toolStateOf(plugin),
+                category.id,
+                categories.length,
+                freshId
+            );
+            if (result) {
+                await commitToolState(plugin, result.state);
+            }
         },
         [plugin]
     );

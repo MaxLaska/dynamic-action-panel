@@ -32,7 +32,10 @@ export function useButtonCreation() {
      */
     const createButton = useCallback(
         (category: CategoryConfig, onCreated?: () => void, targetSlot: number | null = null) => {
-            const stored = findStoredCategory(plugin, category.id) ?? category;
+            const stored = findStoredCategory(plugin, category.id);
+            if (!stored) {
+                return;
+            }
             const variantId = isDynamicCategory(stored)
                 ? (selection[stored.id]?.current ?? null)
                 : null;

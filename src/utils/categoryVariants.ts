@@ -30,51 +30,83 @@ import {
     buttonsInOrder,
     clampGridDimensions,
     fitGridDimensions,
-    findFirstFreeSlot,
     getCategoryLayout,
     gridSlotCount,
     isGridCategory,
-    isValidSlotIndex,
     placeButtonsOnGrid,
     readGridDimensions,
     resizeGridButtons,
-    sameGridDimensions,
     type CategoryLayout,
     type GridDimensions,
-    type GridResizeDirection,
-    type GridResizeEdge,
 } from '@/utils/categoryGrid';
 
 // --- Basic accessors ---------------------------------------------------------
+//
+// The accessors are GENERIC over the variant shape, because two shapes share
+// this vocabulary since settings v5: the stored world (StoredVariant with
+// `placements`) that every write path operates on, and the runtime view
+// world (CategoryVariant with `buttons`) the renderers consume. Everything
+// they touch — ids, names, triggers, fallback flags, grid dimensions,
+// priority order — is identical in both.
+
+/** The fields both variant shapes share (see StoredVariant / CategoryVariant). */
+export interface VariantFields {
+    id: string;
+    name: string;
+    trigger?: ButtonCondition;
+    fallback?: boolean;
+    rows?: number;
+    columns?: number;
+}
+
+/**
+ * The fields both category shapes share, as far as the accessors need them.
+ * Parameters below are written as inline structural types (not Pick of this)
+ * so TypeScript can INFER the concrete variant type from the argument.
+ */
+export interface CategoryVariantsHost<V extends VariantFields> {
+    layout?: 'flow' | 'grid';
+    variants?: V[];
+    rows?: number;
+    columns?: number;
+}
+
+/** A structurally valid variant of either shape (stored or view). */
+function isVariantShaped(value: unknown): value is VariantFields {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const record = value as { id?: unknown; buttons?: unknown; placements?: unknown };
+    return (
+        typeof record.id === 'string' &&
+        (Array.isArray(record.buttons) || Array.isArray(record.placements))
+    );
+}
 
 /** Variants of a category, defensively normalized (never null/undefined). */
-export function getCategoryVariants(
-    category: Pick<CategoryConfig, 'variants'>
-): CategoryVariant[] {
+export function getCategoryVariants<V extends VariantFields>(category: {
+    variants?: V[];
+}): V[] {
     const variants = category.variants;
     if (!Array.isArray(variants)) {
         return [];
     }
-    return variants.filter(
-        (variant): variant is CategoryVariant =>
-            typeof variant === 'object' &&
-            variant !== null &&
-            typeof variant.id === 'string' &&
-            Array.isArray(variant.buttons)
-    );
+    return variants.filter((variant): variant is V => isVariantShaped(variant));
 }
 
 /** True for a `layout: 'grid'` category that carries variants (dynamic). */
-export function isDynamicCategory(
-    category: Pick<CategoryConfig, 'layout' | 'variants'>
-): boolean {
+export function isDynamicCategory(category: {
+    layout?: 'flow' | 'grid';
+    variants?: unknown;
+}): boolean {
     return isGridCategory(category) && Array.isArray(category.variants);
 }
 
 /** True for a `layout: 'grid'` category without variants (static grid). */
-export function isStaticGridCategory(
-    category: Pick<CategoryConfig, 'layout' | 'variants'>
-): boolean {
+export function isStaticGridCategory(category: {
+    layout?: 'flow' | 'grid';
+    variants?: unknown;
+}): boolean {
     return isGridCategory(category) && !Array.isArray(category.variants);
 }
 
@@ -88,8 +120,13 @@ export function isStaticGridCategory(
  * exactly one grid, so its size sits on the category itself. Absent fields
  * read as the legacy 4x4 in both cases.
  */
-export function gridDimensionsOf(
-    category: CategoryConfig,
+export function gridDimensionsOf<V extends VariantFields>(
+    category: {
+        layout?: 'flow' | 'grid';
+        variants?: V[];
+        rows?: number;
+        columns?: number;
+    },
     variantId: string | null
 ): GridDimensions {
     if (variantId !== null) {
@@ -107,24 +144,24 @@ export function gridDimensionsOf(
     return readGridDimensions(category);
 }
 
-export function findVariant(
-    category: Pick<CategoryConfig, 'variants'>,
+export function findVariant<V extends VariantFields>(
+    category: { variants?: V[] },
     variantId: string
-): CategoryVariant | null {
+): V | null {
     return getCategoryVariants(category).find((variant) => variant.id === variantId) ?? null;
 }
 
 /** The single fallback variant, or null. */
-export function findFallbackVariant(
-    category: Pick<CategoryConfig, 'variants'>
-): CategoryVariant | null {
+export function findFallbackVariant<V extends VariantFields>(category: {
+    variants?: V[];
+}): V | null {
     return getCategoryVariants(category).find((variant) => variant.fallback === true) ?? null;
 }
 
 /** Triggered (non-fallback) variants in priority order. */
-export function triggeredVariants(
-    category: Pick<CategoryConfig, 'variants'>
-): CategoryVariant[] {
+export function triggeredVariants<V extends VariantFields>(category: {
+    variants?: V[];
+}): V[] {
     return getCategoryVariants(category).filter((variant) => variant.fallback !== true);
 }
 
@@ -162,8 +199,8 @@ export function variantTriggerMatches(
 /** Why a variant (or no variant) was chosen for the current context. */
 export type VariantResolutionReason = 'trigger' | 'fallback' | 'none';
 
-export interface VariantResolution {
-    variant: CategoryVariant | null;
+export interface VariantResolution<V extends VariantFields = CategoryVariant> {
+    variant: V | null;
     reason: VariantResolutionReason;
 }
 
@@ -177,10 +214,10 @@ export interface VariantResolution {
  * so it can never shadow a triggered variant through its position.
  * Never mutates stored configuration.
  */
-export function resolveDynamicCategoryVariant(
-    category: Pick<CategoryConfig, 'variants'>,
+export function resolveDynamicCategoryVariant<V extends VariantFields>(
+    category: { variants?: V[] },
     context: OCAPContextSnapshot
-): VariantResolution {
+): VariantResolution<V> {
     for (const variant of triggeredVariants(category)) {
         if (variantTriggerMatches(variant, context)) {
             return { variant, reason: 'trigger' };
@@ -368,14 +405,12 @@ export function filterCategoryButtonsDeep(
         : { ...category, buttons, variants: nextVariants };
 }
 
-// --- Variant management (pure, immutable) ------------------------------------
-
-function withVariants(
-    category: CategoryConfig,
-    variants: CategoryVariant[]
-): CategoryConfig {
-    return { ...category, variants };
-}
+// --- Variant management (pure, immutable, shape-generic) ----------------------
+//
+// Only the operations that touch nothing but the variant METADATA (name,
+// trigger, fallback, order) live here — they are identical for both shapes.
+// Operations that create variants, copy tools or resize grids live in
+// src/domain/categoryOps.ts, because since v5 they involve the tool registry.
 
 export interface VariantDraft {
     id: string;
@@ -385,138 +420,57 @@ export interface VariantDraft {
 }
 
 /**
- * Build a variant. `dimensions` is written only when given: passing null keeps
- * the variant free of the size fields, which is what the legacy migrations
- * want — absent fields already mean the 4x4 they produced, so nothing has to
- * be rewritten in stored data.
- */
-function makeVariant(
-    draft: VariantDraft,
-    buttons: ButtonConfig[],
-    dimensions: GridDimensions | null
-): CategoryVariant {
-    const size = dimensions === null ? {} : clampGridDimensions(dimensions);
-    if (draft.fallback === true) {
-        return { id: draft.id, name: draft.name, fallback: true, ...size, buttons };
-    }
-    return {
-        id: draft.id,
-        name: draft.name,
-        ...(draft.trigger !== undefined ? { trigger: draft.trigger } : {}),
-        ...size,
-        buttons,
-    };
-}
-
-/**
- * Append a new (empty) variant. Returns the category unchanged if the draft
- * would introduce a second fallback.
- *
- * The new variant starts at the dimensions the category's grid currently has:
- * a variant is another state of the SAME panel, so an added variant that
- * suddenly shrank to the "new grid" default would be a surprise, not a
- * default. It is freely resizable afterwards, independently of its siblings.
- */
-export function addVariant(
-    category: CategoryConfig,
-    draft: VariantDraft
-): CategoryConfig {
-    if (draft.fallback === true && findFallbackVariant(category) !== null) {
-        return category;
-    }
-    return withVariants(category, [
-        ...getCategoryVariants(category),
-        makeVariant(draft, [], gridDimensionsOf(category, null)),
-    ]);
-}
-
-/**
  * Update a variant's name, trigger and fallback flag. `trigger` is always
  * assigned, so clearing the editor really removes a previously configured
  * rule. Refused (same reference returned) when the update would create a
- * second fallback.
+ * second fallback. Everything else on the variant — its grid content and its
+ * stored dimension fields (absent stays absent) — passes through untouched.
  */
-export function updateVariant(
-    category: CategoryConfig,
+export function updateVariant<
+    V extends VariantFields,
+    C extends { variants?: V[] },
+>(
+    category: C & { variants?: V[] },
     variantId: string,
     patch: { name: string; trigger: ButtonCondition | undefined; fallback: boolean }
-): CategoryConfig {
+): C {
     if (patch.fallback) {
         const existing = findFallbackVariant(category);
         if (existing && existing.id !== variantId) {
             return category;
         }
     }
-    const variants = getCategoryVariants(category).map((variant) => {
+    const variants = getCategoryVariants<V>(category).map((variant) => {
         if (variant.id !== variantId) {
             return variant;
         }
-        return makeVariant(
-            {
-                id: variant.id,
-                name: patch.name,
-                trigger: patch.fallback ? undefined : patch.trigger,
-                fallback: patch.fallback,
-            },
-            variant.buttons,
-            // Editing name/trigger must never resize the grid: an untouched
-            // variant keeps its stored fields exactly as they are (absent
-            // stays absent, so legacy data is not rewritten either).
-            variant.rows === undefined && variant.columns === undefined
-                ? null
-                : readGridDimensions(variant)
-        );
+        const next: V = { ...variant, name: patch.name };
+        if (patch.fallback) {
+            next.fallback = true;
+            delete next.trigger;
+        } else {
+            delete next.fallback;
+            if (patch.trigger !== undefined) {
+                next.trigger = patch.trigger;
+            } else {
+                delete next.trigger;
+            }
+        }
+        return next;
     });
-    return withVariants(category, variants);
+    return { ...category, variants };
 }
 
-export function removeVariant(
-    category: CategoryConfig,
-    variantId: string
-): CategoryConfig {
-    return withVariants(
-        category,
-        getCategoryVariants(category).filter((variant) => variant.id !== variantId)
-    );
-}
-
-/**
- * Full copy of a variant: complete grid, slots, actions, appearance — with a
- * new variant id and new button ids, so nothing is shared with the source and
- * a later edit of the copy can never leak into the original. The copy is
- * inserted directly below its source and is never the fallback (the draft
- * decides its name and trigger). The source's grid DIMENSIONS are copied as
- * well — a copy that changed shape would not be a copy.
- */
-export function duplicateVariant(
-    category: CategoryConfig,
-    sourceVariantId: string,
-    draft: VariantDraft,
-    newButtonId: (index: number) => string
-): CategoryConfig {
-    if (draft.fallback === true && findFallbackVariant(category) !== null) {
-        return category;
-    }
-    const variants = getCategoryVariants(category);
-    const index = variants.findIndex((variant) => variant.id === sourceVariantId);
-    if (index === -1) {
-        return category;
-    }
-    const source = variants[index]!;
-    const copy = makeVariant(
-        draft,
-        source.buttons.map((button, buttonIndex) => ({
-            ...button,
-            id: newButtonId(buttonIndex),
-            actions: button.actions?.map((action) => ({ ...action })) ?? [],
-        })),
-        source.rows === undefined && source.columns === undefined
-            ? null
-            : readGridDimensions(source)
-    );
-    const next = [...variants];
-    next.splice(index + 1, 0, copy);
-    return withVariants(category, next);
+export function removeVariant<
+    V extends VariantFields,
+    C extends { variants?: V[] },
+>(category: C & { variants?: V[] }, variantId: string): C {
+    return {
+        ...category,
+        variants: getCategoryVariants<V>(category).filter(
+            (variant) => variant.id !== variantId
+        ),
+    };
 }
 
 /**
@@ -524,12 +478,11 @@ export function duplicateVariant(
  * variants (first match wins). The fallback variant is not movable — its
  * position never affects resolution — and other variants do not move past it.
  */
-export function moveVariant(
-    category: CategoryConfig,
-    variantId: string,
-    direction: -1 | 1
-): CategoryConfig {
-    const variants = getCategoryVariants(category);
+export function moveVariant<
+    V extends VariantFields,
+    C extends { variants?: V[] },
+>(category: C & { variants?: V[] }, variantId: string, direction: -1 | 1): C {
+    const variants = getCategoryVariants<V>(category);
     const index = variants.findIndex((variant) => variant.id === variantId);
     const target = index + direction;
     if (index === -1 || target < 0 || target >= variants.length) {
@@ -541,288 +494,14 @@ export function moveVariant(
     const next = [...variants];
     const [moved] = next.splice(index, 1);
     next.splice(target, 0, moved!);
-    return withVariants(category, next);
+    return { ...category, variants: next };
 }
 
-// --- Static <-> dynamic conversion --------------------------------------------
-
-/**
- * Turn a STATIC grid category into a DYNAMIC one. The category's existing full
- * grid becomes the first variant exactly as it is (same buttons, same slots,
- * same DIMENSIONS), so no button is lost and nothing moves or resizes. The
- * draft decides the variant's name and trigger (or fallback).
- *
- * The size moves WITH the grid: from here on every variant owns its own, so
- * leaving a stale copy on the category would be a second source of truth.
- */
-export function convertStaticGridToDynamic(
-    category: CategoryConfig,
-    draft: VariantDraft
-): CategoryConfig {
-    const hadDimensions = category.rows !== undefined || category.columns !== undefined;
-    const { rows: _rows, columns: _columns, ...rest } = category;
-    return {
-        ...rest,
-        buttons: [],
-        variants: [
-            makeVariant(
-                draft,
-                category.buttons,
-                hadDimensions ? readGridDimensions(category) : null
-            ),
-        ],
-    };
-}
-
-// --- Layer-aware button placement --------------------------------------------
-
-function replaceVariantButtons(
-    category: CategoryConfig,
-    variantId: string,
-    buttons: ButtonConfig[]
-): CategoryConfig {
-    return withVariants(
-        category,
-        getCategoryVariants(category).map((variant) =>
-            variant.id === variantId ? { ...variant, buttons } : variant
-        )
-    );
-}
-
-/** Buttons stored in one grid target (a variant, or the static grid itself). */
-function gridTargetButtons(
-    category: CategoryConfig,
-    variantId: string | null
-): ButtonConfig[] {
-    if (variantId === null) {
-        return category.buttons;
-    }
-    return findVariant(category, variantId)?.buttons ?? [];
-}
-
-/**
- * Add a button to a variant (or to the static grid when `variantId` is null).
- *
- * `targetSlot` is the slot the user pointed at — the `+` of an empty cell, or
- * the cell a vault file was dropped on. The position is then already part of
- * the gesture and must be honoured. It is only ignored when that slot turned
- * out to be taken after all, in which case the lowest free slot keeps the tool
- * rather than losing it; without a target slot the lowest free one is the
- * default as before.
- *
- * Returns null when the grid is full — the caller must tell the user instead
- * of dropping the tool.
- */
-export function addButtonToGrid(
-    category: CategoryConfig,
-    variantId: string | null,
-    button: ButtonConfig,
-    targetSlot: number | null = null
-): CategoryConfig | null {
-    // A dynamic category stores every tool inside a variant; without an
-    // explicit target the first variant is the only sensible home. A dynamic
-    // category without any variant has no place for a tool at all.
-    if (variantId === null && isDynamicCategory(category)) {
-        const first = getCategoryVariants(category)[0];
-        if (!first) {
-            return null;
-        }
-        variantId = first.id;
-    }
-    const existing = gridTargetButtons(category, variantId);
-    const dimensions = gridDimensionsOf(category, variantId);
-    const occupancy = placeButtonsOnGrid(existing, dimensions).slots.map(
-        (b) => b?.id ?? null
-    );
-    const requested =
-        isValidSlotIndex(targetSlot, occupancy.length) && occupancy[targetSlot] === null
-            ? targetSlot
-            : null;
-    const slot = requested ?? findFirstFreeSlot(occupancy);
-    if (slot === null) {
-        return null;
-    }
-    const placed: ButtonConfig = { ...button, slot, order: existing.length };
-    const buttons = [...existing, placed];
-    return variantId === null
-        ? { ...category, buttons }
-        : replaceVariantButtons(category, variantId, buttons);
-}
-
-/** Remove a button from wherever it lives (static grid or any variant). */
-export function removeButtonFromGridCategory(
-    category: CategoryConfig,
-    buttonId: string
-): CategoryConfig {
-    const variantId = findButtonVariantId(category, buttonId);
-    const stored = gridTargetButtons(category, variantId);
-    if (!stored.some((button) => button.id === buttonId)) {
-        return category;
-    }
-    const remaining = stored
-        .filter((button) => button.id !== buttonId)
-        .map((button, index) => ({ ...button, order: index }));
-    return variantId === null
-        ? { ...category, buttons: remaining }
-        : replaceVariantButtons(category, variantId, remaining);
-}
-
-/** Replace a button in place, in whichever variant (or static grid) stores it. */
-export function replaceButtonInGridCategory(
-    category: CategoryConfig,
-    button: ButtonConfig
-): CategoryConfig {
-    const variantId = findButtonVariantId(category, button.id);
-    const stored = gridTargetButtons(category, variantId);
-    if (!stored.some((existing) => existing.id === button.id)) {
-        return category;
-    }
-    const buttons = stored.map((existing) =>
-        existing.id === button.id ? button : existing
-    );
-    return variantId === null
-        ? { ...category, buttons }
-        : replaceVariantButtons(category, variantId, buttons);
-}
-
-/**
- * Write a dragged slot assignment back into the stored category.
- *
- * `slotIds` is the live drag state of the ONE grid on screen: the static
- * grid, or the variant currently selected in the editor (`targetVariantId`).
- * Its length IS that grid's slot count — the drag state is built from the same
- * resolved view the renderer uses — so no dimension has to be re-derived here.
- * Buttons that arrived from another category join that on-screen grid. Every
- * variant that is NOT on screen is left completely untouched — dragging in
- * "Source" can never move anything in "Topic".
- *
- * `claimedByDrag` holds every button id the whole drag state accounts for,
- * across all containers. It distinguishes a tool that was dragged INTO another
- * category (claimed elsewhere, so it leaves this one) from a tool the drag
- * never carried at all — overflow from hand-edited data, which must stay
- * exactly where it is rather than being dropped.
- */
-export function applySlotIdsToGridCategory(
-    category: CategoryConfig,
-    slotIds: readonly (string | null)[],
-    buttonsById: ReadonlyMap<string, ButtonConfig>,
-    targetVariantId: string | null,
-    claimedByDrag?: ReadonlySet<string>
-): CategoryConfig {
-    const stored = gridTargetButtons(category, targetVariantId);
-    const storedIds = new Set(stored.map((button) => button.id));
-
-    const slotCount = Math.min(
-        slotIds.length,
-        gridSlotCount(gridDimensionsOf(category, targetVariantId))
-    );
-    const placed: ButtonConfig[] = [];
-    const claimed = new Set<string>();
-    for (let slot = 0; slot < slotCount; slot++) {
-        const id = slotIds[slot] ?? null;
-        if (id === null) continue;
-        const button = buttonsById.get(id);
-        if (!button) continue;
-        placed.push({ ...button, slot });
-        claimed.add(id);
-    }
-
-    // A stored tool of the on-screen grid that the drag state no longer
-    // carries has either moved to another container (claimed there) or was
-    // never part of the drag (overflow) — only the former leaves the grid.
-    const untouched = stored.filter(
-        (button) =>
-            !claimed.has(button.id) &&
-            !(storedIds.has(button.id) && (claimedByDrag?.has(button.id) ?? false))
-    );
-
-    const buttons = [...placed, ...untouched].map((button, index) => ({
-        ...button,
-        order: index,
-    }));
-
-    return targetVariantId === null
-        ? { ...category, buttons }
-        : replaceVariantButtons(category, targetVariantId, buttons);
-}
-
-// --- Resizing one grid --------------------------------------------------------
+// --- Resize preview (view world) ----------------------------------------------
 
 // The edge/direction vocabulary is pure geometry and lives in categoryGrid.ts;
 // re-exported here so callers keep one import for the whole resize story.
 export type { GridResizeDirection, GridResizeEdge } from '@/utils/categoryGrid';
-
-export interface GridResizePlan {
-    /** The category as it would look afterwards. */
-    category: CategoryConfig;
-    /** Dimensions before / after, for the UI wording. */
-    from: GridDimensions;
-    to: GridDimensions;
-    /**
-     * Tools standing on the stripe that would be cut away. Empty for every
-     * growth and for shrinking into empty space — the caller asks for a
-     * confirmation exactly when this is non-empty.
-     */
-    removed: ButtonConfig[];
-}
-
-/**
- * Resize the ONE grid the user is editing to explicit dimensions.
- *
- * Writes the size onto the grid that owns it (the variant, or the category for
- * a static grid) and remaps every button coordinate-aware, so growing never
- * reflows the existing arrangement and shrinking removes exactly the outer
- * stripe. Returns null when the category has no addressable grid or when the
- * requested size equals the current one.
- *
- * Nothing is persisted here: the result is a PLAN. The caller commits it —
- * after a confirmation when `removed` is non-empty.
- */
-export function planGridResize(
-    category: CategoryConfig,
-    variantId: string | null,
-    next: GridDimensions
-): GridResizePlan | null {
-    if (!isGridCategory(category)) {
-        return null;
-    }
-    const to = clampGridDimensions(next);
-    const targetVariant =
-        variantId !== null
-            ? findVariant(category, variantId)
-            : isDynamicCategory(category)
-              ? (getCategoryVariants(category)[0] ?? null)
-              : null;
-    if (isDynamicCategory(category) && !targetVariant) {
-        return null;
-    }
-
-    const from = readGridDimensions(targetVariant ?? category);
-    if (sameGridDimensions(from, to)) {
-        return null;
-    }
-
-    const stored = targetVariant ? targetVariant.buttons : category.buttons;
-    const resized = resizeGridButtons(stored, from, to);
-
-    const nextCategory: CategoryConfig = targetVariant
-        ? withVariants(
-              category,
-              getCategoryVariants(category).map((variant) =>
-                  variant.id === targetVariant.id
-                      ? {
-                            ...variant,
-                            rows: to.rows,
-                            columns: to.columns,
-                            buttons: resized.buttons,
-                        }
-                      : variant
-              )
-          )
-        : { ...category, rows: to.rows, columns: to.columns, buttons: resized.buttons };
-
-    return { category: nextCategory, from, to, removed: resized.removed };
-}
 
 /**
  * The grid a resize WOULD render, computed from a resolved view and touching
@@ -840,35 +519,6 @@ export function previewResizedSlots(
 ): (ButtonConfig | null)[] {
     const resized = resizeGridButtons(effectiveGridButtons(view), view.dimensions, to);
     return placeButtonsOnGrid(resized.buttons, to).slots;
-}
-
-/**
- * One step of the grid resize controls: add or remove the outermost row /
- * column. Only the right column and the bottom row are addressable — a
- * predictable model beats "insert anywhere" for a panel this small — and the
- * 1x1 .. 5x5 bounds are enforced here, so a control at its limit simply has
- * nothing to do.
- */
-export function planGridResizeStep(
-    category: CategoryConfig,
-    variantId: string | null,
-    edge: GridResizeEdge,
-    direction: GridResizeDirection
-): GridResizePlan | null {
-    const current = gridDimensionsOf(category, variantId);
-    const next =
-        edge === 'row'
-            ? { rows: current.rows + direction, columns: current.columns }
-            : { rows: current.rows, columns: current.columns + direction };
-    if (
-        next.rows < 1 ||
-        next.columns < 1 ||
-        next.rows > MAX_GRID_ROWS ||
-        next.columns > MAX_GRID_COLUMNS
-    ) {
-        return null;
-    }
-    return planGridResize(category, variantId, next);
 }
 
 // --- Lifting per-button conditions (legacy flow data) -------------------------

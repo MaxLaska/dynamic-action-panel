@@ -14,16 +14,15 @@ import {
     applyDragOverToItems,
     buildButtonDragItems,
     buildContainerLayouts,
-    collectButtonsById,
     resolveGridDropOutcome,
     slotDroppableId,
     type ButtonDragItems,
 } from '@/utils/buttonDragItems';
-import {
-    applySlotIdsToGridCategory,
-    findVariant,
-    resolveGridViewForVariant,
-} from '@/utils/categoryVariants';
+import { findVariant, resolveGridViewForVariant } from '@/utils/categoryVariants';
+import { applySlotIdsToStoredCategory } from '@/domain/categoryOps';
+import { materializeCategory } from '@/domain/tools';
+import type { StoredCategory, ToolRegistry } from '@/types/settings';
+import { p, registryOf, storedVariant, tool } from './helpers/stored';
 
 const SOURCE: ButtonCondition = { rule: 'property', op: 'equals', key: 'type', value: 'Source' };
 const TOPIC: ButtonCondition = { rule: 'property', op: 'equals', key: 'type', value: 'Topic' };
@@ -115,33 +114,52 @@ describe('drags inside one variant', () => {
     });
 
     it('write-back changes only the dragged variant; the other stays identical', () => {
-        const category = makeDynamic();
-        const items = itemsFor([category], { dyn: 'source' });
+        const { stored, tools } = makeStoredDynamic();
+        const view = materializeCategory(stored, tools);
+        const items = itemsFor([view], { dyn: 'source' });
         const dragged = applyDragOverToItems(
             items,
             's1',
             slotDroppableId('dyn', 7),
-            buildContainerLayouts([category])
+            buildContainerLayouts([view])
         );
-        const next = applySlotIdsToGridCategory(
-            category,
+        const next = applySlotIdsToStoredCategory(
+            stored,
             dragged['dyn']!,
-            collectButtonsById([category]),
+            tools,
             'source',
             new Set(dragged['dyn']!.filter((id): id is string => id !== null))
         );
         expect(
             findVariant(next, 'source')!
-                .buttons.map((b) => [b.id, b.slot])
+                .placements.map((placement) => [placement.toolId, placement.slot])
                 .sort()
         ).toEqual([
             ['s1', 7],
             ['s2', 1],
         ]);
         // Topic is untouched, identity included.
-        expect(findVariant(next, 'topic')).toBe(findVariant(category, 'topic'));
+        expect(findVariant(next, 'topic')).toBe(findVariant(stored, 'topic'));
     });
 });
+
+/** The stored (v5) twin of makeDynamic, plus its registry. */
+function makeStoredDynamic(): { stored: StoredCategory; tools: ToolRegistry } {
+    return {
+        stored: {
+            id: 'dyn',
+            name: 'Node Tools',
+            order: 0,
+            layout: 'grid',
+            placements: [],
+            variants: [
+                storedVariant('source', SOURCE, [p('s1', 0), p('s2', 1)]),
+                storedVariant('topic', TOPIC, [p('t1', 0), p('t2', 5)]),
+            ],
+        },
+        tools: registryOf(tool('s1'), tool('s2'), tool('t1'), tool('t2'), tool('f1')),
+    };
+}
 
 describe('flow <-> grid interaction under variants', () => {
     const categories = [makeDynamic(), makeFlow()];
@@ -161,21 +179,23 @@ describe('flow <-> grid interaction under variants', () => {
         expect(dragged['dyn']![9]).toBe('f1');
         expect(dragged['flow']).toEqual(['f2']);
 
-        const category = categories[0]!;
+        const { stored, tools } = makeStoredDynamic();
         const claimed = new Set<string>();
         for (const ids of Object.values(dragged)) {
             for (const id of ids) if (id !== null) claimed.add(id);
         }
-        const next = applySlotIdsToGridCategory(
-            category,
+        const next = applySlotIdsToStoredCategory(
+            stored,
             dragged['dyn']!,
-            collectButtonsById(categories),
+            tools,
             'source',
             claimed
         );
-        const sourceButtons = findVariant(next, 'source')!.buttons;
-        expect(sourceButtons.find((b) => b.id === 'f1')!.slot).toBe(9);
-        expect(findVariant(next, 'topic')).toBe(findVariant(category, 'topic'));
+        const sourcePlacements = findVariant(next, 'source')!.placements;
+        expect(
+            sourcePlacements.find((placement) => placement.toolId === 'f1')!.slot
+        ).toBe(9);
+        expect(findVariant(next, 'topic')).toBe(findVariant(stored, 'topic'));
     });
 
     it('an area zone over a grid resolves to no-cell', () => {
@@ -186,23 +206,27 @@ describe('flow <-> grid interaction under variants', () => {
 
 describe('persistence round-trip', () => {
     it('reloading the written category reproduces the same grid', () => {
-        const category = makeDynamic();
-        const items = itemsFor([category], { dyn: 'topic' });
+        const { stored, tools } = makeStoredDynamic();
+        const viewCategory = materializeCategory(stored, tools);
+        const items = itemsFor([viewCategory], { dyn: 'topic' });
         const dragged = applyDragOverToItems(
             items,
             't2',
             slotDroppableId('dyn', 15),
-            buildContainerLayouts([category])
+            buildContainerLayouts([viewCategory])
         );
-        const next = applySlotIdsToGridCategory(
-            category,
+        const next = applySlotIdsToStoredCategory(
+            stored,
             dragged['dyn']!,
-            collectButtonsById([category]),
+            tools,
             'topic',
             new Set(dragged['dyn']!.filter((id): id is string => id !== null))
         );
-        const reloaded = JSON.parse(JSON.stringify(next)) as CategoryConfig;
-        const view = resolveGridViewForVariant(reloaded, 'topic');
+        const reloaded = JSON.parse(JSON.stringify(next)) as StoredCategory;
+        const view = resolveGridViewForVariant(
+            materializeCategory(reloaded, tools),
+            'topic'
+        );
         expect(view.slots[15]?.id).toBe('t2');
         expect(view.slots[0]?.id).toBe('t1');
         expect(view.slots[5]).toBeNull();

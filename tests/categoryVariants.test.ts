@@ -1,26 +1,26 @@
-// Dynamic category variants — the pure core.
+// Dynamic category variants — the pure core (read side + shape-generic ops).
 //
 // Product guarantees under test (see docs/ocap/DECISIONS.md):
 // - a variant is a COMPLETE, independent grid: no inheritance, no sharing;
 // - runtime picks exactly one variant: first matching trigger in priority
 //   order, else the fallback, else none;
 // - the fallback is modelled explicitly and can never shadow a trigger;
-// - duplicate produces a fully independent copy (new ids, no shared objects);
 // - every operation is pure and immutable.
+//
+// Since v5 the WRITE operations (create/copy/remove tools, duplicate
+// variants, conversions) live in src/domain/categoryOps.ts and are covered by
+// tests/categoryOps.test.ts; this file keeps the runtime resolution (which
+// consumes the materialized view shape) and the shape-generic variant
+// metadata operations.
 
 import { describe, expect, it } from 'vitest';
 import type { ButtonConfig, CategoryConfig, CategoryVariant } from '@/types/settings';
 import type { ButtonCondition } from '@/types/conditions';
 import type { OCAPContextSnapshot } from '@/context/OCAPContext';
 import {
-    addButtonToGrid,
-    addVariant,
     allCategoryButtons,
-    applySlotIdsToGridCategory,
     composeFullVariant,
     convertCategoryToGrid,
-    convertStaticGridToDynamic,
-    duplicateVariant,
     effectiveGridButtons,
     filterCategoryButtonsDeep,
     findButtonVariantId,
@@ -31,9 +31,7 @@ import {
     isStaticGridCategory,
     liftButtonConditions,
     moveVariant,
-    removeButtonFromGridCategory,
     removeVariant,
-    replaceButtonInGridCategory,
     resolveDynamicCategoryVariant,
     resolveGridViewForContext,
     resolveGridViewForVariant,
@@ -94,6 +92,16 @@ describe('category kind', () => {
         const flow: CategoryConfig = { id: 'f', name: 'F', order: 0, buttons: [] };
         expect(isDynamicCategory(flow)).toBe(false);
         expect(isStaticGridCategory(flow)).toBe(false);
+    });
+
+    it('accepts stored-shape variants (placements) as valid too', () => {
+        const stored = {
+            id: 'cat',
+            layout: 'grid',
+            variants: [{ id: 'v', name: 'v', placements: [] }],
+        };
+        expect(isDynamicCategory(stored as never)).toBe(true);
+        expect(getCategoryVariants(stored).map((v) => v.id)).toEqual(['v']);
     });
 
     it('normalizes malformed variants defensively', () => {
@@ -267,39 +275,31 @@ describe('resolved grid views', () => {
     });
 });
 
-describe('variant management', () => {
+describe('variant metadata operations (shape-generic)', () => {
     const base = () =>
         dynamicCategory([
             variant('source', SOURCE, [button('a', 0, 0)]),
             variant('topic', TOPIC, [button('b', 0, 0)]),
         ]);
-
-    it('addVariant appends an empty variant', () => {
-        const next = addVariant(base(), { id: 'new', name: 'New', trigger: { all: [] } });
-        expect(getCategoryVariants(next).map((v) => v.id)).toEqual([
-            'source',
-            'topic',
-            'new',
+    const withFallback = () =>
+        dynamicCategory([
+            variant('source', SOURCE, [button('a', 0, 0)]),
+            variant('topic', TOPIC, [button('b', 0, 0)]),
+            variant('f1', undefined, [], true),
         ]);
-        expect(findVariant(next, 'new')!.buttons).toEqual([]);
-    });
 
-    it('refuses a second fallback', () => {
-        const withFallback = addVariant(base(), { id: 'f1', name: 'F1', fallback: true });
-        expect(findFallbackVariant(withFallback)!.id).toBe('f1');
-        const refused = addVariant(withFallback, { id: 'f2', name: 'F2', fallback: true });
-        expect(refused).toBe(withFallback);
-        const alsoRefused = updateVariant(withFallback, 'source', {
+    it('refuses to crown a second fallback', () => {
+        const category = withFallback();
+        const refused = updateVariant(category, 'source', {
             name: 'Source',
             trigger: undefined,
             fallback: true,
         });
-        expect(alsoRefused).toBe(withFallback);
+        expect(refused).toBe(category);
     });
 
     it('updateVariant renames, retriggers and can clear the fallback flag', () => {
-        const withFallback = addVariant(base(), { id: 'f1', name: 'F1', fallback: true });
-        const next = updateVariant(withFallback, 'f1', {
+        const next = updateVariant(withFallback(), 'f1', {
             name: 'Now triggered',
             trigger: TOPIC,
             fallback: false,
@@ -312,7 +312,7 @@ describe('variant management', () => {
         expect(findFallbackVariant(next)).toBeNull();
     });
 
-    it('updateVariant keeps the buttons untouched', () => {
+    it('updateVariant keeps the grid content untouched (buttons AND placements shapes)', () => {
         const category = base();
         const next = updateVariant(category, 'source', {
             name: 'Renamed',
@@ -322,6 +322,30 @@ describe('variant management', () => {
         expect(findVariant(next, 'source')!.buttons).toEqual(
             findVariant(category, 'source')!.buttons
         );
+
+        const stored = {
+            id: 'cat',
+            layout: 'grid' as const,
+            variants: [
+                { id: 'v', name: 'v', trigger: SOURCE, placements: [{ toolId: 't', slot: 2 }] },
+            ],
+        };
+        const nextStored = updateVariant(stored, 'v', {
+            name: 'Renamed',
+            trigger: undefined,
+            fallback: false,
+        });
+        expect(nextStored.variants[0]!.placements).toEqual([{ toolId: 't', slot: 2 }]);
+        expect(nextStored.variants[0]!.trigger).toBeUndefined();
+    });
+
+    it('updateVariant clears a cleared trigger (no stale rule survives)', () => {
+        const next = updateVariant(base(), 'source', {
+            name: 'Source',
+            trigger: undefined,
+            fallback: false,
+        });
+        expect(findVariant(next, 'source')!.trigger).toBeUndefined();
     });
 
     it('removeVariant removes exactly one variant', () => {
@@ -330,92 +354,21 @@ describe('variant management', () => {
     });
 
     it('moveVariant refuses to move the fallback', () => {
-        const withFallback = addVariant(base(), { id: 'f1', name: 'F1', fallback: true });
-        expect(moveVariant(withFallback, 'f1', -1)).toBe(withFallback);
+        const category = withFallback();
+        expect(moveVariant(category, 'f1', -1)).toBe(category);
     });
 
     it('operations never mutate the input', () => {
         const category = base();
         const snapshot = JSON.parse(JSON.stringify(category)) as unknown;
-        addVariant(category, { id: 'x', name: 'X', trigger: { all: [] } });
         updateVariant(category, 'source', { name: 'Y', trigger: TOPIC, fallback: false });
         removeVariant(category, 'topic');
         moveVariant(category, 'topic', -1);
-        duplicateVariant(
-            category,
-            'source',
-            { id: 'copy', name: 'Copy', trigger: TOPIC },
-            (i) => `copy-btn-${i}`
-        );
         expect(category).toEqual(snapshot);
     });
 });
 
-describe('duplicate variant (the core workflow)', () => {
-    const rich: ButtonConfig = {
-        id: 'tool-1',
-        name: 'Fundstelle',
-        icon: 'star',
-        actions: [{ type: 'command', parameters: { commandId: 'x' } } as never],
-        order: 0,
-        slot: 5,
-        customCss: 'color: red',
-        executionMode: 'parallel',
-    };
-    const category = dynamicCategory([
-        variant('source', SOURCE, [rich, button('tool-2', 1, 9)]),
-    ]);
-
-    const duplicated = duplicateVariant(
-        category,
-        'source',
-        { id: 'topic', name: 'Topic', trigger: TOPIC },
-        (index) => `new-${index}`
-    );
-    const copy = findVariant(duplicated, 'topic')!;
-    const source = findVariant(duplicated, 'source')!;
-
-    it('copies the complete grid: slots, actions, appearance', () => {
-        expect(copy.buttons.map((b) => b.slot)).toEqual([5, 9]);
-        expect(copy.buttons[0]).toMatchObject({
-            name: 'Fundstelle',
-            icon: 'star',
-            customCss: 'color: red',
-            executionMode: 'parallel',
-        });
-        expect(copy.buttons[0]!.actions).toEqual(rich.actions);
-    });
-
-    it('gets a new variant id and new button ids', () => {
-        expect(copy.id).toBe('topic');
-        expect(copy.buttons.map((b) => b.id)).toEqual(['new-0', 'new-1']);
-    });
-
-    it('is inserted directly below its source and carries the new trigger', () => {
-        expect(getCategoryVariants(duplicated).map((v) => v.id)).toEqual([
-            'source',
-            'topic',
-        ]);
-        expect(copy.trigger).toEqual(TOPIC);
-        expect(source.trigger).toEqual(SOURCE);
-    });
-
-    it('shares no mutable objects with the source', () => {
-        expect(copy.buttons[0]).not.toBe(source.buttons[0]);
-        expect(copy.buttons[0]!.actions[0]).not.toBe(source.buttons[0]!.actions[0]);
-    });
-
-    it('editing the copy later never changes the original', () => {
-        const edited = replaceButtonInGridCategory(duplicated, {
-            ...copy.buttons[0]!,
-            name: 'Changed',
-        });
-        expect(findVariant(edited, 'source')!.buttons[0]!.name).toBe('Fundstelle');
-        expect(findVariant(edited, 'topic')!.buttons[0]!.name).toBe('Changed');
-    });
-});
-
-describe('button placement across variants', () => {
+describe('buttons across the category (view world)', () => {
     const category = dynamicCategory([
         variant('source', SOURCE, [button('a', 0, 0)]),
         variant('topic', TOPIC, [button('b', 0, 0), button('c', 1, 1)]),
@@ -427,186 +380,11 @@ describe('button placement across variants', () => {
         expect(findButtonVariantId(category, 'nope')).toBeNull();
     });
 
-    it('adds a button to the targeted variant on the lowest free slot', () => {
-        const next = addButtonToGrid(category, 'source', button('new', 0));
-        expect(next).not.toBeNull();
-        expect(findVariant(next!, 'source')!.buttons.map((b) => [b.id, b.slot])).toEqual([
-            ['a', 0],
-            ['new', 1],
-        ]);
-        // The other variant is untouched (identity preserved).
-        expect(findVariant(next!, 'topic')).toBe(findVariant(category, 'topic'));
-    });
-
-    it('defaults to the first variant when a dynamic category gets no target', () => {
-        const next = addButtonToGrid(category, null, button('new', 0));
-        expect(findButtonVariantId(next!, 'new')).toBe('source');
-    });
-
-    it('refuses to add to a full variant', () => {
-        const full = dynamicCategory([
-            variant(
-                'v',
-                { all: [] },
-                Array.from({ length: 16 }, (_, i) => button(`b${i}`, i, i))
-            ),
-        ]);
-        expect(addButtonToGrid(full, 'v', button('x', 0))).toBeNull();
-    });
-
-    it('removes a button from its own variant only', () => {
-        const next = removeButtonFromGridCategory(category, 'b');
-        expect(findVariant(next, 'topic')!.buttons.map((b) => b.id)).toEqual(['c']);
-        expect(findVariant(next, 'source')).toBe(findVariant(category, 'source'));
-    });
-
-    it('replaces a button inside its variant', () => {
-        const next = replaceButtonInGridCategory(category, {
-            ...button('c', 1, 1),
-            name: 'Renamed',
-        });
-        expect(findVariant(next, 'topic')!.buttons[1]!.name).toBe('Renamed');
-    });
-
-    it('static grid placement works against category.buttons', () => {
-        const grid = staticGrid([button('a', 0, 0)]);
-        const next = addButtonToGrid(grid, null, button('b', 0));
-        expect(next!.buttons.map((b) => [b.id, b.slot])).toEqual([
-            ['a', 0],
-            ['b', 1],
-        ]);
-    });
-
     it('collects and filters buttons across every variant', () => {
         expect(allCategoryButtons(category).map((b) => b.id)).toEqual(['a', 'b', 'c']);
         const filtered = filterCategoryButtonsDeep(category, (b) => b.id !== 'b');
         expect(findVariant(filtered, 'topic')!.buttons.map((b) => b.id)).toEqual(['c']);
         expect(filterCategoryButtonsDeep(category, () => true)).toBe(category);
-    });
-});
-
-describe('drag write-back (applySlotIdsToGridCategory)', () => {
-    const category = dynamicCategory([
-        variant('source', SOURCE, [button('a', 0, 0), button('b', 1, 1)]),
-        variant('topic', TOPIC, [button('x', 0, 0), button('y', 1, 5)]),
-    ]);
-    const buttonsById = new Map(allCategoryButtons(category).map((b) => [b.id, b]));
-
-    it('writes new slots into the on-screen variant only', () => {
-        const slotIds = new Array<string | null>(16).fill(null);
-        slotIds[7] = 'a';
-        slotIds[1] = 'b';
-        const next = applySlotIdsToGridCategory(
-            category,
-            slotIds,
-            buttonsById,
-            'source',
-            new Set(['a', 'b'])
-        );
-        expect(
-            findVariant(next, 'source')!
-                .buttons.map((b) => [b.id, b.slot])
-                .sort()
-        ).toEqual([
-            ['a', 7],
-            ['b', 1],
-        ]);
-        // Topic is byte-identical (same reference).
-        expect(findVariant(next, 'topic')).toBe(findVariant(category, 'topic'));
-    });
-
-    it('a tool claimed by another container leaves the on-screen variant', () => {
-        const slotIds = new Array<string | null>(16).fill(null);
-        slotIds[0] = 'a';
-        const next = applySlotIdsToGridCategory(
-            category,
-            slotIds,
-            buttonsById,
-            'source',
-            new Set(['a', 'b']) // b placed elsewhere by the same drag
-        );
-        expect(findVariant(next, 'source')!.buttons.map((b) => b.id)).toEqual(['a']);
-    });
-
-    it('a tool the drag never carried stays where it is (overflow safety)', () => {
-        const slotIds = new Array<string | null>(16).fill(null);
-        slotIds[0] = 'a';
-        const next = applySlotIdsToGridCategory(
-            category,
-            slotIds,
-            buttonsById,
-            'source',
-            new Set(['a']) // b unknown to the drag
-        );
-        expect(
-            findVariant(next, 'source')!
-                .buttons.map((b) => b.id)
-                .sort()
-        ).toEqual(['a', 'b']);
-    });
-
-    it('an incoming cross-category tool joins the on-screen variant', () => {
-        const foreign = button('foreign', 0, 3);
-        const withForeign = new Map(buttonsById);
-        withForeign.set('foreign', foreign);
-        const slotIds = new Array<string | null>(16).fill(null);
-        slotIds[0] = 'a';
-        slotIds[1] = 'b';
-        slotIds[3] = 'foreign';
-        const next = applySlotIdsToGridCategory(
-            category,
-            slotIds,
-            withForeign,
-            'source',
-            new Set(['a', 'b', 'foreign'])
-        );
-        expect(findButtonVariantId(next, 'foreign')).toBe('source');
-        expect(findVariant(next, 'source')!.buttons.find((b) => b.id === 'foreign')!.slot).toBe(
-            3
-        );
-    });
-
-    it('writes into category.buttons for a static grid', () => {
-        const grid = staticGrid([button('a', 0, 0), button('b', 1, 1)]);
-        const byId = new Map(grid.buttons.map((b) => [b.id, b]));
-        const slotIds = new Array<string | null>(16).fill(null);
-        slotIds[2] = 'a';
-        slotIds[1] = 'b';
-        const next = applySlotIdsToGridCategory(grid, slotIds, byId, null, new Set(['a', 'b']));
-        expect(next.buttons.map((b) => [b.id, b.slot]).sort()).toEqual([
-            ['a', 2],
-            ['b', 1],
-        ]);
-    });
-});
-
-describe('static <-> dynamic conversion', () => {
-    it('convertStaticGridToDynamic keeps the full grid as the first variant', () => {
-        const grid = staticGrid([button('a', 0, 0), button('b', 1, 9)]);
-        const dynamic = convertStaticGridToDynamic(grid, {
-            id: 'v1',
-            name: 'Source',
-            trigger: SOURCE,
-        });
-        expect(isDynamicCategory(dynamic)).toBe(true);
-        expect(dynamic.buttons).toEqual([]);
-        const v = findVariant(dynamic, 'v1')!;
-        expect(v.name).toBe('Source');
-        expect(v.trigger).toEqual(SOURCE);
-        expect(v.buttons.map((b) => [b.id, b.slot])).toEqual([
-            ['a', 0],
-            ['b', 9],
-        ]);
-    });
-
-    it('can create the first variant as the fallback', () => {
-        const grid = staticGrid([button('a', 0, 0)]);
-        const dynamic = convertStaticGridToDynamic(grid, {
-            id: 'v1',
-            name: 'Default',
-            fallback: true,
-        });
-        expect(findFallbackVariant(dynamic)!.id).toBe('v1');
     });
 });
 

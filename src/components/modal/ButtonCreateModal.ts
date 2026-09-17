@@ -4,16 +4,28 @@
  */
 import type { App } from 'obsidian';
 import { Modal, Notice, Setting } from 'obsidian';
-import { ButtonConfig, CategoryConfig } from '@/types';
+import { ButtonConfig } from '@/types';
 import type { ButtonAction } from '@/types/action';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { t } from '@/utils/i18n';
 import { ActionSequence } from '@/actions/ActionSequence';
 import { NameInput, IconInput, ConditionEditor } from '@/components/input';
-import { addButtonToGrid, findVariant } from '@/utils/categoryVariants';
+import { findVariant, type VariantFields } from '@/utils/categoryVariants';
 import { isGridCategory } from '@/utils/categoryGrid';
-import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
+import { commitToolState, findStoredCategory, toolStateOf } from '@/utils/categoryStore';
+import { createToolInCategory } from '@/domain/categoryOps';
 import { createDefaultButtonConfig } from '@/utils/buttonFactory';
+
+/**
+ * The category slice the modal needs — structurally satisfied by BOTH the
+ * stored (v5) and the materialized view shape, so callers can hand in
+ * whichever they hold; the save path always resolves the stored one by id.
+ */
+export interface ButtonModalCategoryRef {
+    id: string;
+    layout?: 'flow' | 'grid';
+    variants?: VariantFields[];
+}
 
 /**
  * ButtonCreateModal 按钮创建模态框类。
@@ -23,7 +35,7 @@ export class ButtonCreateModal extends Modal {
     // 插件主类实例
 	plugin: ButtonsPanelPlugin;
     // 按钮所属分类
-    parentCategory: CategoryConfig;
+    parentCategory: ButtonModalCategoryRef;
     // 保存成功回调
     onSave?: () => void;
     // 临时按钮对象
@@ -58,7 +70,7 @@ export class ButtonCreateModal extends Modal {
      * @param targetVariantId 目标 variant（仅 dynamic grid 分类）
      * @param targetSlot 目标槽位（仅 grid 分类）
      */
-	constructor(app: App, plugin: ButtonsPanelPlugin, parentCategory: CategoryConfig, onSave?: () => void, targetVariantId: string | null = null, targetSlot: number | null = null) {
+	constructor(app: App, plugin: ButtonsPanelPlugin, parentCategory: ButtonModalCategoryRef, onSave?: () => void, targetVariantId: string | null = null, targetSlot: number | null = null) {
         super(app);
         this.plugin = plugin;
         this.parentCategory = parentCategory;
@@ -279,30 +291,26 @@ export class ButtonCreateModal extends Modal {
         this.tempButton.conditions = conditionsResult ? conditionsResult.conditions : undefined;
 
         // Always write into the STORED category: the object this modal was
-        // opened with can be a projection copy.
-        const stored =
-            findStoredCategory(this.plugin, this.parentCategory.id) ?? this.parentCategory;
-
-        if (isGridCategory(stored)) {
-            const next = addButtonToGrid(
-                stored,
-                this.targetVariantId,
-                this.tempButton,
-                this.targetSlot
-            );
-            if (!next) {
-                new Notice(t('variant_grid_full'));
-                return;
-            }
-            await commitStoredCategory(this.plugin, next);
-        } else {
-            const maxOrder = Math.max(...stored.buttons.map((b) => b.order), -1);
-            this.tempButton.order = maxOrder + 1;
-            await commitStoredCategory(this.plugin, {
-                ...stored,
-                buttons: [...stored.buttons, { ...this.tempButton }],
-            });
+        // opened with can be a projection copy. createToolInCategory
+        // registers the definition and places it in ONE step — in the slot
+        // the gesture pointed at (grid) or appended to the flow list.
+        const stored = findStoredCategory(this.plugin, this.parentCategory.id);
+        if (!stored) {
+            new Notice(t('category_not_found'));
+            return;
         }
+        const next = createToolInCategory(
+            toolStateOf(this.plugin),
+            stored.id,
+            this.targetVariantId,
+            this.tempButton,
+            this.targetSlot
+        );
+        if (!next) {
+            new Notice(t('variant_grid_full'));
+            return;
+        }
+        await commitToolState(this.plugin, next);
 
         new Notice(t('button_create_success'));
         this.close();
@@ -317,7 +325,7 @@ export class ButtonCreateModal extends Modal {
  */
 export function renderGridTargetNotice(
     container: HTMLElement,
-    category: CategoryConfig,
+    category: ButtonModalCategoryRef,
     variantId: string | null
 ): void {
     const variantName =

@@ -1,14 +1,19 @@
 import { useCallback, useMemo } from 'react';
 import { usePluginContext } from '@/contexts/PluginContext';
 import { useCategoryVariants } from '@/contexts/CategoryVariantContext';
-import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
-import { GridResizeConfirmModal } from '@/components/modal/GridResizeConfirmModal';
 import {
-    gridDimensionsOf,
-    isDynamicCategory,
-    planGridResize,
-    type GridResizePlan,
-} from '@/utils/categoryVariants';
+    commitToolState,
+    findStoredCategory,
+    toolStateOf,
+} from '@/utils/categoryStore';
+import { GridResizeConfirmModal } from '@/components/modal/GridResizeConfirmModal';
+import { gridDimensionsOf, isDynamicCategory } from '@/utils/categoryVariants';
+import {
+    commitStoredGridResize,
+    planStoredGridResize,
+    type StoredGridResizePlan,
+} from '@/domain/categoryOps';
+import type { StoredCategory } from '@/types/settings';
 import {
     MAX_GRID_COLUMNS,
     MAX_GRID_ROWS,
@@ -60,7 +65,7 @@ export interface GridResizeOptions {
 }
 
 /** Which edge a plan actually changed, and by how many stripes it shrank. */
-function planShrink(plan: GridResizePlan): { edge: GridResizeEdge; strips: number } {
+function planShrink(plan: StoredGridResizePlan): { edge: GridResizeEdge; strips: number } {
     const columnStrips = plan.from.columns - plan.to.columns;
     return columnStrips > 0
         ? { edge: 'column', strips: columnStrips }
@@ -90,7 +95,7 @@ export function useGridResize() {
 
     /** The variant whose grid the user is editing, or null for a static grid. */
     const targetVariantId = useCallback(
-        (stored: CategoryConfig): string | null =>
+        (stored: StoredCategory): string | null =>
             isDynamicCategory(stored) ? (selection[stored.id]?.current ?? null) : null,
         [selection]
     );
@@ -105,10 +110,18 @@ export function useGridResize() {
             next: GridDimensions,
             options?: GridResizeOptions
         ): GridResizeOutcome => {
-            const stored = findStoredCategory(plugin, category.id) ?? category;
+            const stored = findStoredCategory(plugin, category.id);
+            if (!stored) {
+                return 'none';
+            }
             const variantId = targetVariantId(stored);
 
-            const plan = planGridResize(stored, variantId, next);
+            const plan = planStoredGridResize(
+                stored,
+                variantId,
+                next,
+                plugin.settings.tools
+            );
             if (!plan) {
                 // Already that size, or no addressable grid: nothing to do.
                 return 'none';
@@ -118,19 +131,24 @@ export function useGridResize() {
                 // Re-plan against the CURRENT stored data: the confirmation is
                 // async, and the grid may have changed while it was open.
                 const fresh = findStoredCategory(plugin, category.id);
-                const freshPlan = fresh ? planGridResize(fresh, variantId, next) : null;
+                const freshPlan = fresh
+                    ? planStoredGridResize(fresh, variantId, next, plugin.settings.tools)
+                    : null;
                 if (!freshPlan) {
                     options?.onSettled?.();
                     return;
                 }
-                // A failed save must release a held preview too, or it would
-                // keep showing a size the data never got.
-                void commitStoredCategory(plugin, freshPlan.category).finally(() =>
-                    options?.onSettled?.()
-                );
+                // Cut tools are garbage-collected in the same commit (unless
+                // referenced elsewhere or protected via `library`). A failed
+                // save must release a held preview too, or it would keep
+                // showing a size the data never got.
+                void commitToolState(
+                    plugin,
+                    commitStoredGridResize(toolStateOf(plugin), freshPlan)
+                ).finally(() => options?.onSettled?.());
             };
 
-            if (plan.removed.length === 0) {
+            if (plan.removedToolIds.length === 0) {
                 // Nothing is lost — asking would be noise.
                 commit();
                 return 'committed';
@@ -140,7 +158,7 @@ export function useGridResize() {
             new GridResizeConfirmModal(app, {
                 edge,
                 strips,
-                buttonNames: plan.removed.map((button) => button.name),
+                buttonNames: plan.removedNames,
                 onConfirm: commit,
             }).open();
             return 'confirming';
@@ -151,7 +169,10 @@ export function useGridResize() {
     /** Dimensions of the grid the user is editing in this category. */
     const dimensionsOf = useCallback(
         (category: CategoryConfig): GridDimensions => {
-            const stored = findStoredCategory(plugin, category.id) ?? category;
+            const stored = findStoredCategory(plugin, category.id);
+            if (!stored) {
+                return gridDimensionsOf(category, null);
+            }
             return gridDimensionsOf(stored, targetVariantId(stored));
         },
         [plugin, targetVariantId]

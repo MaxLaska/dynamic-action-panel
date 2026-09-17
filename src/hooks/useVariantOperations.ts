@@ -3,18 +3,25 @@ import { Notice } from 'obsidian';
 import { usePluginContext } from '@/contexts/PluginContext';
 import { VariantDeleteModal, VariantModal } from '@/components/modal/VariantModal';
 import {
-    addVariant,
-    duplicateVariant,
     findFallbackVariant,
     findVariant,
     getCategoryVariants,
     moveVariant,
-    removeVariant,
     updateVariant,
 } from '@/utils/categoryVariants';
-import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
+import {
+    addVariantToCategory,
+    duplicateVariantInState,
+    removeVariantFromState,
+} from '@/domain/categoryOps';
+import {
+    commitStoredCategory,
+    commitToolState,
+    findStoredCategory,
+    toolStateOf,
+} from '@/utils/categoryStore';
 import { freshId } from '@/utils/id';
-import type { CategoryConfig } from '@/types';
+import type { StoredCategory } from '@/types/settings';
 import { t, tWithParams } from '@/utils/i18n';
 
 /**
@@ -29,7 +36,7 @@ export function useVariantOperations() {
     const { plugin, app } = usePluginContext();
 
     const replaceCategory = useCallback(
-        (categoryId: string, update: (category: CategoryConfig) => CategoryConfig) => {
+        (categoryId: string, update: (category: StoredCategory) => StoredCategory) => {
             const stored = findStoredCategory(plugin, categoryId);
             if (!stored) {
                 new Notice(t('category_not_found'));
@@ -58,7 +65,7 @@ export function useVariantOperations() {
                 onSubmit: ({ name, trigger, fallback }) => {
                     const variantId = freshId('var');
                     replaceCategory(categoryId, (stored) =>
-                        addVariant(stored, { id: variantId, name, trigger, fallback })
+                        addVariantToCategory(stored, { id: variantId, name, trigger, fallback })
                     );
                     onCreated?.(variantId);
                 },
@@ -119,9 +126,13 @@ export function useVariantOperations() {
                 fallbackTaken: findFallbackVariant(category) !== null,
                 onSubmit: ({ name, trigger, fallback }) => {
                     const copyId = freshId('var');
-                    replaceCategory(categoryId, (stored) =>
-                        duplicateVariant(
-                            stored,
+                    // A duplicate copies the TOOLS as well (new definitions,
+                    // new ids — decided in F2): the copy is fully independent.
+                    void commitToolState(
+                        plugin,
+                        duplicateVariantInState(
+                            toolStateOf(plugin),
+                            categoryId,
                             sourceVariantId,
                             { id: copyId, name, trigger, fallback },
                             (index) => freshId(`btn${index}`)
@@ -131,7 +142,7 @@ export function useVariantOperations() {
                 },
             }).open();
         },
-        [app, replaceCategory, storedCategory]
+        [app, plugin, storedCategory]
     );
 
     const moveVariantOp = useCallback(
@@ -158,17 +169,23 @@ export function useVariantOperations() {
             }
             new VariantDeleteModal(app, {
                 variantName: variant.name,
-                buttonNames: variant.buttons.map((button) => button.name),
+                buttonNames: (variant.placements ?? []).map(
+                    (placement) =>
+                        plugin.settings.tools[placement.toolId]?.name ?? placement.toolId
+                ),
                 onConfirm: () => {
-                    replaceCategory(categoryId, (stored) =>
-                        removeVariant(stored, variantId)
+                    // Deleting the variant also garbage-collects its tools
+                    // (unless referenced elsewhere or kept via `library`).
+                    void commitToolState(
+                        plugin,
+                        removeVariantFromState(toolStateOf(plugin), categoryId, variantId)
                     );
                     new Notice(t('variant_deleted'));
                     onDeleted?.();
                 },
             }).open();
         },
-        [app, replaceCategory, storedCategory]
+        [app, plugin, storedCategory]
     );
 
     return {

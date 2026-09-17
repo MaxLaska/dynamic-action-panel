@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ButtonConfig, CategoryConfig, CategoryVariant } from '@/types/settings';
+import type { ButtonConfig, CategoryConfig } from '@/types/settings';
 import {
     RESIZE_DRAG_THRESHOLD_PX,
     applyResizeSteps,
@@ -13,10 +13,13 @@ import {
 } from '@/utils/categoryGrid';
 import {
     gridDimensionsOf,
-    planGridResize,
     previewResizedSlots,
     resolveGridViewForVariant,
 } from '@/utils/categoryVariants';
+import { planStoredGridResize } from '@/domain/categoryOps';
+import { materializeCategory } from '@/domain/tools';
+import type { StoredCategory, ToolRegistry } from '@/types/settings';
+import { p, registryOf, storedGrid, tool } from './helpers/stored';
 
 /**
  * Notion-style drag resizing.
@@ -57,14 +60,6 @@ function staticGrid(
         buttons,
         ...dimensions,
     };
-}
-
-function variant(
-    id: string,
-    buttons: ButtonConfig[],
-    dimensions: GridDimensions
-): CategoryVariant {
-    return { id, name: id, trigger: { all: [] }, buttons, ...dimensions };
 }
 
 /**
@@ -257,84 +252,146 @@ describe('preview is read-only', () => {
     });
 
     it('previews exactly what the commit produces', () => {
-        const category = staticGrid(fill(3, 4), { rows: 3, columns: 4 });
+        const { category, tools } = storedFill(3, 4);
+        const view = resolveGridViewForVariant(materializeCategory(category, tools), null);
         const to = { rows: 3, columns: 2 };
-        const preview = previewResizedSlots(resolveGridViewForVariant(category, null), to);
-        const plan = planGridResize(category, null, to)!;
+        const preview = previewResizedSlots(view, to);
+        const plan = planStoredGridResize(category, null, to, tools)!;
         expect(layout(preview)).toEqual(
-            layout(resolveGridViewForVariant(plan.category, null).slots)
+            layout(
+                resolveGridViewForVariant(
+                    materializeCategory(plan.category, tools),
+                    null
+                ).slots
+            )
         );
     });
 });
 
+/** A fully occupied stored grid whose tool ids encode row/column. */
+function storedFill(
+    rows: number,
+    columns: number
+): { category: StoredCategory; tools: ToolRegistry } {
+    const placements = [];
+    const definitions = [];
+    for (let row = 0; row < rows; row++) {
+        for (let column = 0; column < columns; column++) {
+            const slot = row * columns + column;
+            placements.push(p(`r${row}c${column}`, slot));
+            definitions.push(tool(`r${row}c${column}`));
+        }
+    }
+    return {
+        category: storedGrid(placements, { rows, columns }),
+        tools: registryOf(...definitions),
+    };
+}
+
 describe('committing a dragged size (same core as the buttons)', () => {
     it('commits a multi-column shrink as ONE plan', () => {
-        const category = staticGrid(fill(2, 5), { rows: 2, columns: 5 });
-        const plan = planGridResize(category, null, { rows: 2, columns: 2 })!;
+        const { category, tools } = storedFill(2, 5);
+        const plan = planStoredGridResize(category, null, { rows: 2, columns: 2 }, tools)!;
 
         expect(plan.from).toEqual({ rows: 2, columns: 5 });
         expect(plan.to).toEqual({ rows: 2, columns: 2 });
         // Three columns disappear at once, six tools in total.
-        expect(plan.removed.map((b) => b.id)).toEqual([
+        expect(plan.removedToolIds).toEqual([
             'r0c2', 'r0c3', 'r0c4', 'r1c2', 'r1c3', 'r1c4',
         ]);
-        expect(layout(resolveGridViewForVariant(plan.category, null).slots)).toEqual([
+        expect(
+            layout(
+                resolveGridViewForVariant(
+                    materializeCategory(plan.category, tools),
+                    null
+                ).slots
+            )
+        ).toEqual([
             'r0c0', 'r0c1',
             'r1c0', 'r1c1',
         ]);
     });
 
     it('commits a multi-row shrink as ONE plan', () => {
-        const category = staticGrid(fill(5, 2), { rows: 5, columns: 2 });
-        const plan = planGridResize(category, null, { rows: 2, columns: 2 })!;
+        const { category, tools } = storedFill(5, 2);
+        const plan = planStoredGridResize(category, null, { rows: 2, columns: 2 }, tools)!;
 
-        expect(plan.removed.map((b) => b.id)).toEqual([
+        expect(plan.removedToolIds).toEqual([
             'r2c0', 'r2c1', 'r3c0', 'r3c1', 'r4c0', 'r4c1',
         ]);
-        expect(plan.category.buttons.map((b) => b.id)).toEqual([
+        expect(plan.category.placements.map((pl) => pl.toolId)).toEqual([
             'r0c0', 'r0c1', 'r1c0', 'r1c1',
         ]);
     });
 
     it('reports nothing to confirm when the cut stripes are empty', () => {
-        const category = staticGrid([button('a', 0, 0)], { rows: 4, columns: 4 });
-        const plan = planGridResize(category, null, { rows: 1, columns: 1 })!;
-        expect(plan.removed).toEqual([]);
-        expect(plan.category.buttons.map((b) => [b.id, b.slot])).toEqual([['a', 0]]);
+        const tools = registryOf(tool('a'));
+        const category = storedGrid([p('a', 0)], { rows: 4, columns: 4 });
+        const plan = planStoredGridResize(category, null, { rows: 1, columns: 1 }, tools)!;
+        expect(plan.removedToolIds).toEqual([]);
+        expect(plan.category.placements).toEqual([p('a', 0)]);
     });
 
     it('cancelling changes nothing, because the plan is never stored', () => {
-        const category = staticGrid(fill(3, 3), { rows: 3, columns: 3 });
-        const snapshot = JSON.parse(JSON.stringify(category)) as CategoryConfig;
+        const { category, tools } = storedFill(3, 3);
+        const snapshot = JSON.parse(JSON.stringify(category)) as StoredCategory;
 
-        const plan = planGridResize(category, null, { rows: 1, columns: 1 })!;
-        expect(plan.removed).toHaveLength(8);
+        const plan = planStoredGridResize(category, null, { rows: 1, columns: 1 }, tools)!;
+        expect(plan.removedToolIds).toHaveLength(8);
         // The caller simply drops `plan.category` on Cancel.
         expect(category).toEqual(snapshot);
         expect(readGridDimensions(category)).toEqual({ rows: 3, columns: 3 });
     });
 
     it('confirming commits exactly the dragged size', () => {
-        const category = staticGrid(fill(3, 3), { rows: 3, columns: 3 });
-        const plan = planGridResize(category, null, { rows: 1, columns: 2 })!;
+        const { category, tools } = storedFill(3, 3);
+        const plan = planStoredGridResize(category, null, { rows: 1, columns: 2 }, tools)!;
         expect(readGridDimensions(plan.category)).toEqual({ rows: 1, columns: 2 });
-        expect(layout(resolveGridViewForVariant(plan.category, null).slots)).toEqual([
+        expect(
+            layout(
+                resolveGridViewForVariant(
+                    materializeCategory(plan.category, tools),
+                    null
+                ).slots
+            )
+        ).toEqual([
             'r0c0', 'r0c1',
         ]);
     });
 
     it('a dragged size lands only on the edited variant', () => {
-        const other = variant('v2', [button('x', 0, 0)], { rows: 4, columns: 4 });
-        const category: CategoryConfig = {
+        const { category: filled, tools } = storedFill(2, 3);
+        const other = {
+            id: 'v2',
+            name: 'v2',
+            rows: 4,
+            columns: 4,
+            placements: [p('x', 0)],
+        };
+        const category: StoredCategory = {
             id: 'cat',
             name: 'Cat',
             order: 0,
             layout: 'grid',
-            buttons: [],
-            variants: [variant('v1', fill(2, 3), { rows: 2, columns: 3 }), other],
+            placements: [],
+            variants: [
+                {
+                    id: 'v1',
+                    name: 'v1',
+                    rows: 2,
+                    columns: 3,
+                    placements: filled.placements,
+                },
+                other,
+            ],
         };
 
-        const plan = planGridResize(category, 'v1', { rows: 2, columns: 5 })!;
+        const plan = planStoredGridResize(
+            category,
+            'v1',
+            { rows: 2, columns: 5 },
+            { ...tools, ...registryOf(tool('x')) }
+        )!;
         expect(gridDimensionsOf(plan.category, 'v1')).toEqual({ rows: 2, columns: 5 });
         expect(plan.category.variants![1]).toBe(other);
         expect(gridDimensionsOf(plan.category, 'v2')).toEqual({ rows: 4, columns: 4 });
