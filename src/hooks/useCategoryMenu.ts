@@ -7,7 +7,7 @@ import { commitToolState, toolStateOf } from '@/utils/categoryStore';
 import { duplicateCategoryInState } from '@/domain/categoryOps';
 import { freshId } from '@/utils/id';
 import { isStaticGridCategory } from '@/utils/categoryVariants';
-import { openMakeDynamicModal } from '@/utils/categoryMenuUtils';
+import { addTemplateMenuItems, openMakeDynamicModal } from '@/utils/categoryMenuUtils';
 import { t } from '@/utils/i18n';
 import type { CategoryConfig } from '@/types';
 
@@ -57,6 +57,10 @@ export function useCategoryMenu(category: CategoryConfig, categories: CategoryCo
                         }
                     });
             });
+
+            menu.addSeparator();
+            addTemplateMenuItems(menu, app, plugin, category.id);
+            menu.addSeparator();
 
             menu.addItem((item: MenuItem) => {
                 item.setTitle(t('delete') || '删除')

@@ -16,6 +16,7 @@ import {
     duplicateCategoryInState,
 } from '@/domain/categoryOps';
 import { freshId } from '@/utils/id';
+import { exportCategoryTemplate, pickAndImportTemplate } from '@/export/templateIo';
 import type { CategoryConfig, ButtonsPanelPlugin } from '@/types';
 
 /**
@@ -54,6 +55,35 @@ export function openMakeDynamicModal(
             );
         },
     }).open();
+}
+
+/**
+ * The portable-template entries, shared by both category menu builders.
+ *
+ * Export ships THIS category (with every variant and every tool it
+ * references) as a `.ocap.json` file; import is panel-level but lives here
+ * because the category menu is where a user looks for "where do panels come
+ * from". Neither entry touches the other's state: export is read-only and
+ * import only ever appends.
+ */
+export function addTemplateMenuItems(
+    menu: Menu,
+    app: App,
+    plugin: ButtonsPanelPlugin,
+    categoryId: string
+): void {
+    menu.addItem((item: MenuItem) => {
+        item.setTitle(t('category_export_template'))
+            .setIcon('download')
+            .onClick(() => {
+                void exportCategoryTemplate(app, plugin, categoryId);
+            });
+    });
+    menu.addItem((item: MenuItem) => {
+        item.setTitle(t('category_import_template'))
+            .setIcon('upload')
+            .onClick(() => pickAndImportTemplate(app, plugin));
+    });
 }
 
 /**
@@ -109,6 +139,10 @@ export function createCategoryMenuHandler(
                     }
                 });
         });
+
+        menu.addSeparator();
+        addTemplateMenuItems(menu, app, plugin, category.id);
+        menu.addSeparator();
 
         menu.addItem((item: MenuItem) => {
             item.setTitle(t('delete') || '删除')

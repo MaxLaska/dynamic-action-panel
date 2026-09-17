@@ -18,6 +18,7 @@ import type { ButtonsPanelPlugin as ButtonsPanelPluginType } from '@/types';
 import { migrateSettings } from '@/settings/settingsMigrations';
 import { OCAPContextService } from '@/context/OCAPContextService';
 import { t, tWithParams } from '@/utils/i18n';
+import { pickAndImportTemplate } from '@/export/templateIo';
 
 // 视图类型常量
 export const BUTTONS_PANEL_VIEW_TYPE = 'buttons-panel-view';
@@ -79,6 +80,16 @@ export default class ButtonsPanelPlugin extends Plugin {
             name: t('open_options'),
             callback: () => {
                 void this.activateSettingsView();
+            },
+        });
+
+        // Import a portable panel template. A command, because an EMPTY panel
+        // has no category context menu to offer it from.
+        this.addCommand({
+            id: 'import-template',
+            name: t('category_import_template'),
+            callback: () => {
+                pickAndImportTemplate(this.app, this);
             },
         });
 

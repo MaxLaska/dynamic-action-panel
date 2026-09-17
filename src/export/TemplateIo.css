@@ -1,0 +1,9 @@
+/*
+ * The transient file input the template import opens the OS file picker with.
+ * It is appended to the document body only for the duration of the dialog and
+ * must never take part in the layout — `display: none` is enough for that and
+ * still lets `.click()` open the picker.
+ */
+.ocap-template-file-input {
+    display: none;
+}
