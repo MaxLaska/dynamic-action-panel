@@ -41,6 +41,25 @@ export function gridResizeAvailability(
     };
 }
 
+/**
+ * What a resize request actually did.
+ *
+ * The caller needs this to know whether the new size is already on its way to
+ * the settings (`committed`) or whether the user still has to answer a
+ * confirmation (`confirming`) — which decides whether a live preview may keep
+ * standing or has to fall back to the stored size right away.
+ */
+export type GridResizeOutcome = 'committed' | 'confirming' | 'none';
+
+export interface GridResizeOptions {
+    /**
+     * Runs once the committed size has been written and the panel refreshed —
+     * or the save failed. The only safe moment to drop a preview that was
+     * being held across the commit.
+     */
+    onSettled?: () => void;
+}
+
 /** Which edge a plan actually changed, and by how many stripes it shrank. */
 function planShrink(plan: GridResizePlan): { edge: GridResizeEdge; strips: number } {
     const columnStrips = plan.from.columns - plan.to.columns;
@@ -83,14 +102,18 @@ export function useGridResize() {
      * otherwise asks ONCE for the whole gesture, however many stripes it takes.
      */
     const resizeGridTo = useCallback(
-        (category: CategoryConfig, next: GridDimensions) => {
+        (
+            category: CategoryConfig,
+            next: GridDimensions,
+            options?: GridResizeOptions
+        ): GridResizeOutcome => {
             const stored = findStoredCategory(plugin, category.id) ?? category;
             const variantId = targetVariantId(stored);
 
             const plan = planGridResize(stored, variantId, next);
             if (!plan) {
                 // Already that size, or no addressable grid: nothing to do.
-                return;
+                return 'none';
             }
 
             const commit = () => {
@@ -98,15 +121,22 @@ export function useGridResize() {
                 // async, and the grid may have changed while it was open.
                 const fresh = findStoredCategory(plugin, category.id);
                 const freshPlan = fresh ? planGridResize(fresh, variantId, next) : null;
-                if (!freshPlan) return;
-                if (!replaceStoredCategory(plugin, freshPlan.category)) return;
-                void plugin.saveSettings().then(() => refresh());
+                if (!freshPlan || !replaceStoredCategory(plugin, freshPlan.category)) {
+                    options?.onSettled?.();
+                    return;
+                }
+                void plugin
+                    .saveSettings()
+                    .then(() => refresh())
+                    // A failed save must release a held preview too, or it
+                    // would keep showing a size the data never got.
+                    .finally(() => options?.onSettled?.());
             };
 
             if (plan.removed.length === 0) {
                 // Nothing is lost — asking would be noise.
                 commit();
-                return;
+                return 'committed';
             }
 
             const { edge, strips } = planShrink(plan);
@@ -116,6 +146,7 @@ export function useGridResize() {
                 buttonNames: plan.removed.map((button) => button.name),
                 onConfirm: commit,
             }).open();
+            return 'confirming';
         },
         [app, plugin, refresh, targetVariantId]
     );

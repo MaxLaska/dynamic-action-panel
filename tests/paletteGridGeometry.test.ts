@@ -178,6 +178,34 @@ describe('grid resize edges', () => {
         expect(Number(size)).toBeGreaterThanOrEqual(12);
     });
 
+    it('shows a grip thick enough to read as a handle, inside a wider hitbox', () => {
+        const frame = rules.find((r) => /\.ocap-grid-frame$/.test(r.selector));
+        const hit = Number(/--ocap-grid-edge-size:\s*(\d+)px/.exec(frame?.body ?? '')?.[1]);
+        const grip = Number(/--ocap-grid-grip-size:\s*(\d+)px/.exec(frame?.body ?? '')?.[1]);
+        // A 1-2px line does not read as something one can take hold of.
+        expect(grip).toBeGreaterThanOrEqual(6);
+        // ...but the pointer still gets the bigger target.
+        expect(grip).toBeLessThan(hit);
+    });
+
+    it('gives the grip three distinguishable states, colour only', () => {
+        const idle = edgeRules.find((r) => /\.ocap-grid-edge-grip$/.test(r.selector));
+        expect(idle?.body).toMatch(/background-color:\s*rgba\(var\(--mono-rgb-100\)/);
+        const lit = edgeRules.find(
+            (r) => /:hover .ocap-grid-edge-grip/.test(r.selector) && /--dragging/.test(r.selector)
+        );
+        // Hover, focus and drag share one rule so the grip cannot flicker
+        // between them on the way into a gesture.
+        expect(lit?.body).toMatch(/background-color:\s*var\(--interactive-accent\)/);
+        // Only colour: a size here would move the gutter, and with it the grid.
+        expect(lit?.body).not.toMatch(/(?:^|[;\s])(width|height|padding|margin|border)\s*:/);
+    });
+
+    it('keeps the `+` legible once the grip turns accent', () => {
+        const lit = edgeRules.find((r) => /:hover .ocap-grid-edge-plus/.test(r.selector));
+        expect(lit?.body).toMatch(/color:\s*var\(--text-on-accent\)/);
+    });
+
     it('never lives inside the slot grid', () => {
         for (const rule of edgeRules) {
             expect(

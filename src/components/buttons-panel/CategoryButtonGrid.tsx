@@ -132,7 +132,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         dimensions: storedDimensions,
         gridRef,
         enabled: isGrid && enableEditMode && !isDragging,
-        onCommit: (next) => resizeGridTo(category, next),
+        onCommit: (next, onSettled) => resizeGridTo(category, next, { onSettled }),
         onClick: (edge) => resizeGrid(category, edge, 1),
     });
 
@@ -292,7 +292,11 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
             ? undefined
             : (edge: GridResizeEdge, direction: GridResizeDirection) =>
                   resizeGrid(category, edge, direction);
-        const resizingEdge = resizeDrag.preview?.edge ?? null;
+        // The lit handle and the readout belong to the GESTURE. A preview that
+        // is only being held until the settings catch up is no longer a
+        // gesture — its job is purely to keep the geometry from flashing back.
+        const gesture = resizeDrag.preview?.committed === false ? resizeDrag.preview : null;
+        const resizingEdge = gesture?.edge ?? null;
 
         const body = enableEditMode ? (
             <div className="ocap-grid-frame">
@@ -315,10 +319,10 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                     onHandlePointerDown={resizeDrag.onHandlePointerDown}
                     dragging={resizingEdge === 'row'}
                 />
-                {resizeDrag.preview && (
+                {gesture && (
                     <GridResizeReadout
-                        dimensions={resizeDrag.preview.dimensions}
-                        edge={resizeDrag.preview.edge}
+                        dimensions={gesture.dimensions}
+                        edge={gesture.edge}
                     />
                 )}
             </div>

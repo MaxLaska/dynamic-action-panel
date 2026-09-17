@@ -88,9 +88,9 @@ body .buttons-panel .ocap-grid-slot--empty {
 
 /* --- Variable grid size: the graspable edges ----------------------------
    Edit mode gives the grid two resize surfaces: its WHOLE right border
-   (columns) and its WHOLE bottom border (rows). Big hit area, small visual —
-   at rest each zone is only a faint `+`, hover lights a thin accent line
-   along the grid edge, and a drag keeps it lit.
+   (columns) and its WHOLE bottom border (rows). Big hit area, compact visual:
+   a rounded grip bar runs the whole edge — quiet at rest, accent under the
+   pointer, and held accent for the length of a drag.
 
    Both zones sit in a 16px gutter strictly OUTSIDE `.ocap-palette-grid`, so
    they are not cells, carry no slot index, cannot influence a row track or a
@@ -99,8 +99,11 @@ body .buttons-panel .ocap-grid-slot--empty {
    frame only exists in edit mode; locked mode renders the bare grid exactly
    as before. */
 .buttons-panel .ocap-grid-frame {
-    /* One source of truth for how wide/tall the graspable border is. */
+    /* The hitbox, and the visible bar inside it. They are deliberately
+       different: the zone is what the pointer hits, the bar is what the eye
+       aims at. */
     --ocap-grid-edge-size: 16px;
+    --ocap-grid-grip-size: 8px;
 
     display: flex;
     flex-direction: column;
@@ -157,59 +160,70 @@ body .buttons-panel .ocap-grid-slot--empty {
     cursor: ns-resize;
 }
 
-/* The accent line that appears along the grid's border on hover: this is the
-   whole visual of the zone, 2px, hugging the grid it resizes. Transform-only
-   transitions, so it can never nudge the layout. */
-.buttons-panel .ocap-grid-edge-line {
+/* The visible GRIP: a rounded bar running the whole edge. The hitbox around
+   it stays the full 16px zone -- the bar is what the eye aims at, the zone is
+   what the pointer hits. 8px reads as a real handle at this panel width
+   without eating grid area (it lives in the gutter, not over the cells).
+
+   Three states, colour only, so nothing here can move a pixel:
+     idle   quietly present, same mono-derived ink as the grid lines
+     hover  the interactive accent -- "this is grabbable"
+     drag   stays accent for the whole gesture, no flicker on the way in */
+.buttons-panel .ocap-grid-edge-grip {
     position: absolute;
-    background-color: var(--interactive-accent);
-    border-radius: 1px;
-    opacity: 0;
-    transition: opacity 90ms ease-in-out;
+    background-color: rgba(var(--mono-rgb-100), 0.16);
+    border-radius: calc(var(--ocap-grid-grip-size) / 2);
+    transition: background-color 90ms ease-in-out;
     pointer-events: none;
 }
 
-.buttons-panel .ocap-grid-edge--column .ocap-grid-edge-line {
-    left: 3px;
+.buttons-panel .ocap-grid-edge--column .ocap-grid-edge-grip {
+    /* Centred in the zone, so the `+` below sits exactly on the bar. */
+    left: calc((var(--ocap-grid-edge-size) - var(--ocap-grid-grip-size)) / 2);
     top: 0;
     bottom: 0;
-    width: 2px;
+    width: var(--ocap-grid-grip-size);
 }
 
-.buttons-panel .ocap-grid-edge--row .ocap-grid-edge-line {
-    top: 3px;
+.buttons-panel .ocap-grid-edge--row .ocap-grid-edge-grip {
+    top: calc((var(--ocap-grid-edge-size) - var(--ocap-grid-grip-size)) / 2);
     left: 0;
     right: 0;
-    height: 2px;
+    height: var(--ocap-grid-grip-size);
 }
 
-.buttons-panel button.ocap-grid-edge:hover .ocap-grid-edge-line,
-.buttons-panel button.ocap-grid-edge:focus-visible .ocap-grid-edge-line,
-.buttons-panel button.ocap-grid-edge--dragging .ocap-grid-edge-line {
-    opacity: 1;
+.buttons-panel button.ocap-grid-edge:hover .ocap-grid-edge-grip,
+.buttons-panel button.ocap-grid-edge:focus-visible .ocap-grid-edge-grip,
+.buttons-panel button.ocap-grid-edge--dragging .ocap-grid-edge-grip {
+    background-color: var(--interactive-accent);
 }
 
-/* The compact click affordance riding in the middle of the zone. Quiet until
-   the pointer is near, so an edit-mode panel is not a wall of plus signs. */
+/* The compact click affordance, riding ON the grip in the middle of the zone.
+   Because the bar turns accent under the pointer, the glyph has to switch to
+   the on-accent ink or it would disappear into it. */
 .buttons-panel .ocap-grid-edge-plus {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     position: relative;
-    opacity: 0.4;
+    z-index: 1;
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+    opacity: 0.8;
     transition: opacity 90ms ease-in-out, color 90ms ease-in-out;
 }
 
 .buttons-panel .ocap-grid-edge-plus .svg-icon {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
 }
 
 .buttons-panel button.ocap-grid-edge:hover .ocap-grid-edge-plus,
 .buttons-panel button.ocap-grid-edge:focus-visible .ocap-grid-edge-plus,
 .buttons-panel button.ocap-grid-edge--dragging .ocap-grid-edge-plus {
     opacity: 1;
-    color: var(--text-accent);
+    color: var(--text-on-accent);
 }
 
 /* At the maximum a click cannot add anything, but the zone must stay

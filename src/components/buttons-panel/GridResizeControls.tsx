@@ -35,11 +35,15 @@ interface GridResizeEdgeZoneProps {
  * "one more" — and a click anywhere on the zone does exactly that, so no part
  * of a control-shaped surface is inert.
  *
- * Big hit area, small visual: at rest the zone is only its faint `+`; hovering
- * lights a thin accent line along the grid edge; dragging keeps it lit. It is
- * never `disabled`, not even at 5x5 — a disabled button receives no pointer
- * events at all, and dragging inwards is the only way back down from the
- * maximum.
+ * Big hit area, compact visual — but the visual still has to look like
+ * something one can take hold of. The zone therefore draws a rounded GRIP bar
+ * along the whole edge: quietly present at rest, accent-coloured on hover, and
+ * held in that state for the length of a drag. The hitbox stays wider than the
+ * bar on purpose (see the CSS): aiming is for the eye, not for the pointer.
+ *
+ * It is never `disabled`, not even at 5x5 — a disabled button receives no
+ * pointer events at all, and dragging inwards is the only way back down from
+ * the maximum.
  *
  * Both zones live strictly OUTSIDE `.ocap-palette-grid`, occupying a 16px
  * gutter next to it. They are not cells, carry no slot index and cannot
@@ -112,7 +116,7 @@ export const GridResizeEdgeZone: React.FC<GridResizeEdgeZoneProps> = ({
                 }
             }}
         >
-            <span className="ocap-grid-edge-line" aria-hidden="true" />
+            <span className="ocap-grid-edge-grip" aria-hidden="true" />
             <span ref={iconRef} className="ocap-grid-edge-plus" aria-hidden="true" />
         </button>
     );

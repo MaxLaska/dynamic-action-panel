@@ -8,13 +8,13 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
   Buttons Panel 2.4.7.
-- Branch `master`, HEAD `feat: make the whole grid edge graspable`, lokal vor
-  `origin/master` — nicht ohne Auftrag pushen.
+- Branch `master`, HEAD `fix: hold the resize preview until the commit lands`,
+  lokal vor `origin/master` — nicht ohne Auftrag pushen.
 - Settings-Version: **4** (`CURRENT_SETTINGS_VERSION`), forward-only
   Migrationskette `0 → 1 → 2 → 3 → 4` in `src/settings/settingsMigrations.ts`.
   Ein Tool ohne Action ist **kein** Schemawechsel — `actions: []` war immer
   darstellbar, nur die Save-Validierung hat es verhindert.
-- Teststand: `npm test` **488/488** (Vitest, node env, `tests/`),
+- Teststand: `npm test` **491/491** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
   `node esbuild.config.mjs production` grün.
 
@@ -174,6 +174,13 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   und verbreiterte jede Zelle. Die Rinne ist seit dem Edge-Pass **16 px**
   (vorher 18 + 2 px Gap), das Grid ist im Edit-Mode also 4 px breiter als
   zuvor.
+- **Hitbox und sichtbarer Griff sind bewusst verschieden:**
+  `--ocap-grid-edge-size: 16px` ist die Hitbox, `--ocap-grid-grip-size: 8px`
+  der sichtbare Balken darin (beide am `.ocap-grid-frame`). Gezielt wird mit
+  dem Auge, getroffen mit dem Zeiger. Drei Zustände, nur über Farbe: idle
+  `rgba(var(--mono-rgb-100), 0.16)`, Hover/Focus/Drag `--interactive-accent`;
+  das `+` wechselt dabei auf `--text-on-accent`, sonst verschwände es im
+  Balken.
 - **Die Edge-Zone überlappt das Grid NICHT.** Sie beginnt exakt an dessen
   Rand und liegt vollständig in der Rinne (live geprüft: 3 px innerhalb der
   Grid-Kante trifft die Zelle, 3 px außerhalb die Zone). Würde sie überlappen,
@@ -210,6 +217,21 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   ihm also nicht widersprechen. Tools auf einem weggeschnittenen Streifen sind
   während der Preview nur **unsichtbar**, nicht gelöscht — in den Settings
   stehen sie bis zum bestätigten Pointer-Up unverändert.
+- **Die Preview überlebt den Pointer.** Speichern ist async und das Panel
+  rendert aus einem `buttons-panel-refresh`-Event — die Preview beim
+  Pointer-Up zu verwerfen zeigte deshalb für **4 gemessene Frames** wieder das
+  Grid VOR dem Drag, obwohl `settings` die neue Größe schon hatte. Sie bleibt
+  jetzt stehen (`preview.committed = true`), bis die gespeicherten Dimensionen
+  wirklich die gezogenen sind — oder der Save gescheitert ist (`onSettled`).
+  Dieselbe Idee wie `committedPropsRef` im ButtonDragContext: das Ergebnis
+  einer Geste überlebt die Props, aus denen es berechnet wurde. Gemessen:
+  **0 abweichende Frames** über Wachsen und Schrumpfen, beide Achsen.
+  **Ausnahme Confirmation:** dort ist noch nichts committet, also fällt das
+  Grid bewusst sofort auf die gespeicherte Größe zurück
+  (`resizeGridTo` meldet `committed` / `confirming` / `none`).
+- **Geste und Größe sind getrennt:** Readout und leuchtender Griff hängen an
+  `preview.committed === false`, die Geometrie an `preview.dimensions`. Beim
+  Pointer-Up endet also die Geste sofort, während die Geometrie hält.
 - **Die Größenanzeige (`columns × rows`) ist absolut positioniert** im
   `.ocap-grid-frame` und `pointer-events: none`: sie annotiert die Preview und
   darf sie niemals umbrechen oder den Drag schlucken. Sie erscheint, sobald
@@ -479,6 +501,13 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
     0 `+`.
   - Danach unverändert: Swap hin und zurück, Slot-`+`, PDF-Drop auf die
     **äußerste** Zelle (Ring weiterhin akzentfarben).
+- **Commit-Ruhe live gemessen** (rAF-Sampler, der pro Frame die gerenderte
+  Spalten-/Zellenzahl gegen die gespeicherte Größe protokolliert): vorher
+  **4 Frames** mit der Größe VOR dem Drag, obwohl `settings` schon die neue
+  trug; nach der Umstellung **0 abweichende Frames** über fünf Resizes
+  (Wachsen und Schrumpfen, Spalten und Reihen). Griff-Zustände einzeln
+  geprüft: idle `rgba(255,255,255,0.16)`, Hover `rgb(138,92,245)` mit weißem
+  `+`, und jede Achse leuchtet nur für sich.
 - Der Condition-Editor startet mit `File name` (verständlichste Regel) und
   erklärt `File name` und `View type` mit einer Hint-Zeile — `View type` wurde
   im Nutzertest als „Node Type" missverstanden.
@@ -537,9 +566,13 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
      ein Bug, kein Polish — aber es macht ein versehentliches +1 etwas
      wahrscheinlicher als vorher. Trivial rückgängig zu machen, zerstört nie
      Daten.
-   - Die Linienstärke des Edit-Rasters (`--ocap-grid-line`, aktuell 0.28) ist
-     bewusst deutlich gewählt und soll nach manuellem Test ggf. nachjustiert
-     werden — sie steht als **ein** Token am `--managed`-Container.
+   - Rasterlinie (`--ocap-grid-line`, 0.28) und Griffstärke
+     (`--ocap-grid-grip-size`, 8px) sind je **ein** Token und lassen sich nach
+     manuellem Test in einer Zeile nachjustieren.
+   - Beim Pointer-Up fällt der Griff sofort von Akzent auf idle zurück (die
+     Geste ist vorbei), während die Geometrie noch kurz gehalten wird. Das ist
+     gewollt, aber es ist der einzige verbliebene Zustandswechsel in dieser
+     Sekunde.
 9. Bewusst nicht umgesetzt (kommt später): Tool-/Button-Library und die
    Trennung von Button-Definition und Placement, Panel-Templates, JSON
    Import/Export, per-Category-Lock, „Pin active dynamic variant",
