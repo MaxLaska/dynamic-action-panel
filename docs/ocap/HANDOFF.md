@@ -765,6 +765,23 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 
 ## 6. Offene Punkte / nächste Baustellen
 
+- **Nächstes zentrales Feature: generische Grid-Cell-Selection mit Cell Colors
+  als erstem Consumer.** Der Architektur- und UX-Pass ist abgeschlossen:
+  `docs/ocap/audits/2026-09-18-selection-color-architecture.md` (Target Design,
+  Entscheidungsmatrix, File-Level-Map, Testmatrix, Phasenplan; unabhängig gegen
+  den Code reviewt). **Es ist noch NICHTS implementiert** — keine Selection,
+  keine Farb-UI, kein Format-/`settingsVersion`-Change.
+  Kernentscheidungen: Selection Unit = Zell-Koordinate `r<row>c<column>` im
+  Kontext `(categoryId, variantId | null)`; rein ephemerer React-State in
+  `PanelContent` (heißt `cellSelection` — `selection` ist schon die
+  Variant-Auswahl); expliziter Select-Sub-Mode pro Grid im Edit Mode über eine
+  Overlay-Schicht; `DndContext` bleibt unangetastet; `ocap:<name>`-Farben werden
+  erst beim Rendern auf Obsidians `--color-*-rgb` aufgelöst.
+  **Empfohlene nächste Phase: A — purer Kern + Daten** (`gridCellSelection.ts`,
+  Cell-Key-Helfer, `gridCellColor.ts`, `setCellColorsInState`, Unit-Tests; keine
+  UI). Danach B (Farben rendern: `ResolvedGridView` reicht `cellStyles` heute
+  NICHT bis zum Renderer durch), C (Select Mode), D (Apply Color), E (Marquee).
+
 0. **Produktiv-Deployment des v5-Builds steht aus** (bewusst nicht gemacht:
    erster Start migriert die produktive `data.json`). Separater Auftrag:
    Backup der kompletten Plugin-Installation inkl. v4-`data.json` → Deploy →
