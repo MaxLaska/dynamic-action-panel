@@ -6,7 +6,7 @@ body .vertical-tab-content .buttons-panel textarea.input-error {
     border-color: var(--text-error, #e03131);
 }
 
-/* OCAP conditions (advanced JSON) input: stack label and textarea vertically */
+/* Visibility conditions (advanced JSON) input: stack label and textarea vertically */
 .buttons-panel .ocap-conditions-input {
     flex-direction: column;
     align-items: stretch;

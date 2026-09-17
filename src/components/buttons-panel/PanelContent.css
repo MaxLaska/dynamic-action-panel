@@ -53,7 +53,7 @@
 }
 
 
-/* OCAP: category whose own condition does not hold in the current context,
+/* Category whose own condition does not hold in the current context,
    shown in sort/edit mode with a restrained visual marker so it stays
    manageable (mirrors the button marker in Button.css). */
 body .buttons-panel .buttons-panel-category.ocap-context-hidden > .buttons-panel-category-title,

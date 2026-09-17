@@ -19,9 +19,11 @@
         "test:watch": "vitest"
     },
     "keywords": [
-        "Buttons",
-        "Buttons Panel",
-        "Obsidian Plugin"
+        "obsidian",
+        "obsidian-plugin",
+        "action-panel",
+        "context-aware",
+        "productivity"
     ],
     "devDependencies": {
         "@eslint/js": "^9.39.4",

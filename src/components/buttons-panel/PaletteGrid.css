@@ -1,4 +1,4 @@
-/* OCAP palette grid
+/* Palette grid
    A category with layout 'grid' renders a rows x columns field of slots (1x1
    to 5x5, stored per grid; see src/utils/categoryGrid.ts). Every slot cell is
    always in the DOM — that is what keeps positions stable when a button is
