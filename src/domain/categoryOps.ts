@@ -20,6 +20,8 @@
 import type {
     ButtonConfig,
     CategoryConfig,
+    GridCellStyleFields,
+    GridCellStyles,
     StoredCategory,
     StoredVariant,
     ToolDefinition,
@@ -27,6 +29,7 @@ import type {
     ToolRegistry,
 } from '@/types/settings';
 import {
+    cloneGridCellStyles,
     findFirstFreeSlot,
     getCategoryLayout,
     gridSlotCount,
@@ -34,8 +37,10 @@ import {
     isValidSlotIndex,
     readGridDimensions,
     resizeGridButtons,
+    resizeGridCellStyles,
     sameGridDimensions,
     clampGridDimensions,
+    withCellStyles,
     type CategoryLayout,
     type GridDimensions,
 } from '@/utils/categoryGrid';
@@ -140,6 +145,25 @@ function deepCopyDefinition(definition: ToolDefinition, newId: string): ToolDefi
         id: newId,
         actions: definition.actions?.map((action) => ({ ...action })) ?? [],
     };
+}
+
+/**
+ * Set (or drop) the cell styles of one grid object. Dropping has to REMOVE the
+ * field rather than write `undefined`, so a grid without styled cells keeps
+ * serializing exactly like data written before cell styles existed.
+ */
+function setCellStyles<T extends GridCellStyleFields>(
+    target: T,
+    styles: GridCellStyles | undefined
+): T {
+    if (styles === undefined) {
+        if (target.cellStyles === undefined) {
+            return target;
+        }
+        const { cellStyles: _drop, ...rest } = target;
+        return rest as T;
+    }
+    return { ...target, cellStyles: styles };
 }
 
 /** All tool ids placed anywhere inside one category (own list + variants). */
@@ -459,21 +483,29 @@ export function planStoredGridResize(
     }));
     const removedToolIds = resized.removed.map((button) => at(button).toolId);
 
+    // Cell styles ride along coordinate-stable: growing keeps every key
+    // (a key IS the logical cell), shrinking drops exactly the cut strip.
     const nextCategory: StoredCategory = targetVariant
         ? {
               ...category,
               variants: (category.variants ?? []).map((variant) =>
                   variant.id === targetVariant.id
-                      ? {
-                            ...variant,
-                            rows: to.rows,
-                            columns: to.columns,
-                            placements: kept,
-                        }
+                      ? setCellStyles(
+                            {
+                                ...variant,
+                                rows: to.rows,
+                                columns: to.columns,
+                                placements: kept,
+                            },
+                            resizeGridCellStyles(variant.cellStyles, to)
+                        )
                       : variant
               ),
           }
-        : { ...category, rows: to.rows, columns: to.columns, placements: kept };
+        : setCellStyles(
+              { ...category, rows: to.rows, columns: to.columns, placements: kept },
+              resizeGridCellStyles(category.cellStyles, to)
+          );
 
     return {
         category: nextCategory,
@@ -578,13 +610,17 @@ export function duplicateVariantInState(
         source.rows === undefined && source.columns === undefined
             ? {}
             : clampGridDimensions(readGridDimensions(source));
+    // A duplicate is a FULL independent copy of the variant's grid state, so
+    // its cell styles come along as an independent object (F2).
+    const styles = withCellStyles(cloneGridCellStyles(source.cellStyles));
     const copyVariant: StoredVariant = draft.fallback === true
-        ? { id: draft.id, name: draft.name, fallback: true, ...size, placements }
+        ? { id: draft.id, name: draft.name, fallback: true, ...size, ...styles, placements }
         : {
               id: draft.id,
               name: draft.name,
               ...(draft.trigger !== undefined ? { trigger: draft.trigger } : {}),
               ...size,
+              ...styles,
               placements,
           };
     const next = [...variants];
@@ -655,18 +691,26 @@ export function duplicateCategoryInState(
         return copied;
     };
 
-    const copy: StoredCategory = {
-        ...source,
-        id: newId(),
-        order,
-        placements: copyPlacements(source.placements),
-    };
-    if (source.variants) {
-        copy.variants = source.variants.map((variant) => ({
-            ...variant,
+    const copy: StoredCategory = setCellStyles(
+        {
+            ...source,
             id: newId(),
-            placements: copyPlacements(variant.placements),
-        }));
+            order,
+            placements: copyPlacements(source.placements),
+        },
+        cloneGridCellStyles(source.cellStyles)
+    );
+    if (source.variants) {
+        copy.variants = source.variants.map((variant) =>
+            setCellStyles(
+                {
+                    ...variant,
+                    id: newId(),
+                    placements: copyPlacements(variant.placements),
+                },
+                cloneGridCellStyles(variant.cellStyles)
+            )
+        );
     } else {
         delete copy.variants;
     }
@@ -709,12 +753,16 @@ export function convertStoredStaticGridToDynamic(
     const size = hadDimensions
         ? clampGridDimensions(readGridDimensions(category))
         : ({} as Record<string, never>);
+    // The existing grid becomes the first variant EXACTLY as it is — its cell
+    // styles are part of that grid state and move with it, never get dropped.
+    const styles = withCellStyles(cloneGridCellStyles(category.cellStyles));
     const variant: StoredVariant = draft.fallback === true
         ? {
               id: draft.id,
               name: draft.name,
               fallback: true,
               ...size,
+              ...styles,
               placements: category.placements ?? [],
           }
         : {
@@ -722,9 +770,10 @@ export function convertStoredStaticGridToDynamic(
               name: draft.name,
               ...(draft.trigger !== undefined ? { trigger: draft.trigger } : {}),
               ...size,
+              ...styles,
               placements: category.placements ?? [],
           };
-    const { rows: _rows, columns: _columns, ...rest } = category;
+    const { rows: _rows, columns: _columns, cellStyles: _cellStyles, ...rest } = category;
     return { ...rest, placements: [], variants: [variant] };
 }
 
@@ -830,7 +879,13 @@ export function applyStoredCategoryLayout(
         ...placed.slots.filter((p): p is ToolPlacement => p !== null),
         ...placed.overflow,
     ].map((placement) => ({ toolId: placement.toolId }));
-    const { layout: _layout, rows: _rows, columns: _columns, ...rest } = category;
+    const {
+        layout: _layout,
+        rows: _rows,
+        columns: _columns,
+        cellStyles: _cellStyles,
+        ...rest
+    } = category;
     return {
         ok: true,
         state: withCategory(state, { ...rest, layout: 'flow', placements: ordered }),

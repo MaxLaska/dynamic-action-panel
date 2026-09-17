@@ -846,8 +846,15 @@ export function convertStaticGridToFlow(category: CategoryConfig): CategoryConfi
         const { slot: _slot, ...rest } = button;
         return { ...rest, order: index };
     });
-    // A flow category has no grid, so it carries no grid dimensions either.
-    const { layout: _layout, rows: _rows, columns: _columns, ...categoryRest } = category;
+    // A flow category has no grid, so it carries neither grid dimensions nor
+    // grid cell styles.
+    const {
+        layout: _layout,
+        rows: _rows,
+        columns: _columns,
+        cellStyles: _cellStyles,
+        ...categoryRest
+    } = category;
     return { ...categoryRest, layout: 'flow', buttons };
 }
 

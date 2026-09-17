@@ -28,7 +28,13 @@
 // is replaced by a new object; unchanged buttons keep their identity so
 // memoized React subtrees stay stable.
 
-import type { ButtonConfig, CategoryConfig } from '@/types/settings';
+import type {
+    ButtonConfig,
+    CategoryConfig,
+    GridCellKey,
+    GridCellStyle,
+    GridCellStyles,
+} from '@/types/settings';
 
 /** Rows and columns of one grid. Always normalized (inside the bounds). */
 export interface GridDimensions {
@@ -510,3 +516,126 @@ export function buttonsInOrder(buttons: readonly ButtonConfig[]): ButtonConfig[]
 
 // Layout conversion (flow <-> grid) lives in src/utils/categoryVariants.ts,
 // because converting a grid category has to account for its variants as well.
+
+// --- Grid cell styles (coordinate-keyed cell metadata) ------------------------
+//
+// Cell metadata belongs to the CELL, not to whatever tool happens to sit on it
+// — an empty cell has to be able to carry a color too. The key is therefore a
+// logical row/column pair (`r<row>c<column>`), never the flat slot index: the
+// flat index means a different cell as soon as the column count changes, while
+// `r2c3` names the same cell before and after a resize.
+
+/** Shape of a valid cell key: `r<row>c<column>`, non-negative integers. */
+const GRID_CELL_KEY_PATTERN = /^r(\d+)c(\d+)$/;
+
+/**
+ * Named entries of OCAP's own (future) palette, namespaced: `ocap:<name>`.
+ *
+ * The prefix is what makes the "no CSS classes as persisted truth" rule
+ * ENFORCEABLE rather than merely stated — without it a bare name like
+ * `is-active` is grammatically indistinguishable from a palette entry, and a
+ * validator could not tell a portable value from a leaked UI class.
+ */
+const GRID_CELL_COLOR_NAME_PATTERN = /^ocap:[a-z][a-z0-9-]{0,31}$/;
+
+/** Literal hex colors: #rgb, #rgba, #rrggbb, #rrggbbaa. */
+const GRID_CELL_COLOR_HEX_PATTERN = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+/** The key of the cell at (row, column). */
+export function gridCellKey(row: number, column: number): GridCellKey {
+    return `r${row}c${column}`;
+}
+
+/** Row/column of a cell key, or null when the key is not a cell key. */
+export function parseGridCellKey(key: string): { row: number; column: number } | null {
+    const match = GRID_CELL_KEY_PATTERN.exec(key);
+    if (!match) {
+        return null;
+    }
+    return { row: Number(match[1]), column: Number(match[2]) };
+}
+
+/** The key of the cell a flat slot addresses inside a grid of `columns`. */
+export function gridCellKeyOfSlot(slot: number, columns: number): GridCellKey {
+    return gridCellKey(slotRow(slot, columns), slotColumn(slot, columns));
+}
+
+/**
+ * Whether a stored color value is a portable one: a hex literal (`#rgb`,
+ * `#rgba`, `#rrggbb`, `#rrggbbaa`) or a namespaced palette entry
+ * (`ocap:<name>`). CSS class names and `var(--…)` references are deliberately
+ * NOT portable colors — they only exist inside the current UI build, so a
+ * template carrying one would arrive somewhere it means nothing.
+ */
+export function isGridCellColor(value: unknown): value is string {
+    return (
+        typeof value === 'string' &&
+        (GRID_CELL_COLOR_HEX_PATTERN.test(value) ||
+            GRID_CELL_COLOR_NAME_PATTERN.test(value))
+    );
+}
+
+/** Whether a cell key addresses a cell that exists in `dimensions`. */
+export function isCellKeyInsideGrid(key: string, dimensions: GridDimensions): boolean {
+    const cell = parseGridCellKey(key);
+    return (
+        cell !== null && cell.row < dimensions.rows && cell.column < dimensions.columns
+    );
+}
+
+/** An independent deep copy; undefined for an absent or empty map. */
+export function cloneGridCellStyles(
+    styles: GridCellStyles | undefined
+): GridCellStyles | undefined {
+    if (!styles) {
+        return undefined;
+    }
+    const keys = Object.keys(styles);
+    if (keys.length === 0) {
+        return undefined;
+    }
+    const next: GridCellStyles = {};
+    for (const key of keys) {
+        next[key] = { ...(styles[key] as GridCellStyle) };
+    }
+    return next;
+}
+
+/**
+ * Cell styles after a resize. Because the key IS the logical cell, growing a
+ * grid needs no remap at all — `r1c2` is the same cell in a 2x3 and in a 5x5.
+ * Shrinking drops exactly the keys whose cell no longer exists, the same
+ * outer strip the tools are cut from.
+ *
+ * Returns undefined when nothing is left, so an untouched grid keeps writing
+ * no `cellStyles` field at all.
+ */
+export function resizeGridCellStyles(
+    styles: GridCellStyles | undefined,
+    to: GridDimensions
+): GridCellStyles | undefined {
+    if (!styles) {
+        return undefined;
+    }
+    const next: GridCellStyles = {};
+    let count = 0;
+    for (const key of Object.keys(styles)) {
+        if (!isCellKeyInsideGrid(key, to)) {
+            continue;
+        }
+        next[key] = { ...(styles[key] as GridCellStyle) };
+        count += 1;
+    }
+    return count === 0 ? undefined : next;
+}
+
+/**
+ * Spread helper: `{ ...withCellStyles(styles) }` writes the field only when
+ * there is something to write, keeping data without styled cells byte-identical
+ * to data written before cell styles existed.
+ */
+export function withCellStyles(
+    styles: GridCellStyles | undefined
+): { cellStyles?: GridCellStyles } {
+    return styles === undefined ? {} : { cellStyles: styles };
+}

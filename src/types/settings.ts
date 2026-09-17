@@ -168,7 +168,7 @@ export interface ToolPlacement {
  * runtime CategoryVariant except that its grid is `placements` into the tool
  * registry instead of embedded buttons.
  */
-export interface StoredVariant extends GridDimensionFields {
+export interface StoredVariant extends GridDimensionFields, GridCellStyleFields {
     id: string;
     name: string;
     trigger?: ButtonCondition;
@@ -182,7 +182,7 @@ export interface StoredVariant extends GridDimensionFields {
  * buttons. The runtime view is materialized from this plus the registry —
  * see src/domain/tools.ts.
  */
-export interface StoredCategory extends GridDimensionFields {
+export interface StoredCategory extends GridDimensionFields, GridCellStyleFields {
     id: string;
     name: string;
     order: number;
@@ -220,6 +220,59 @@ export interface GridDimensionFields {
 }
 
 /**
+ * Key of ONE grid cell inside the styles map: `r<row>c<column>`, e.g. `r1c2`.
+ *
+ * Deliberately NOT the flat slot index. A slot index only names a cell
+ * relative to the current column count — add a column and slot 4 stops being
+ * the cell it was — while a row/column pair names the same logical cell no
+ * matter how the grid is resized. Growing a grid therefore needs no remap at
+ * all, and shrinking drops exactly the keys whose cell no longer exists
+ * (resizeGridCellStyles in src/utils/categoryGrid.ts).
+ */
+export type GridCellKey = string;
+
+/**
+ * Presentation metadata of ONE grid cell.
+ *
+ * The cell — not the tool — owns it: an EMPTY cell must be able to carry a
+ * color too, which rules out both ToolDefinition and ToolPlacement as a home.
+ *
+ * `color` is a portable value, never a CSS class name (a class only exists
+ * inside the current UI build and would not survive an export or a restyle):
+ * either a literal `#rgb` / `#rgba` / `#rrggbb` / `#rrggbbaa` hex color, or a
+ * namespaced OCAP palette entry (`ocap:<name>`, e.g. `ocap:accent`). The two
+ * forms are told apart by their own prefixes, so a later palette can be
+ * introduced without another structural migration — and so a stray UI class
+ * name can be REJECTED rather than merely discouraged.
+ *
+ * There is no color UI yet; the field exists so the stored shape, the copy
+ * semantics and the portable template format do not have to be reinvented
+ * when it arrives.
+ */
+export interface GridCellStyle {
+    color?: string;
+}
+
+/** Cell metadata of ONE grid, keyed by GridCellKey. Absent = no styled cell. */
+export type GridCellStyles = Record<GridCellKey, GridCellStyle>;
+
+/**
+ * The optional cell metadata a grid carries, stored on the object that owns
+ * that grid — exactly like GridDimensionFields: on the category for a static
+ * grid, on the variant for a dynamic one (a variant IS a complete independent
+ * grid, so its cell styles are its own and stay variant-local).
+ *
+ * Purely additive and optional: data written before cell styles existed
+ * carries no `cellStyles`, which reads as "no cell is styled". No migration
+ * and no rewrite of existing `data.json` files is needed, and settings
+ * written today stay loadable by earlier builds — so this field does NOT
+ * require a settingsVersion bump.
+ */
+export interface GridCellStyleFields {
+    cellStyles?: GridCellStyles;
+}
+
+/**
  * One complete variant of a dynamic grid category (OCAP category variants).
  *
  * A variant is a FULL, independent configuration of the grid: its own
@@ -240,7 +293,7 @@ export interface GridDimensionFields {
  * StoredVariant + the tool registry) and the pre-v5 shape inside the
  * migration chain.
  */
-export interface CategoryVariant extends GridDimensionFields {
+export interface CategoryVariant extends GridDimensionFields, GridCellStyleFields {
     /** Stable id, independent of the name and of the variant's position. */
     id: string;
     /** User-facing name shown in the variant selector (e.g. "Source"). */
@@ -277,7 +330,7 @@ export interface CategoryVariant extends GridDimensionFields {
  * pre-v5 shape inside the migration chain. Renderers and drag state consume
  * this; write paths operate on StoredCategory and the registry.
  */
-export interface CategoryConfig extends GridDimensionFields {
+export interface CategoryConfig extends GridDimensionFields, GridCellStyleFields {
     /** 分类唯一ID */
     id: string;
     /** 分类名称 */
