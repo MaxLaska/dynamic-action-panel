@@ -99,6 +99,9 @@ body .buttons-panel .ocap-grid-slot--empty {
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+    /* Positioning context for the drag readout only. The readout is absolutely
+       positioned, so it can never push a cell around. */
+    position: relative;
 }
 
 .buttons-panel .ocap-grid-frame-main {
@@ -174,6 +177,64 @@ body .buttons-panel .ocap-grid-slot--empty {
 .buttons-panel .ocap-grid-resize-icon .svg-icon {
     width: 12px;
     height: 12px;
+}
+
+/* The `+` is also the DRAG HANDLE (click adds one, press-and-drag snaps to any
+   size), so its cursor names the axis it resizes rather than a generic
+   pointer. */
+.buttons-panel .ocap-grid-resize--column button.ocap-grid-resize-handle {
+    cursor: ew-resize;
+}
+
+.buttons-panel .ocap-grid-resize--row button.ocap-grid-resize-handle {
+    cursor: ns-resize;
+}
+
+/* At the maximum a click cannot add anything, but the handle must stay
+   interactive: dragging back is the only way down from 5. Dimmed, never
+   disabled — a disabled button receives no pointer events at all. */
+.buttons-panel button.ocap-grid-resize-handle--at-max .ocap-grid-resize-icon {
+    opacity: 0.35;
+}
+
+/* The strip being dragged stays lit for the whole gesture, so the pointer
+   (which has long left the 16px button) keeps an anchor. */
+.buttons-panel .ocap-grid-resize--dragging button.ocap-grid-resize-handle {
+    opacity: 1;
+    color: var(--text-accent);
+    background-color: var(--background-modifier-hover);
+}
+
+/* --- Size readout during a resize drag ---------------------------------
+   `columns × rows`, the reading order of every spreadsheet. Absolutely
+   positioned inside the frame and pointer-transparent: it annotates the
+   preview, it must never reflow it or swallow the drag. */
+.buttons-panel .ocap-grid-resize-readout {
+    position: absolute;
+    z-index: 2;
+    padding: 1px 6px;
+    border-radius: var(--radius-s);
+    background-color: var(--background-modifier-message, var(--background-secondary-alt));
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-normal);
+    font-size: var(--font-ui-smaller);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: var(--shadow-s);
+}
+
+/* Next to the handle that is being dragged, inside the grid box so a narrow
+   sidebar can never clip it. */
+.buttons-panel .ocap-grid-resize-readout--column {
+    top: 2px;
+    right: 24px;
+}
+
+.buttons-panel .ocap-grid-resize-readout--row {
+    bottom: 24px;
+    right: 24px;
 }
 
 /* --- Edit-mode grid chrome ---------------------------------------------

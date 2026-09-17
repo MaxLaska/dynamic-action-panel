@@ -14,7 +14,10 @@ import { containerDroppableId } from '@/utils/buttonDragItems';
 import { useButtonDragOptional } from '@/contexts/ButtonDragContext';
 import { ButtonDragEmptySlot } from '@/components/buttons-panel/ButtonDragEmptySlot';
 import { GridSlotCell } from '@/components/buttons-panel/GridSlotCell';
-import { GridResizeControls } from '@/components/buttons-panel/GridResizeControls';
+import {
+    GridResizeControls,
+    GridResizeReadout,
+} from '@/components/buttons-panel/GridResizeControls';
 import { VariantSelector } from '@/components/buttons-panel/VariantSelector';
 import { isGridCategory } from '@/utils/categoryGrid';
 import {
@@ -23,6 +26,7 @@ import {
 } from '@/contexts/CategoryVariantContext';
 import {
     isDynamicCategory,
+    previewResizedSlots,
     resolveDynamicCategoryVariant,
     type GridResizeDirection,
     type GridResizeEdge,
@@ -31,6 +35,7 @@ import { useOCAPContext } from '@/hooks/useOCAPContext';
 import { useButtonCreation } from '@/hooks/useButtonCreation';
 import { useSlotFileDrop } from '@/hooks/useSlotFileDrop';
 import { gridResizeAvailability, useGridResize } from '@/hooks/useGridResize';
+import { useGridResizeDrag } from '@/hooks/useGridResizeDrag';
 import type { ContextStatus } from '@/components/shared/ContextStatusBadge';
 
 /**
@@ -103,7 +108,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     // variant from the same (normalized) selection the grid renders from.
     const { createButton } = useButtonCreation();
     const { canAcceptFileDrag, dropFileOnSlot } = useSlotFileDrop();
-    const { resizeGrid } = useGridResize();
+    const { resizeGrid, resizeGridTo } = useGridResize();
     const selectionEntry = isDynamic ? (selection[category.id] ?? null) : null;
     const runtimeResolution = React.useMemo(
         () =>
@@ -114,29 +119,55 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     );
 
     /**
-     * Dimensions of exactly the grid on screen — the selected variant's own in
-     * a dynamic category, the category's own in a static one. During a drag
-     * the live slot array is authoritative for the cell COUNT (it was built
-     * from this same view), so the two can never disagree mid-drag.
+     * Stored dimensions of exactly the grid on screen — the selected variant's
+     * own in a dynamic category, the category's own in a static one. During a
+     * button drag the live slot array is authoritative for the cell COUNT (it
+     * was built from this same view), so the two can never disagree mid-drag.
      */
-    const dimensions = resolution.dimensions;
+    const storedDimensions = resolution.dimensions;
+
+    // Dragging a resize handle previews a different size without writing
+    // anything: the commit happens once, on pointer-up (see useGridResizeDrag).
+    const resizeDrag = useGridResizeDrag({
+        dimensions: storedDimensions,
+        gridRef,
+        enabled: isGrid && enableEditMode && !isDragging,
+        onCommit: (next) => resizeGridTo(category, next),
+        onClick: (edge) => resizeGrid(category, edge, 1),
+    });
+
+    /** What the grid renders right now: the preview while resizing, else stored. */
+    const dimensions = resizeDrag.preview?.dimensions ?? storedDimensions;
 
     /**
-     * Grid layout: slot occupancy of every cell. During a drag this comes from
-     * the live drag state so the preview is positional too; otherwise it is
-     * the resolved grid. An empty slot simply stays empty — which is the whole
-     * point of the grid: positions never shift.
+     * Grid layout: slot occupancy of every cell. Three sources, in priority:
+     * the resize preview (pointer down on a handle), the live button-drag
+     * state, and otherwise the resolved grid. An empty slot simply stays empty
+     * — which is the whole point of the grid: positions never shift.
+     *
+     * The preview runs through the SAME coordinate-aware core as the commit
+     * (`previewResizedSlots`), so what the user sees mid-drag is exactly what
+     * pointer-up produces.
      */
+    const previewDimensions = resizeDrag.preview?.dimensions ?? null;
     const gridSlots = React.useMemo(() => {
         if (!isGrid) return null;
+        if (previewDimensions) {
+            return previewResizedSlots(resolution, previewDimensions);
+        }
         if (sortableEnabled && buttonDrag) {
             return buttonDrag.getGridSlotButtons(category);
         }
         return resolution.slots;
-    }, [isGrid, sortableEnabled, buttonDrag, category, resolution]);
+    }, [isGrid, previewDimensions, sortableEnabled, buttonDrag, category, resolution]);
 
-    /** Buttons that could not be placed (corrupt data); never dropped. */
-    const gridOverflow = isGrid ? resolution.overflow : [];
+    /**
+     * Buttons that could not be placed (corrupt data); never dropped.
+     * A resize preview re-places them into the cells it proposes, so listing
+     * them below as well would render the same button — and the same sortable
+     * id — twice for the length of the drag.
+     */
+    const gridOverflow = isGrid && !previewDimensions ? resolution.overflow : [];
 
     const dropTargetSlot =
         buttonDrag?.dropTargetSlot?.categoryId === category.id
@@ -192,10 +223,12 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
             .join(' ');
 
         // Creation affordances belong to empty cells in edit mode only, and
-        // they vanish while a button drag is in flight (the live preview is
-        // then what the cell has to show). A FULL grid therefore offers no `+`
-        // at all — the way in is then to add a column or a row.
-        const creationEnabled = enableEditMode && !isDragging;
+        // they vanish while a drag is in flight — a button drag, because the
+        // live preview is then what the cell has to show, and a resize drag,
+        // because those cells are a proposal that pointer-up may still undo.
+        // A FULL grid therefore offers no `+` at all — the way in is then to
+        // add a column or a row.
+        const creationEnabled = enableEditMode && !isDragging && !resizeDrag.preview;
 
         // Every cell is the same keyed component whether filled or empty, so
         // the droppable cell nodes survive variant switches (see
@@ -254,11 +287,16 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         // to act: unmounting it would hand its gutter back to the grid and
         // widen every cell mid-drag — exactly the moving-slot-rect problem the
         // definite row track solves vertically.
+        //
+        // The stepper `−`/`+` and the drag handle share the strip: `+` IS the
+        // handle (click adds one, press-and-drag snaps to any size), so there
+        // is one affordance per gesture instead of a second widget.
         const availability = gridResizeAvailability(dimensions);
         const onResize = isDragging
             ? undefined
             : (edge: GridResizeEdge, direction: GridResizeDirection) =>
                   resizeGrid(category, edge, direction);
+        const resizingEdge = resizeDrag.preview?.edge ?? null;
 
         const body = enableEditMode ? (
             <div className="ocap-grid-frame">
@@ -269,6 +307,8 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                         dimensions={dimensions}
                         availability={availability}
                         onResize={onResize}
+                        onHandlePointerDown={resizeDrag.onHandlePointerDown}
+                        dragging={resizingEdge === 'column'}
                     />
                 </div>
                 <GridResizeControls
@@ -276,7 +316,15 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                     dimensions={dimensions}
                     availability={availability}
                     onResize={onResize}
+                    onHandlePointerDown={resizeDrag.onHandlePointerDown}
+                    dragging={resizingEdge === 'row'}
                 />
+                {resizeDrag.preview && (
+                    <GridResizeReadout
+                        dimensions={resizeDrag.preview.dimensions}
+                        edge={resizeDrag.preview.edge}
+                    />
+                )}
             </div>
         ) : (
             gridEl

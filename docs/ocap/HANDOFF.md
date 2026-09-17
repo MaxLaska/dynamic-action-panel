@@ -8,13 +8,13 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
   Buttons Panel 2.4.7.
-- Branch `master`, HEAD `feat: support resizable action grids`, lokal vor
+- Branch `master`, HEAD `feat: add drag resizing for action grids`, lokal vor
   `origin/master` — nicht ohne Auftrag pushen.
 - Settings-Version: **4** (`CURRENT_SETTINGS_VERSION`), forward-only
   Migrationskette `0 → 1 → 2 → 3 → 4` in `src/settings/settingsMigrations.ts`.
   Ein Tool ohne Action ist **kein** Schemawechsel — `actions: []` war immer
   darstellbar, nur die Save-Validierung hat es verhindert.
-- Teststand: `npm test` **455/455** (Vitest, node env, `tests/`),
+- Teststand: `npm test` **478/478** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
   `node esbuild.config.mjs production` grün.
 
@@ -49,6 +49,20 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   namentlich. **Bestätigt gelöscht heißt heute wirklich gelöscht** — ein Tool
   existiert nur auf seinem Grid. Sobald eine Tool-Library Definition und
   Placement trennt, ist genau diese Modal die Stelle, die sich ändert.
+- **Zwei Gesten auf EINER Resize-Semantik:** der Stepper (`−` / `+`) und der
+  Notion-artige Drag-Handle enden beide in `resizeGridTo` → `planGridResize`.
+  Es gibt keine zweite Resize-Logik; der Handle ist reine Interaktionsschicht.
+- **Das `+` IST der Handle:** Klick fügt eine Spalte/Reihe hinzu, Drücken und
+  Ziehen rastet auf ganze Spalten/Reihen. Deshalb ist er am Maximum **nicht
+  deaktiviert** (ein disabled Button bekommt keine Pointer-Events, und Ziehen
+  ist von 5 aus der einzige Weg zurück) — nur sein Glyph ist gedimmt und das
+  Tooltip sagt, dass ein Klick dort nichts tut. `−` bleibt unverändert als
+  diskrete Ein-Klick-Verkleinerung.
+- **Ein Drag schreibt nichts.** Er erzeugt eine Preview; **genau ein** Commit
+  passiert beim Pointer-Up, durch dieselbe Bestätigung wie der Stepper. Ein
+  Drag über mehrere Streifen fragt **einmal** mit der Gesamtzahl
+  (`Remove 2 columns? 8 tools will be deleted.`), nicht pro Streifen. Escape,
+  `pointercancel` und ein Unmount brechen ohne Commit ab.
 - Jede Variant hat **genau einen Trigger** (`ButtonCondition`) **oder** ist
   die einzige explizite **Fallback**-Variant.
 - Runtime: **first matching trigger wins** (Array-Reihenfolge = Priorität),
@@ -150,6 +164,38 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   **Der Rahmen wird beim Drag NICHT ausgehängt** — die Buttons werden nur
   deaktiviert; ihn zu entfernen gäbe die Rinne mitten im Drag ans Grid zurück
   und verbreiterte jede Zelle.
+- **Der Resize-Drag ist bewusst KEIN dnd-kit-Drag** (`useGridResizeDrag`):
+  schlichte Pointer-Events mit `setPointerCapture`. Die Geste besitzt ihren
+  Pointer von down bis up und braucht nichts, wofür dnd-kit existiert — keine
+  Collision Detection, keine Droppables, kein Overlay. Das Capture ist auch
+  die Trennung zum Button-DnD: ein Press auf dem Handle erreicht weder den
+  Kategorie-Drag (zusätzlich `stopPropagation`) noch einen Sensor.
+- **Pixel → ganze Schritte** (`snapResizeSteps`, `clampResizeSteps`,
+  `applyResizeSteps`, alle pur in `categoryGrid.ts`): die Schrittgröße
+  (`resizeStepSize` = Zelle + Gap) wird **einmal beim Pointer-Down** aus der
+  Grid-Box gemessen und für die ganze Geste festgehalten — würde man sie aus
+  der laufenden Preview neu rechnen, verschieben sich die Schwellen unter dem
+  Zeiger. Umgeschaltet wird bei einer halben Zelle **plus 0,2 Zellen
+  Hysterese**, damit ein ruhender Zeiger auf einer Zellgrenze nicht flackert.
+  Die **Schritte** (nicht nur die Zielgröße) werden geklemmt: wer weit über
+  das Maximum hinauszieht, verkleinert beim Zurückziehen sofort wieder und
+  muss nicht erst die verbotene Strecke zurücklegen.
+- **Klick und Drag am selben Control:** ab 4 px Weg (dieselbe Schwelle wie der
+  Button-Drag-Sensor) ist es ein Drag, und das **rastet ein**
+  (`isResizeDragGesture`) — wer zurück zum Ausgangspunkt zieht und loslässt,
+  löst **nicht** zusätzlich die Klick-Aktion aus. Pointer-Klicks am Handle
+  werden im `onClick` verschluckt (der Pointer-Up-Pfad bedient sie schon);
+  nur eine **Tastatur**-Aktivierung (`event.detail === 0`) handelt dort.
+- **Die Preview rechnet mit demselben Kern wie der Commit**
+  (`previewResizedSlots` = `resizeGridButtons` + `placeButtonsOnGrid`), kann
+  ihm also nicht widersprechen. Tools auf einem weggeschnittenen Streifen sind
+  während der Preview nur **unsichtbar**, nicht gelöscht — in den Settings
+  stehen sie bis zum bestätigten Pointer-Up unverändert.
+- **Die Größenanzeige (`columns × rows`) ist absolut positioniert** im
+  `.ocap-grid-frame` und `pointer-events: none`: sie annotiert die Preview und
+  darf sie niemals umbrechen oder den Drag schlucken. Sie erscheint, sobald
+  die Geste zum Drag wird — auch bei 0 Schritten, denn genau dann hat der
+  Nutzer noch keine ganze Zelle zurückgelegt.
 - **Slot-Geometrie ist inhaltsunabhängig und während eines Drags stabil:** die
   Zeilenhöhe kommt aus einem definiten Track (`grid-auto-rows:
   var(--ocap-grid-row-height)` = Slot-Token + 2px Zellrahmen), nie aus dem
@@ -221,16 +267,24 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - `src/utils/categoryGrid.ts` — **pure Grid-Geometrie**: `GridDimensions`,
   `readGridDimensions` (fehlend = Legacy 4×4), `DEFAULT_GRID_DIMENSIONS` (1×3),
   Grenzen 1–5, `remapSlot`, `resizeGridButtons`, `placeButtonsOnGrid`
-  (dimensionsbewusst), `fitGridDimensions` für flow → grid.
+  (dimensionsbewusst), `fitGridDimensions` für flow → grid — und die
+  Drag-Mathematik `resizeStepSize` / `snapResizeSteps` / `clampResizeSteps` /
+  `applyResizeSteps` / `isResizeDragGesture`.
 - `src/components/buttons-panel/CategoryButtonGrid.tsx` — rendert das Grid
   einer Kategorie inkl. Variant-Selector-Einbindung, SortableContext und
   (nur im Edit-Mode) des Resize-Rahmens.
 - `src/components/buttons-panel/GridResizeControls.tsx` — die beiden
-  Control-Streifen (−/+ rechts für Spalten, −/+ unten für Reihen).
+  Control-Streifen (−/+ rechts für Spalten, −/+ unten für Reihen; das `+` ist
+  zugleich der Drag-Handle) plus die `GridResizeReadout`-Anzeige.
+- `src/hooks/useGridResizeDrag.ts` — die **Pointer-Schicht**: Capture,
+  Snapping, Preview-State, Klick-vs.-Drag, Escape/Cancel. Schreibt nichts.
 - `src/hooks/useGridResize.ts` — löst Ziel-Kategorie und -Variant wie `+` und
-  File-Drop auf, fragt bei belegtem Streifen nach und persistiert; rechnet vor
-  dem Commit gegen den **aktuellen** Stand neu (die Bestätigung ist async).
-- `src/components/modal/GridResizeConfirmModal.ts` — die Bestätigung.
+  File-Drop auf, fragt bei belegtem Streifen **einmal** nach und persistiert;
+  rechnet vor dem Commit gegen den **aktuellen** Stand neu (die Bestätigung
+  ist async). `resizeGridTo` ist der eine Commit-Pfad beider Gesten.
+- `src/components/modal/GridResizeConfirmModal.ts` — die Bestätigung, mit
+  eigener Formulierung für einen vs. mehrere Streifen und ein vs. mehrere
+  Tools.
 - `src/components/buttons-panel/GridSlotCell.tsx` — die universelle Zelle
   (kennt die Spaltenzahl nur für ihre Zeile/Spalte-Tooltips):
   permanentes Droppable, gefüllt oder leer, keyed by Slot; im Edit Mode
@@ -348,6 +402,29 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
     `rows: 2, columns: 4`, die Kategorie danach **keine** Größe mehr. `Copy`
     kopiert die Größe mit.
   - Nach vollem Window-Reload: Dimensionen und alle Buttons unverändert.
+- **Drag-Resize live verifiziert** (gleicher Aufbau, echte CDP-Maus-Events,
+  Fehlermonitore aktiv: **0 Fehler** über den ganzen Lauf):
+  - Klick auf den rechten Handle: 1×3 → 1×4, persistiert. Klick auf den
+    unteren: +1 Reihe.
+  - Ziehen nach rechts: Preview 1×5 mit Anzeige `5 × 1`; **die Settings waren
+    während gedrücktem Pointer nachweislich noch auf 4 Spalten**, erst das
+    Loslassen hat committet.
+  - Weiter ziehen als erlaubt: Preview bleibt bei 5 stehen, Anzeige ebenfalls.
+    Zurückziehen über mehrere Zellen in **einer** Geste: 5 → 4 → 3 → 1.
+  - Vertikal analog: 1 → 3 → 4 → 5 Reihen und in einem Zug zurück auf 1.
+  - Escape mitten im Drag: nichts committet, Settings byte-gleich.
+  - **Belegter Multi-Spalten-Shrink** auf dem vollen 4×4: Preview zeigt 3×4
+    dann 2×4, Settings während des Drags unverändert, **eine** Bestätigung
+    `Remove 2 columns? 8 tools will be deleted.` mit allen acht Namen. Cancel
+    → Grid und Settings byte-gleich; Remove → genau die zwei rechten Spalten
+    weg, der Rest behält seine logische Zeile/Spalte. Multi-Reihen analog
+    (`Remove 2 rows? 4 tools will be deleted.`).
+  - Locked Mode: **0** Frames, Streifen, Handles, Readouts und `+`.
+  - Nach einem Drag-Resize: Move und Swap korrekt, Slot-`+` in einer erst
+    durch den Drag entstandenen Zelle, PDF-Drop ebenfalls (Zelle leuchtet,
+    belegte Zelle lehnt den `dragover` weiter ab).
+  - Dynamic Variant: `VarA` per Drag auf 2×5 (A2 4 → 6, gleiche Zeile/Spalte),
+    `VarB` blieb byte-gleich 2×2. Nach Reload alles unverändert.
 - Der Condition-Editor startet mit `File name` (verständlichste Regel) und
   erklärt `File name` und `View type` mit einer Hint-Zeile — `View type` wurde
   im Nutzertest als „Node Type" missverstanden.
@@ -394,6 +471,14 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
      vollständiges eigenes Grid.
    - `flow → grid` wählt jetzt die kleinste passende Größe (ab 1×3, bis 5×5)
      und verweigert erst ab **26** Buttons (vorher 17).
+   - Beim Pointer-Up endet die Preview sofort; während die Bestätigung offen
+     ist, zeigt das Grid also schon wieder die **alte** Größe. Bewusst so —
+     es ist bis zum `Remove` tatsächlich noch nichts passiert — aber es ist
+     ein Kandidat für späteren Feinschliff.
+   - Der Drag-Handle ist Maus-/Pointer-first. Per Tastatur bleibt nur das
+     Stepper-Paar (`−` / `+`); es gibt keine Pfeiltasten-Variante des Drags.
+   - Die Größenanzeige liegt über der oberen rechten Zelle des Grids. Bei
+     einem 1×1-Grid verdeckt sie während des Drags dessen einzige Zelle.
 9. Bewusst nicht umgesetzt (kommt später): Tool-/Button-Library und die
    Trennung von Button-Definition und Placement, Panel-Templates, JSON
    Import/Export, per-Category-Lock, „Pin active dynamic variant",

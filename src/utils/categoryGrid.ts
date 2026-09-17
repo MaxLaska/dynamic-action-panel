@@ -199,6 +199,115 @@ export function remapSlot(
     return slotAt(row, column, to.columns);
 }
 
+// --- Resize geometry (shared by the buttons and the drag handle) -------------
+
+/** Which edge of a grid a resize addresses. */
+export type GridResizeEdge = 'row' | 'column';
+/** One step of the stepper controls. */
+export type GridResizeDirection = 1 | -1;
+
+/**
+ * How far the pointer must travel before a press on a resize handle counts as
+ * a DRAG rather than a click. Same value as the button drag sensor uses, so
+ * both gestures feel alike.
+ */
+export const RESIZE_DRAG_THRESHOLD_PX = 4;
+
+/**
+ * Extra travel, in cells, required beyond the half-cell mark before the snap
+ * moves on. Without it the target flips back and forth while the pointer rests
+ * exactly on a cell boundary.
+ */
+export const RESIZE_SNAP_HYSTERESIS = 0.2;
+
+/**
+ * Whether a press on a resize handle has become a DRAG.
+ *
+ * Latching matters: once the press has travelled far enough it stays a drag
+ * even if the pointer wanders back to where it started, so releasing there
+ * must not also fire the handle's click action and add a column the user
+ * already dragged away.
+ */
+export function isResizeDragGesture(delta: number, alreadyDragging: boolean): boolean {
+    return alreadyDragging || Math.abs(delta) >= RESIZE_DRAG_THRESHOLD_PX;
+}
+
+/**
+ * Cells the pointer has travelled, snapped to whole steps.
+ *
+ * Plain rounding would flip at exactly half a cell, which is where an
+ * unsteady hand sits when it "stops" on a boundary. The step therefore only
+ * moves once the raw distance passes the half-cell mark by `hysteresis`, and
+ * then jumps straight to the cell the pointer is really over — so a fast drag
+ * across five cells is still one snap, not five.
+ */
+export function snapResizeSteps(
+    delta: number,
+    step: number,
+    previous: number,
+    hysteresis: number = RESIZE_SNAP_HYSTERESIS
+): number {
+    if (!Number.isFinite(delta) || !Number.isFinite(step) || step <= 0) {
+        return previous;
+    }
+    const raw = delta / step;
+    if (raw >= previous + 0.5 + hysteresis) {
+        return Math.max(previous + 1, Math.round(raw));
+    }
+    if (raw <= previous - 0.5 - hysteresis) {
+        return Math.min(previous - 1, Math.round(raw));
+    }
+    return previous;
+}
+
+/**
+ * Steps still reachable from `start` on `edge`.
+ *
+ * Clamping the STEPS (not just the resulting size) is what keeps a drag
+ * responsive at a bound: dragging ten cells past the minimum and back must
+ * grow the grid again on the first cell back, not after ten.
+ */
+export function clampResizeSteps(
+    start: GridDimensions,
+    edge: GridResizeEdge,
+    steps: number
+): number {
+    const current = edge === 'column' ? start.columns : start.rows;
+    const min = edge === 'column' ? MIN_GRID_COLUMNS : MIN_GRID_ROWS;
+    const max = edge === 'column' ? MAX_GRID_COLUMNS : MAX_GRID_ROWS;
+    return Math.min(max - current, Math.max(min - current, Math.trunc(steps)));
+}
+
+/** `start` moved by `steps` along one edge, inside the bounds. */
+export function applyResizeSteps(
+    start: GridDimensions,
+    edge: GridResizeEdge,
+    steps: number
+): GridDimensions {
+    const clamped = clampResizeSteps(start, edge, steps);
+    return edge === 'column'
+        ? { rows: start.rows, columns: start.columns + clamped }
+        : { rows: start.rows + clamped, columns: start.columns };
+}
+
+/**
+ * Pixels one row/column occupies, derived from the grid box that currently
+ * holds `dimensions` — cell size plus the gap between two cells. Captured ONCE
+ * when a drag starts: recomputing it from the live preview would change the
+ * mapping under the pointer and make the snap non-monotonic.
+ */
+export function resizeStepSize(
+    gridSize: number,
+    count: number,
+    gap: number
+): number {
+    if (!Number.isFinite(gridSize) || count < 1) {
+        return 0;
+    }
+    // gridSize = count * cell + (count - 1) * gap  =>  cell + gap = (size + gap) / count
+    return (gridSize + gap) / count;
+}
+
 /**
  * Resolved placement of a category's buttons on the grid.
  * `slots` always has `gridSlotCount(dimensions)` entries; `overflow` is

@@ -41,6 +41,8 @@ import {
     sameGridDimensions,
     type CategoryLayout,
     type GridDimensions,
+    type GridResizeDirection,
+    type GridResizeEdge,
 } from '@/utils/categoryGrid';
 
 // --- Basic accessors ---------------------------------------------------------
@@ -746,9 +748,9 @@ export function applySlotIdsToGridCategory(
 
 // --- Resizing one grid --------------------------------------------------------
 
-/** Which edge of a grid a resize step addresses. */
-export type GridResizeEdge = 'row' | 'column';
-export type GridResizeDirection = 1 | -1;
+// The edge/direction vocabulary is pure geometry and lives in categoryGrid.ts;
+// re-exported here so callers keep one import for the whole resize story.
+export type { GridResizeDirection, GridResizeEdge } from '@/utils/categoryGrid';
 
 export interface GridResizePlan {
     /** The category as it would look afterwards. */
@@ -820,6 +822,24 @@ export function planGridResize(
         : { ...category, rows: to.rows, columns: to.columns, buttons: resized.buttons };
 
     return { category: nextCategory, from, to, removed: resized.removed };
+}
+
+/**
+ * The grid a resize WOULD render, computed from a resolved view and touching
+ * no stored data at all.
+ *
+ * This is what the drag handle shows while the pointer is still down: the same
+ * coordinate-aware core the commit uses (`resizeGridButtons` +
+ * `placeButtonsOnGrid`), so the preview cannot disagree with the result. Tools
+ * on a stripe the preview cuts away simply do not appear — they are still in
+ * the settings and only a confirmed pointer-up removes them.
+ */
+export function previewResizedSlots(
+    view: ResolvedGridView,
+    to: GridDimensions
+): (ButtonConfig | null)[] {
+    const resized = resizeGridButtons(effectiveGridButtons(view), view.dimensions, to);
+    return placeButtonsOnGrid(resized.buttons, to).slots;
 }
 
 /**
