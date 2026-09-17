@@ -1,22 +1,26 @@
 import { arrayMove } from '@dnd-kit/sortable';
 import type { ButtonConfig, CategoryConfig } from '@/types';
 import {
-    GRID_SLOT_COUNT,
     buildGridSlotIds,
     getCategoryLayout,
+    gridSlotCount,
     isGridCategory,
-    isValidSlotIndex,
+    isSlotIndexValue,
     moveIdToSlotWithinGrid,
     type CategoryLayout,
 } from '@/utils/categoryGrid';
-import { allCategoryButtons, type ResolvedGridView } from '@/utils/categoryVariants';
+import {
+    allCategoryButtons,
+    gridDimensionsOf,
+    type ResolvedGridView,
+} from '@/utils/categoryVariants';
 
 /**
  * Live drag state per category.
  *
  * - flow categories: a dense array of button ids, the index is the order;
- * - grid categories: a length-GRID_SLOT_COUNT array where the index IS the
- *   slot and `null` marks an empty slot.
+ * - grid categories: an array sized by that grid's own slot count, where the
+ *   index IS the slot and `null` marks an empty slot.
  *
  * One representation covers both layouts, so container resolution, collision
  * handling and persistence stay shared; only the semantics of "index" differ,
@@ -54,6 +58,10 @@ export function slotDroppableId(categoryId: string, slot: number): string {
  * Parse a slot droppable id. Category ids are user-generated timestamps but
  * could in principle contain ':', so the slot is taken from the LAST segment
  * and everything between the prefix and it is the category id.
+ *
+ * Only the SHAPE of the slot is checked here — grids no longer share one slot
+ * count, so the upper bound belongs to the container the id names and is
+ * applied where that container's live state is available.
  */
 export function parseSlotDroppableId(
     overId: string | number
@@ -68,7 +76,7 @@ export function parseSlotDroppableId(
         return null;
     }
     const slot = Number(rest.slice(separator + 1));
-    if (!isValidSlotIndex(slot)) {
+    if (!isSlotIndexValue(slot)) {
         return null;
     }
     return { categoryId: rest.slice(0, separator), slot };
@@ -121,7 +129,10 @@ export function buildButtonDragItems(
             const resolved = gridViews?.get(category.id);
             items[category.id] = resolved
                 ? resolved.slots.map((button) => button?.id ?? null)
-                : buildGridSlotIds(category.buttons);
+                : buildGridSlotIds(
+                      category.buttons,
+                      gridDimensionsOf(category, null)
+                  );
             continue;
         }
         const sorted = [...category.buttons].sort((a, b) => a.order - b.order);
@@ -173,8 +184,11 @@ export function getOrderedButtonsFromAllCategories(
 
 /**
  * Live slot occupancy of a grid container: index = slot, null = empty slot.
- * Always GRID_SLOT_COUNT entries, so the rendered grid keeps its shape while a
- * drag is in flight.
+ *
+ * The length comes from the live drag state, which was built from the resolved
+ * view of exactly this grid — so the rendered grid keeps its shape (and its
+ * size) while a drag is in flight. Without a drag state the stored dimensions
+ * decide.
  */
 export function getGridSlotButtonsFromAllCategories(
     category: CategoryConfig,
@@ -182,12 +196,13 @@ export function getGridSlotButtonsFromAllCategories(
     items: ButtonDragItems
 ): (ButtonConfig | null)[] {
     const ids = items[category.id];
+    const slotCount = ids?.length ?? gridSlotCount(gridDimensionsOf(category, null));
     const allButtons = collectButtonsById(categories);
-    const slots = new Array<ButtonConfig | null>(GRID_SLOT_COUNT).fill(null);
+    const slots = new Array<ButtonConfig | null>(slotCount).fill(null);
     if (!ids) {
         return slots;
     }
-    for (let i = 0; i < GRID_SLOT_COUNT; i++) {
+    for (let i = 0; i < slotCount; i++) {
         const id = ids[i] ?? null;
         slots[i] = id === null ? null : (allButtons.get(id) ?? null);
     }
@@ -243,7 +258,12 @@ function resolveGridTargetSlot(
 ): number | null {
     const slotTarget = parseSlotDroppableId(overId);
     if (slotTarget) {
-        return slotTarget.categoryId === overContainer ? slotTarget.slot : null;
+        // A cell id that outlives its grid (a droppable still registered from
+        // a larger size) names no cell any more.
+        return slotTarget.categoryId === overContainer &&
+            slotTarget.slot < overSlots.length
+            ? slotTarget.slot
+            : null;
     }
     if (isAppendToCategoryEndOverId(overId)) {
         return null;

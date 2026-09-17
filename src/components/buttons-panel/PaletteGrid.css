@@ -1,7 +1,8 @@
 /* OCAP palette grid
-   A category with layout 'grid' renders a fixed 4x4 field of slots. Every slot
-   cell is always in the DOM — that is what keeps positions stable when a
-   button is hidden by its context rule — only the chrome differs by mode. */
+   A category with layout 'grid' renders a rows x columns field of slots (1x1
+   to 5x5, stored per grid; see src/utils/categoryGrid.ts). Every slot cell is
+   always in the DOM — that is what keeps positions stable when a button is
+   hidden by its context rule — only the chrome differs by mode. */
 
 /* The container class differs by mode (`buttons-panel-grid` while dragging is
    enabled, `buttons-panel-content` elsewhere) and both declare `display: flex`.
@@ -19,8 +20,8 @@ body .buttons-panel .ocap-palette-grid {
        now. With `auto` rows a row holding a button was 1px-border taller than
        an all-empty row, so a drag that emptied its source row — or previewed
        into a previously empty one — resized those rows and shifted every slot
-       below them while the drag was still held. A definite track keeps all 16
-       slot rects fixed from drag start to drop or cancel. */
+       below them while the drag was still held. A definite track keeps every
+       slot rect fixed from drag start to drop or cancel. */
     grid-auto-rows: var(--ocap-grid-row-height);
     gap: 4px;
     width: 100%;
@@ -85,8 +86,98 @@ body .buttons-panel .ocap-grid-slot--empty {
     min-height: var(--ocap-grid-slot-min-height, 56px);
 }
 
+/* --- Variable grid size: the resize controls ----------------------------
+   Edit mode frames the slot grid with two compact strips: columns at the RIGHT
+   edge, rows BELOW — the control sits where what it adds or removes appears.
+
+   They are strictly OUTSIDE `.ocap-palette-grid`, so they are not cells, carry
+   no slot index and cannot influence a row track or a cell rect. The frame
+   only exists in edit mode; locked mode renders the bare grid exactly as
+   before, which is why none of this can reach the consumption view. */
+.buttons-panel .ocap-grid-frame {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.buttons-panel .ocap-grid-frame-main {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    min-width: 0;
+}
+
+/* The grid keeps every pixel the strip does not need. */
+.buttons-panel .ocap-grid-frame-main > .ocap-palette-grid {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.buttons-panel .ocap-grid-resize {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+}
+
+/* Right strip: stacked, centred against the full height of the grid. */
+.buttons-panel .ocap-grid-resize--column {
+    flex-direction: column;
+    width: 18px;
+}
+
+/* Bottom strip: centred under the grid, one control height tall. */
+.buttons-panel .ocap-grid-resize--row {
+    flex-direction: row;
+    height: 18px;
+}
+
+/* Quiet by default — the grid is the subject, these are its handles. */
+.buttons-panel button.ocap-grid-resize-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-s);
+    background-color: transparent;
+    box-shadow: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 80ms ease-in-out, color 80ms ease-in-out;
+}
+
+.buttons-panel button.ocap-grid-resize-button:hover:not(:disabled),
+.buttons-panel button.ocap-grid-resize-button:focus-visible:not(:disabled) {
+    opacity: 1;
+    color: var(--text-accent);
+    background-color: var(--background-modifier-hover);
+}
+
+/* At a bound (1x1 / 5x5) the control stays in place but stops offering an
+   action — the strip must not change size, or the grid would jump. */
+.buttons-panel button.ocap-grid-resize-button:disabled {
+    opacity: 0.18;
+    cursor: default;
+}
+
+.buttons-panel .ocap-grid-resize-icon {
+    display: inline-flex;
+    align-items: center;
+}
+
+.buttons-panel .ocap-grid-resize-icon .svg-icon {
+    width: 12px;
+    height: 12px;
+}
+
 /* --- Edit-mode grid chrome ---------------------------------------------
-   The 4x4 field must read as 16 real cells: every cell gets a visible
+   The field must read as real cells: every cell gets a visible
    border and a faint ground, empty cells are hollow (dashed, no fill),
    occupied cells are solid, and an empty cell lights up under the pointer
    because it is a drop target. There is one management mode now (edit is

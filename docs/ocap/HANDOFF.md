@@ -8,24 +8,47 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
   Buttons Panel 2.4.7.
-- Branch `master`, HEAD `feat: create tools directly in a grid slot`, lokal vor
+- Branch `master`, HEAD `feat: support resizable action grids`, lokal vor
   `origin/master` — nicht ohne Auftrag pushen.
 - Settings-Version: **4** (`CURRENT_SETTINGS_VERSION`), forward-only
   Migrationskette `0 → 1 → 2 → 3 → 4` in `src/settings/settingsMigrations.ts`.
   Ein Tool ohne Action ist **kein** Schemawechsel — `actions: []` war immer
   darstellbar, nur die Save-Validierung hat es verhindert.
-- Teststand: `npm test` **401/401** (Vitest, node env, `tests/`),
+- Teststand: `npm test` **455/455** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
   `node esbuild.config.mjs production` grün.
 
 ## 2. Produktmodell
 
-- Eine Grid-Kategorie ist **statisch** (ein volles 4×4-Grid in
-  `category.buttons`) oder **dynamisch** (`category.variants`).
+- Eine Grid-Kategorie ist **statisch** (ein volles Grid in `category.buttons`)
+  oder **dynamisch** (`category.variants`).
 - Eine dynamische Kategorie hält mehrere **vollständige, unabhängige
-  Variants**: eigene 4×4-Grids, eigene Button-IDs, nichts geteilt.
-- Grid = **4×4, 16 stabile Slots** (`ButtonConfig.slot`, 0–15). Leere Slots
-  bleiben leer; nichts rutscht nach.
+  Variants**: eigene Grids inkl. eigener Größe, eigene Button-IDs, nichts
+  geteilt.
+- **Das Grid ist größenveränderlich: `rows` × `columns`, 1×1 bis 5×5.** Slots
+  sind flache, zeilenweise gelesene Indizes (`slot = row * columns + column`),
+  weiterhin stabile Identitäten (`ButtonConfig.slot`). Leere Slots bleiben
+  leer; nichts rutscht nach.
+- **Größe gehört zu genau dem Grid, das sie beschreibt:** `rows`/`columns`
+  liegen auf der **Variant** (dynamisch) bzw. auf der **Kategorie** (statisch).
+  Eine dynamische Kategorie trägt selbst keine Größe — sonst gäbe es zwei
+  Wahrheiten.
+- **Fehlende Felder sind die Abwärtskompatibilität:** ein gespeichertes Grid
+  ohne `rows`/`columns` ist das historische **4×4**
+  (`LEGACY_GRID_DIMENSIONS`). Keine Migration, kein Rewrite bestehender
+  `data.json` — nur wirklich resizte und **neu angelegte** Grids schreiben die
+  Felder. **Neue** Grids starten bei **1×3** (`DEFAULT_GRID_DIMENSIONS`); eine
+  neue Variant erbt die Größe des Grids, das die Kategorie schon hat.
+- **Resize ist koordinatenbewusst** (`remapSlot`/`resizeGridButtons`): ein
+  Button behält seine logische Zeile/Spalte, auch wenn sein flacher Index sich
+  ändert. `+ column` auf `A B C / D E F` ergibt `A B C . / D E F .`, nie
+  `A B C D / E F . .`.
+- **Verkleinert wird nur am Rand:** die äußerste rechte Spalte und die unterste
+  Reihe. Ist der Streifen leer, verschwindet er sofort; hält er Tools, fragt
+  eine Obsidian-Modal-Bestätigung (`GridResizeConfirmModal`) und nennt sie
+  namentlich. **Bestätigt gelöscht heißt heute wirklich gelöscht** — ein Tool
+  existiert nur auf seinem Grid. Sobald eine Tool-Library Definition und
+  Placement trennt, ist genau diese Modal die Stelle, die sich ändert.
 - Jede Variant hat **genau einen Trigger** (`ButtonCondition`) **oder** ist
   die einzige explizite **Fallback**-Variant.
 - Runtime: **first matching trigger wins** (Array-Reihenfolge = Priorität),
@@ -60,7 +83,8 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Zelle oder über eine Vault-Datei, die aus Obsidians File Explorer auf sie
   gezogen wird. Deshalb gibt es unter einem Grid **keinen globalen
   `Add button`-Eintrag** mehr (Flow-Kategorien behalten ihn, dort gibt es keine
-  Slots). Ein volles 4×4-Grid bietet folgerichtig gar keinen Einstieg.
+  Slots). Ein **volles** Grid bietet folgerichtig kein `+` — der Weg hinein ist
+  dann eine Spalte oder Reihe mehr.
 
 ## 3. Architektur & Invarianten
 
@@ -92,7 +116,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - `dragForceCancelledRef` (Folder-Cancel) wird bei **jedem Drag-Start**
   zurückgesetzt: ein Escape-Cancel liefert kein `dragEnd`, das die Flag
   konsumiert, und verwarf sonst den Drop des nächsten Drags.
-- **Alle 16 Grid-Zellen sind permanente Droppables** (`GridSlotCell` rendert
+- **Alle Grid-Zellen sind permanente Droppables** (`GridSlotCell` rendert
   belegte und leere Zellen, keyed by Slot). Niemals zu per-Empty-Slot-
   Droppables zurückkehren — deren Mount/Unmount beim Variant-Wechsel war die
   Root Cause des intermittierenden „Drag tot"-Bugs (Registrierungs-/Rect-Race
@@ -100,13 +124,32 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Button > Slot-Zelle > Title/Tab/Container.
 - **Desktop-DnD:** PointerSensor mit `distance: 4` px, bewusst OHNE
   `tolerance` (würde schnelle Drags canceln). Touch: Long-Press.
-- **4 logische Spalten sind invariant** — `repeat(var(--ocap-grid-columns,4),
-  minmax(0,1fr))`; kein Wrap bei schmaler Sidebar (verifiziert bis 150 px).
-- **Grid-Geometrie ist modus- und variant-invariant:** jede Zelle trägt in
+- **Die Spaltenzahl kommt aus den Daten, nicht aus der Breite** —
+  `repeat(var(--ocap-grid-columns,4), minmax(0,1fr))`, gesetzt aus
+  `ResolvedGridView.dimensions.columns`; kein Wrap bei schmaler Sidebar
+  (verifiziert bis 150 px). Der CSS-Fallback `4` ist bewusst die Legacy-Zahl.
+- **Der Drag-State ist so groß wie sein Grid** (`buildButtonDragItems` baut ihn
+  aus derselben `ResolvedGridView`, aus der gerendert wird). Nichts darf mehr
+  eine feste 16 annehmen: `isValidSlotIndex(value, slotCount)` verlangt die
+  Grenze explizit, `parseSlotDroppableId` prüft nur noch die **Form** der Id,
+  und die Obergrenze wird dort gezogen, wo der Live-Zustand des Containers
+  bekannt ist.
+- **Grid-Geometrie ist variant- und drag-invariant:** jede Zelle trägt in
   jedem Modus einen konstanten 1px-Rahmen (transparent in locked); Chrome nur
-  über Farben (eine Container-Klasse `--managed`). Locked ↔ edit ändert weder
-  Slot-Rects noch Row-Sizing noch die Zentrierung der Buttons — Edit-Chrome
-  (Variant-Bar, Add-Controls) liegt darüber. Live gemessen: worstΔ 0 px.
+  über Farben (eine Container-Klasse `--managed`). Während eines Drags ändert
+  sich kein Slot-Rect (live per-Frame gemessen: **worstΔ 0 px** in 4×5 und
+  3×5).
+- **Die Resize-Controls kosten Layout — und bleiben deshalb während eines Drags
+  stehen.** Der Edit-Mode rahmt das Grid mit zwei schmalen Streifen
+  (`.ocap-grid-frame`: Spalten rechts, Reihen unten, je ~18 px + 2 px Gap).
+  Damit ist die frühere Zusage „Locked ↔ edit ändert die Slot-Rects um 0 px"
+  **horizontal nicht mehr wahr**: im Edit-Mode ist das Grid um die Rinne
+  schmaler (live gemessen: 15 px Versatz / 5 px Zellbreite bei 4 Spalten);
+  vertikal bleibt alles gleich (dy = dh = 0 px). Bewusst so: eine dauerhaft
+  reservierte Rinne würde im normalen (locked) Gebrauch Platz verschenken.
+  **Der Rahmen wird beim Drag NICHT ausgehängt** — die Buttons werden nur
+  deaktiviert; ihn zu entfernen gäbe die Rinne mitten im Drag ans Grid zurück
+  und verbreiterte jede Zelle.
 - **Slot-Geometrie ist inhaltsunabhängig und während eines Drags stabil:** die
   Zeilenhöhe kommt aus einem definiten Track (`grid-auto-rows:
   var(--ocap-grid-row-height)` = Slot-Token + 2px Zellrahmen), nie aus dem
@@ -175,9 +218,21 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   IDs, `applyDragOverToItems` (move/swap/flow-Regeln),
   `resolveGridDropOutcome` (accept/blocked/no-cell).
 - `src/utils/buttonDragCollision.ts` — Collision-Ranking der Button-Drags.
-- `src/components/buttons-panel/CategoryButtonGrid.tsx` — rendert das 4×4-Grid
-  einer Kategorie inkl. Variant-Selector-Einbindung und SortableContext.
-- `src/components/buttons-panel/GridSlotCell.tsx` — die universelle Zelle:
+- `src/utils/categoryGrid.ts` — **pure Grid-Geometrie**: `GridDimensions`,
+  `readGridDimensions` (fehlend = Legacy 4×4), `DEFAULT_GRID_DIMENSIONS` (1×3),
+  Grenzen 1–5, `remapSlot`, `resizeGridButtons`, `placeButtonsOnGrid`
+  (dimensionsbewusst), `fitGridDimensions` für flow → grid.
+- `src/components/buttons-panel/CategoryButtonGrid.tsx` — rendert das Grid
+  einer Kategorie inkl. Variant-Selector-Einbindung, SortableContext und
+  (nur im Edit-Mode) des Resize-Rahmens.
+- `src/components/buttons-panel/GridResizeControls.tsx` — die beiden
+  Control-Streifen (−/+ rechts für Spalten, −/+ unten für Reihen).
+- `src/hooks/useGridResize.ts` — löst Ziel-Kategorie und -Variant wie `+` und
+  File-Drop auf, fragt bei belegtem Streifen nach und persistiert; rechnet vor
+  dem Commit gegen den **aktuellen** Stand neu (die Bestätigung ist async).
+- `src/components/modal/GridResizeConfirmModal.ts` — die Bestätigung.
+- `src/components/buttons-panel/GridSlotCell.tsx` — die universelle Zelle
+  (kennt die Spaltenzahl nur für ihre Zeile/Spalte-Tooltips):
   permanentes Droppable, gefüllt oder leer, keyed by Slot; im Edit Mode
   zusätzlich das `+` und das native Datei-Drop-Ziel einer leeren Zelle.
 - `src/utils/vaultFileButton.ts` — **pure** Abbildung Vault-Datei → Tool
@@ -215,9 +270,8 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Der intermittierende DnD-Ausfall nach Variant-Wechsel ist durch die
   permanenten Zell-Droppables behoben (live: >200 automatisierte Drags über
   Switch-/Flip-/Mode-Sequenzen, 0 Ausfälle, 0 Konsolenfehler).
-- Das 4×4-Raster ist im Edit-Modus deutlich sichtbar (belegte Zellen solide,
-  leere gestrichelt, Hover auf leeren Zellen); locked bleibt chrome-frei bei
-  identischer Geometrie.
+- Das Raster ist im Edit-Modus deutlich sichtbar (belegte Zellen solide,
+  leere gestrichelt, Hover auf leeren Zellen); locked bleibt chrome-frei.
 - Drag-Vorschau, Overlay und Endzustand sind geometrisch identisch
   (zentriert, gleiche Größe, kein Sprung beim Drop).
 - Der Startslot bleibt während des gesamten Drags ruhig: kein Aufblitzen beim
@@ -242,9 +296,8 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Kategorie-Drag auszulösen; Save mit Name + Icon und leerer Action landet in
   exakt diesem Slot mit `actions: []`; ein Klick darauf zeigt
   `No action assigned.`; ein volles 4×4-Grid hat 0 `+` und akzeptiert auch
-  keinen Datei-Drop. Grid-Geometrie edit↔locked: **worstΔ 0 px** (relativ zur
-  Grid-Box gemessen; die absolute Position verschiebt sich in locked legitim,
-  weil andere Kategorien dort ausgeblendet werden).
+  keinen Datei-Drop. Grid-Geometrie edit↔locked war damals **worstΔ 0 px**;
+  seit den Resize-Controls gilt das nur noch vertikal (siehe Abschnitt 3).
 - **Datei-Drop live verifiziert** mit echtem `dragstart` auf der
   File-Explorer-Zeile (Obsidians eigener Handler füllt `dragManager`, nichts
   gefälscht): `other/Becker_Westerholt.pdf` → `file`-Tool mit exaktem Pfad,
@@ -262,6 +315,39 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Rückdrags stellen den Ausgangszustand wieder her. Geprüft in List-, Tabs-
   und Folder-View; in allen dreien ist der globale `Add button` unter einem
   Grid verschwunden und bei Flow-Kategorien erhalten.
+- **Variables Grid live verifiziert** (isolierte Obsidian 1.13.7, scratch
+  `--user-data-dir`, Snapshot von `ocap-smoke`, **Legacy-Fixture ohne
+  `rows`/`columns`**, CDP mit echtem Maus-Input, Fehlermonitore aktiv:
+  **0 Fehler** über den ganzen Lauf):
+  - Legacy-Daten rendern als **4×4 / 16 Zellen**, Buttons auf ihren
+    gespeicherten Slots; die Kategorie bekommt dabei **keine** Größenfelder.
+  - `+ column` 4×4 → 4×5 verschiebt B von Slot 5 auf 6 und P von 15 auf 18 —
+    beide bleiben in **derselben Zeile/Spalte**. `+ row` lässt alles stehen.
+  - Bei 5×5 sind beide `+` deaktiviert; bei 1×1 beide `−`.
+  - Leere äußere Reihe/Spalte verschwindet **ohne** Nachfrage; belegte fragt
+    (`Remove the right column? 1 tool will be deleted.` mit Namensliste),
+    **Cancel lässt das Grid byte-gleich**, `Remove` schneidet **nur** diesen
+    Streifen ab.
+  - Neue Grid-Kategorie über das echte Modal: gespeichert als
+    `rows: 1, columns: 3`, gerendert als 3 Zellen mit 3 `+`.
+  - Locked: **0 Resize-Streifen, 0 `+`**. Zellhöhen locked ↔ edit identisch
+    (dy = dh = 0 px), Breite um die Rinne schmaler (siehe Abschnitt 3).
+  - DnD in **4×5, 3×5 und 2×4**: Move und Swap korrekt, Zell-Geometrie
+    während des Drags per-Frame gemessen **0 px** Abweichung.
+  - Slot-`+` in einer **neu hinzugefügten Spalte** legt das Tool genau dort an
+    (Slot 4 = Zeile 0, Spalte 4).
+  - Datei-Drop (`other/Becker_Westerholt.pdf`, echter `dragstart` auf der
+    File-Explorer-Zeile) auf eine **erst durch den Resize entstandene** Zelle
+    (Slot 9 = Zeile 1, Spalte 4) erzeugt das `file`-Tool dort; genau eine Zelle
+    leuchtet, beim Verlassen wieder aus; eine **belegte** Zelle akzeptiert den
+    `dragover` weiterhin nicht.
+  - Variant-Größen sind unabhängig: `VarA` auf 2×3 verkleinert, `VarB` blieb
+    byte-gleich 4×4 und wurde danach eigenständig auf 4×5 gebracht
+    (B2 5 → 6, gleiche Zeile/Spalte). Legacy-Kategorie unberührt.
+  - `Make dynamic…` über das echte Kontextmenü: die erzeugte Variant trägt
+    `rows: 2, columns: 4`, die Kategorie danach **keine** Größe mehr. `Copy`
+    kopiert die Größe mit.
+  - Nach vollem Window-Reload: Dimensionen und alle Buttons unverändert.
 - Der Condition-Editor startet mit `File name` (verständlichste Regel) und
   erklärt `File name` und `View type` mit einer Hint-Zeile — `View type` wurde
   im Nutzertest als „Node Type" missverstanden.
@@ -295,9 +381,23 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
    - `.js` außerhalb des Script-Ordners wird zu `Open file` plus Hinweis;
      `Run script` kann es nicht adressieren (Pfade relativ zum Ordner, kein
      `../`).
-8. Bewusst nicht umgesetzt (kommt später): per-Category-Lock, „Pin active
-   dynamic variant", Toggle-Tools, Slot-Hotkeys, Icon-Picker, Import/Export,
-   ZotFlow-Annotationen auf Slots.
+8. Restpunkte des Variable-Grid-Pass:
+   - Entfernt werden nur die **äußerste rechte Spalte** und die **unterste
+     Reihe**; kein Einfügen/Löschen in der Mitte, oben oder links.
+   - Eine bestätigte Entfernung **löscht** die Tools des Streifens (siehe
+     Abschnitt 2) — kein Undo außer „nicht bestätigen".
+   - Der Edit-Mode ist horizontal um die Control-Rinne schmaler als locked
+     (Abschnitt 3); bewusst, aber sichtbar.
+   - Die Dimension einer **dynamischen** Kategorie hängt an der Variant, also
+     kann ein Kontextwechsel im locked Mode die Panelhöhe ändern, wenn zwei
+     Variants unterschiedlich groß sind. Gewollt — eine Variant ist ein
+     vollständiges eigenes Grid.
+   - `flow → grid` wählt jetzt die kleinste passende Größe (ab 1×3, bis 5×5)
+     und verweigert erst ab **26** Buttons (vorher 17).
+9. Bewusst nicht umgesetzt (kommt später): Tool-/Button-Library und die
+   Trennung von Button-Definition und Placement, Panel-Templates, JSON
+   Import/Export, per-Category-Lock, „Pin active dynamic variant",
+   Toggle-Tools, Slot-Hotkeys, Icon-Picker, ZotFlow-Annotationen auf Slots.
 
 ## 7. Arbeitsregel für neue Sessions
 

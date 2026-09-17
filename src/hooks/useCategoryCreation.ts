@@ -6,6 +6,7 @@ import type { CategoryConfig } from '@/types';
 import type { ButtonCondition } from '@/types/conditions';
 import {
     DEFAULT_CATEGORY_LAYOUT,
+    DEFAULT_GRID_DIMENSIONS,
     type CategoryLayout,
 } from '@/utils/categoryGrid';
 
@@ -45,6 +46,14 @@ export function useCategoryCreation() {
                     // as flow stay byte-identical to pre-palette data.
                     if (layout !== DEFAULT_CATEGORY_LAYOUT) {
                         newCategory.layout = layout;
+                    }
+                    if (layout === 'grid') {
+                        // A NEW grid starts small and is grown from its own
+                        // edge controls. Writing the size explicitly is what
+                        // separates it from legacy data, where an absent size
+                        // still means the historical 4x4.
+                        newCategory.rows = DEFAULT_GRID_DIMENSIONS.rows;
+                        newCategory.columns = DEFAULT_GRID_DIMENSIONS.columns;
                     }
                     plugin.settings.categories.push(newCategory);
                     await plugin.saveSettings();

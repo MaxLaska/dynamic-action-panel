@@ -15,7 +15,7 @@ import type { ButtonCondition } from '@/types/conditions';
 import type { OCAPContextSnapshot } from '@/context/OCAPContext';
 import { hasConditions } from '@/context/conditions';
 import { projectCategoriesForContext } from '@/context/panelProjection';
-import { placeButtonsOnGrid } from '@/utils/categoryGrid';
+import { placeButtonsOnGrid, readGridDimensions } from '@/utils/categoryGrid';
 
 function context(overrides: Partial<OCAPContextSnapshot> = {}): OCAPContextSnapshot {
     return {
@@ -75,7 +75,9 @@ function staticGrid(buttons: ButtonConfig[], conditions?: ButtonCondition): Cate
 function renderedSlots(categories: CategoryConfig[], categoryId = 'grid'): (string | null)[] {
     const category = categories.find((c) => c.id === categoryId);
     if (!category) return [];
-    return placeButtonsOnGrid(category.buttons).slots.map((b) => b?.id ?? null);
+    return placeButtonsOnGrid(category.buttons, readGridDimensions(category)).slots.map(
+        (b) => b?.id ?? null
+    );
 }
 
 describe('Case A: static grid category', () => {

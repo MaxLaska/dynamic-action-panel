@@ -15,6 +15,8 @@ export interface GridSlotFileDrop {
 interface GridSlotCellProps {
     categoryId: string;
     slot: number;
+    /** Column count of THIS grid — the slot index is read against it. */
+    columns: number;
     /** Registers the slot as a drop target (edit mode only). */
     droppableEnabled: boolean;
     /** The pointer currently targets this slot during a drag. */
@@ -75,10 +77,10 @@ const SlotAddButton: React.FC<{ label: string; onClick: () => void }> = ({
 };
 
 /**
- * One cell of the 4x4 grid — filled or empty.
+ * One cell of the grid — filled or empty.
  *
  * Every cell is always rendered and is always the SAME component, keyed by its
- * slot: that keeps the 16 droppable cell nodes mounted across variant
+ * slot: that keeps the droppable cell nodes mounted across variant
  * switches, so their dnd-kit registrations and measured rects stay valid no
  * matter how the occupancy changes. (Mounting droppables per empty slot — the
  * previous model — made a drag started right after a variant switch race the
@@ -98,6 +100,7 @@ const SlotAddButton: React.FC<{ label: string; onClick: () => void }> = ({
 export const GridSlotCell: React.FC<GridSlotCellProps> = ({
     categoryId,
     slot,
+    columns,
     droppableEnabled,
     isDropTarget,
     showOutline,
@@ -169,12 +172,12 @@ export const GridSlotCell: React.FC<GridSlotCellProps> = ({
 
     const emptyTooltip = addable
         ? tWithParams('grid_slot_add_tooltip', {
-              row: slotRow(slot) + 1,
-              column: slotColumn(slot) + 1,
+              row: slotRow(slot, columns) + 1,
+              column: slotColumn(slot, columns) + 1,
           })
         : tWithParams('grid_slot_empty_tooltip', {
-              row: slotRow(slot) + 1,
-              column: slotColumn(slot) + 1,
+              row: slotRow(slot, columns) + 1,
+              column: slotColumn(slot, columns) + 1,
           });
 
     return (

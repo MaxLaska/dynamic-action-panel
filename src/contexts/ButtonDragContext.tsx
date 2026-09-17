@@ -54,6 +54,7 @@ import {
 } from '@/utils/categoryGrid';
 import {
     applySlotIdsToGridCategory,
+    gridDimensionsOf,
     type ResolvedGridView,
 } from '@/utils/categoryVariants';
 import type { VariantSelectionMap } from '@/context/panelProjection';
@@ -133,7 +134,8 @@ const disabledButtonContextValue: ButtonDragContextValue = {
     isDragging: false,
     activeButtonId: null,
     getOrderedButtons: (category) => [...category.buttons].sort((a, b) => a.order - b.order),
-    getGridSlotButtons: (category) => placeButtonsOnGrid(category.buttons).slots,
+    getGridSlotButtons: (category) =>
+        placeButtonsOnGrid(category.buttons, gridDimensionsOf(category, null)).slots,
     dropTargetSlot: null,
     registerCategoryHover: () => {},
 };
@@ -189,12 +191,20 @@ function resolveGridDropTarget(
 
     const slotTarget = parseSlotDroppableId(overId);
     if (slotTarget) {
-        target = layouts[slotTarget.categoryId] === 'grid' ? slotTarget : null;
+        // Each grid has its own slot count now, so the cell must still exist
+        // in the live state of exactly that container.
+        const slotCount = items[slotTarget.categoryId]?.length ?? 0;
+        target =
+            layouts[slotTarget.categoryId] === 'grid' &&
+            isValidSlotIndex(slotTarget.slot, slotCount)
+                ? slotTarget
+                : null;
     } else {
         const categoryId = findContainerForButtonId(overId, items);
         if (categoryId && layouts[categoryId] === 'grid') {
-            const slot = items[categoryId]!.indexOf(overId);
-            target = isValidSlotIndex(slot) ? { categoryId, slot } : null;
+            const slots = items[categoryId]!;
+            const slot = slots.indexOf(overId);
+            target = isValidSlotIndex(slot, slots.length) ? { categoryId, slot } : null;
         }
     }
 

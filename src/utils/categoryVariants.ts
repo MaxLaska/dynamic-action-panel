@@ -3,11 +3,12 @@
 //
 // Product model (see docs/ocap/DECISIONS.md):
 // - a grid category is either STATIC or DYNAMIC;
-// - a static grid category has one full 4x4 grid in `category.buttons` and no
-//   context behavior at all;
+// - a static grid category has one full grid in `category.buttons`, sized by
+//   its own `rows`/`columns`, and no context behavior at all;
 // - a dynamic grid category is ONE stable container holding several COMPLETE
 //   variants (`category.variants`); each variant owns a full, independent grid
-//   plus exactly one trigger condition — or it is the single fallback variant;
+//   — its own size included — plus exactly one trigger condition, or it is the
+//   single fallback variant;
 // - at runtime exactly one variant renders: the first (in array order) whose
 //   trigger matches, else the fallback, else none (category hidden in locked
 //   mode). Variants are never merged, inherited from or overlaid;
@@ -23,14 +24,23 @@ import type { ButtonCondition } from '@/types/conditions';
 import type { OCAPContextSnapshot } from '@/context/OCAPContext';
 import { evaluateCondition, isValidCondition } from '@/context/conditions';
 import {
-    GRID_SLOT_COUNT,
+    LEGACY_GRID_DIMENSIONS,
+    MAX_GRID_COLUMNS,
+    MAX_GRID_ROWS,
     buttonsInOrder,
+    clampGridDimensions,
+    fitGridDimensions,
     findFirstFreeSlot,
     getCategoryLayout,
+    gridSlotCount,
     isGridCategory,
     isValidSlotIndex,
     placeButtonsOnGrid,
+    readGridDimensions,
+    resizeGridButtons,
+    sameGridDimensions,
     type CategoryLayout,
+    type GridDimensions,
 } from '@/utils/categoryGrid';
 
 // --- Basic accessors ---------------------------------------------------------
@@ -64,6 +74,35 @@ export function isStaticGridCategory(
     category: Pick<CategoryConfig, 'layout' | 'variants'>
 ): boolean {
     return isGridCategory(category) && !Array.isArray(category.variants);
+}
+
+/**
+ * Dimensions of ONE grid of a category: the variant's own when a variant is
+ * addressed, the category's own for a static grid.
+ *
+ * This is the single answer to "where does the size live": a variant IS a
+ * complete independent grid (see DECISIONS.md), so its size belongs to it and
+ * resizing one variant can never touch another. A static grid category has
+ * exactly one grid, so its size sits on the category itself. Absent fields
+ * read as the legacy 4x4 in both cases.
+ */
+export function gridDimensionsOf(
+    category: CategoryConfig,
+    variantId: string | null
+): GridDimensions {
+    if (variantId !== null) {
+        const variant = findVariant(category, variantId);
+        if (variant) {
+            return readGridDimensions(variant);
+        }
+    }
+    if (isDynamicCategory(category)) {
+        const first = getCategoryVariants(category)[0];
+        if (first) {
+            return readGridDimensions(first);
+        }
+    }
+    return readGridDimensions(category);
 }
 
 export function findVariant(
@@ -171,28 +210,38 @@ export interface ResolvedGridView {
     /** Variant whose grid is shown; null for static grids and for 'none'. */
     variantId: string | null;
     reason: GridViewReason;
-    /** Always GRID_SLOT_COUNT entries; index === slot. */
+    /** Dimensions of exactly this grid (the variant's own, or the static one). */
+    dimensions: GridDimensions;
+    /** Always `gridSlotCount(dimensions)` entries; index === slot. */
     slots: (ButtonConfig | null)[];
     /** Buttons that could not be placed. Never dropped, rendered separately. */
     overflow: ButtonConfig[];
 }
 
-function emptyView(reason: GridViewReason): ResolvedGridView {
+function emptyView(reason: GridViewReason, dimensions: GridDimensions): ResolvedGridView {
     return {
         variantId: null,
         reason,
-        slots: new Array<ButtonConfig | null>(GRID_SLOT_COUNT).fill(null),
+        dimensions,
+        slots: new Array<ButtonConfig | null>(gridSlotCount(dimensions)).fill(null),
         overflow: [],
     };
 }
 
 function viewOfButtons(
     buttons: readonly ButtonConfig[],
+    dimensions: GridDimensions,
     variantId: string | null,
     reason: GridViewReason
 ): ResolvedGridView {
-    const placement = placeButtonsOnGrid(buttons);
-    return { variantId, reason, slots: placement.slots, overflow: placement.overflow };
+    const placement = placeButtonsOnGrid(buttons, dimensions);
+    return {
+        variantId,
+        reason,
+        dimensions,
+        slots: placement.slots,
+        overflow: placement.overflow,
+    };
 }
 
 /**
@@ -205,15 +254,25 @@ export function resolveGridViewForVariant(
     variantId: string | null
 ): ResolvedGridView {
     if (!isDynamicCategory(category)) {
-        return viewOfButtons(category.buttons, null, 'static');
+        return viewOfButtons(
+            category.buttons,
+            readGridDimensions(category),
+            null,
+            'static'
+        );
     }
     const variants = getCategoryVariants(category);
     const variant =
         (variantId !== null ? findVariant(category, variantId) : null) ?? variants[0] ?? null;
     if (!variant) {
-        return emptyView('selected');
+        return emptyView('selected', readGridDimensions(category));
     }
-    return viewOfButtons(variant.buttons, variant.id, 'selected');
+    return viewOfButtons(
+        variant.buttons,
+        readGridDimensions(variant),
+        variant.id,
+        'selected'
+    );
 }
 
 /** Grid view for the current context (locked mode). */
@@ -222,13 +281,23 @@ export function resolveGridViewForContext(
     context: OCAPContextSnapshot
 ): ResolvedGridView {
     if (!isDynamicCategory(category)) {
-        return viewOfButtons(category.buttons, null, 'static');
+        return viewOfButtons(
+            category.buttons,
+            readGridDimensions(category),
+            null,
+            'static'
+        );
     }
     const resolution = resolveDynamicCategoryVariant(category, context);
     if (!resolution.variant) {
-        return emptyView('none');
+        return emptyView('none', gridDimensionsOf(category, null));
     }
-    return viewOfButtons(resolution.variant.buttons, resolution.variant.id, resolution.reason);
+    return viewOfButtons(
+        resolution.variant.buttons,
+        readGridDimensions(resolution.variant),
+        resolution.variant.id,
+        resolution.reason
+    );
 }
 
 /**
@@ -313,20 +382,39 @@ export interface VariantDraft {
     fallback?: boolean;
 }
 
-function makeVariant(draft: VariantDraft, buttons: ButtonConfig[]): CategoryVariant {
+/**
+ * Build a variant. `dimensions` is written only when given: passing null keeps
+ * the variant free of the size fields, which is what the legacy migrations
+ * want — absent fields already mean the 4x4 they produced, so nothing has to
+ * be rewritten in stored data.
+ */
+function makeVariant(
+    draft: VariantDraft,
+    buttons: ButtonConfig[],
+    dimensions: GridDimensions | null
+): CategoryVariant {
+    const size = dimensions === null ? {} : clampGridDimensions(dimensions);
     if (draft.fallback === true) {
-        return { id: draft.id, name: draft.name, fallback: true, buttons };
+        return { id: draft.id, name: draft.name, fallback: true, ...size, buttons };
     }
     return {
         id: draft.id,
         name: draft.name,
         ...(draft.trigger !== undefined ? { trigger: draft.trigger } : {}),
+        ...size,
         buttons,
     };
 }
 
-/** Append a new (empty) variant. Returns the category unchanged if the draft
- * would introduce a second fallback. */
+/**
+ * Append a new (empty) variant. Returns the category unchanged if the draft
+ * would introduce a second fallback.
+ *
+ * The new variant starts at the dimensions the category's grid currently has:
+ * a variant is another state of the SAME panel, so an added variant that
+ * suddenly shrank to the "new grid" default would be a surprise, not a
+ * default. It is freely resizable afterwards, independently of its siblings.
+ */
 export function addVariant(
     category: CategoryConfig,
     draft: VariantDraft
@@ -336,7 +424,7 @@ export function addVariant(
     }
     return withVariants(category, [
         ...getCategoryVariants(category),
-        makeVariant(draft, []),
+        makeVariant(draft, [], gridDimensionsOf(category, null)),
     ]);
 }
 
@@ -368,7 +456,13 @@ export function updateVariant(
                 trigger: patch.fallback ? undefined : patch.trigger,
                 fallback: patch.fallback,
             },
-            variant.buttons
+            variant.buttons,
+            // Editing name/trigger must never resize the grid: an untouched
+            // variant keeps its stored fields exactly as they are (absent
+            // stays absent, so legacy data is not rewritten either).
+            variant.rows === undefined && variant.columns === undefined
+                ? null
+                : readGridDimensions(variant)
         );
     });
     return withVariants(category, variants);
@@ -389,7 +483,8 @@ export function removeVariant(
  * new variant id and new button ids, so nothing is shared with the source and
  * a later edit of the copy can never leak into the original. The copy is
  * inserted directly below its source and is never the fallback (the draft
- * decides its name and trigger).
+ * decides its name and trigger). The source's grid DIMENSIONS are copied as
+ * well — a copy that changed shape would not be a copy.
  */
 export function duplicateVariant(
     category: CategoryConfig,
@@ -412,7 +507,10 @@ export function duplicateVariant(
             ...button,
             id: newButtonId(buttonIndex),
             actions: button.actions?.map((action) => ({ ...action })) ?? [],
-        }))
+        })),
+        source.rows === undefined && source.columns === undefined
+            ? null
+            : readGridDimensions(source)
     );
     const next = [...variants];
     next.splice(index + 1, 0, copy);
@@ -448,18 +546,29 @@ export function moveVariant(
 
 /**
  * Turn a STATIC grid category into a DYNAMIC one. The category's existing full
- * grid becomes the first variant exactly as it is (same buttons, same slots),
- * so no button is lost and nothing moves. The draft decides the variant's
- * name and trigger (or fallback).
+ * grid becomes the first variant exactly as it is (same buttons, same slots,
+ * same DIMENSIONS), so no button is lost and nothing moves or resizes. The
+ * draft decides the variant's name and trigger (or fallback).
+ *
+ * The size moves WITH the grid: from here on every variant owns its own, so
+ * leaving a stale copy on the category would be a second source of truth.
  */
 export function convertStaticGridToDynamic(
     category: CategoryConfig,
     draft: VariantDraft
 ): CategoryConfig {
+    const hadDimensions = category.rows !== undefined || category.columns !== undefined;
+    const { rows: _rows, columns: _columns, ...rest } = category;
     return {
-        ...category,
+        ...rest,
         buttons: [],
-        variants: [makeVariant(draft, category.buttons)],
+        variants: [
+            makeVariant(
+                draft,
+                category.buttons,
+                hadDimensions ? readGridDimensions(category) : null
+            ),
+        ],
     };
 }
 
@@ -519,9 +628,14 @@ export function addButtonToGrid(
         variantId = first.id;
     }
     const existing = gridTargetButtons(category, variantId);
-    const occupancy = placeButtonsOnGrid(existing).slots.map((b) => b?.id ?? null);
+    const dimensions = gridDimensionsOf(category, variantId);
+    const occupancy = placeButtonsOnGrid(existing, dimensions).slots.map(
+        (b) => b?.id ?? null
+    );
     const requested =
-        isValidSlotIndex(targetSlot) && occupancy[targetSlot] === null ? targetSlot : null;
+        isValidSlotIndex(targetSlot, occupancy.length) && occupancy[targetSlot] === null
+            ? targetSlot
+            : null;
     const slot = requested ?? findFirstFreeSlot(occupancy);
     if (slot === null) {
         return null;
@@ -572,8 +686,10 @@ export function replaceButtonInGridCategory(
 /**
  * Write a dragged slot assignment back into the stored category.
  *
- * `slotIds` is the live 4x4 drag state of the ONE grid on screen: the static
+ * `slotIds` is the live drag state of the ONE grid on screen: the static
  * grid, or the variant currently selected in the editor (`targetVariantId`).
+ * Its length IS that grid's slot count — the drag state is built from the same
+ * resolved view the renderer uses — so no dimension has to be re-derived here.
  * Buttons that arrived from another category join that on-screen grid. Every
  * variant that is NOT on screen is left completely untouched — dragging in
  * "Source" can never move anything in "Topic".
@@ -594,9 +710,13 @@ export function applySlotIdsToGridCategory(
     const stored = gridTargetButtons(category, targetVariantId);
     const storedIds = new Set(stored.map((button) => button.id));
 
+    const slotCount = Math.min(
+        slotIds.length,
+        gridSlotCount(gridDimensionsOf(category, targetVariantId))
+    );
     const placed: ButtonConfig[] = [];
     const claimed = new Set<string>();
-    for (let slot = 0; slot < GRID_SLOT_COUNT; slot++) {
+    for (let slot = 0; slot < slotCount; slot++) {
         const id = slotIds[slot] ?? null;
         if (id === null) continue;
         const button = buttonsById.get(id);
@@ -622,6 +742,113 @@ export function applySlotIdsToGridCategory(
     return targetVariantId === null
         ? { ...category, buttons }
         : replaceVariantButtons(category, targetVariantId, buttons);
+}
+
+// --- Resizing one grid --------------------------------------------------------
+
+/** Which edge of a grid a resize step addresses. */
+export type GridResizeEdge = 'row' | 'column';
+export type GridResizeDirection = 1 | -1;
+
+export interface GridResizePlan {
+    /** The category as it would look afterwards. */
+    category: CategoryConfig;
+    /** Dimensions before / after, for the UI wording. */
+    from: GridDimensions;
+    to: GridDimensions;
+    /**
+     * Tools standing on the stripe that would be cut away. Empty for every
+     * growth and for shrinking into empty space — the caller asks for a
+     * confirmation exactly when this is non-empty.
+     */
+    removed: ButtonConfig[];
+}
+
+/**
+ * Resize the ONE grid the user is editing to explicit dimensions.
+ *
+ * Writes the size onto the grid that owns it (the variant, or the category for
+ * a static grid) and remaps every button coordinate-aware, so growing never
+ * reflows the existing arrangement and shrinking removes exactly the outer
+ * stripe. Returns null when the category has no addressable grid or when the
+ * requested size equals the current one.
+ *
+ * Nothing is persisted here: the result is a PLAN. The caller commits it —
+ * after a confirmation when `removed` is non-empty.
+ */
+export function planGridResize(
+    category: CategoryConfig,
+    variantId: string | null,
+    next: GridDimensions
+): GridResizePlan | null {
+    if (!isGridCategory(category)) {
+        return null;
+    }
+    const to = clampGridDimensions(next);
+    const targetVariant =
+        variantId !== null
+            ? findVariant(category, variantId)
+            : isDynamicCategory(category)
+              ? (getCategoryVariants(category)[0] ?? null)
+              : null;
+    if (isDynamicCategory(category) && !targetVariant) {
+        return null;
+    }
+
+    const from = readGridDimensions(targetVariant ?? category);
+    if (sameGridDimensions(from, to)) {
+        return null;
+    }
+
+    const stored = targetVariant ? targetVariant.buttons : category.buttons;
+    const resized = resizeGridButtons(stored, from, to);
+
+    const nextCategory: CategoryConfig = targetVariant
+        ? withVariants(
+              category,
+              getCategoryVariants(category).map((variant) =>
+                  variant.id === targetVariant.id
+                      ? {
+                            ...variant,
+                            rows: to.rows,
+                            columns: to.columns,
+                            buttons: resized.buttons,
+                        }
+                      : variant
+              )
+          )
+        : { ...category, rows: to.rows, columns: to.columns, buttons: resized.buttons };
+
+    return { category: nextCategory, from, to, removed: resized.removed };
+}
+
+/**
+ * One step of the grid resize controls: add or remove the outermost row /
+ * column. Only the right column and the bottom row are addressable — a
+ * predictable model beats "insert anywhere" for a panel this small — and the
+ * 1x1 .. 5x5 bounds are enforced here, so a control at its limit simply has
+ * nothing to do.
+ */
+export function planGridResizeStep(
+    category: CategoryConfig,
+    variantId: string | null,
+    edge: GridResizeEdge,
+    direction: GridResizeDirection
+): GridResizePlan | null {
+    const current = gridDimensionsOf(category, variantId);
+    const next =
+        edge === 'row'
+            ? { rows: current.rows + direction, columns: current.columns }
+            : { rows: current.rows, columns: current.columns + direction };
+    if (
+        next.rows < 1 ||
+        next.columns < 1 ||
+        next.rows > MAX_GRID_ROWS ||
+        next.columns > MAX_GRID_COLUMNS
+    ) {
+        return null;
+    }
+    return planGridResize(category, variantId, next);
 }
 
 // --- Lifting per-button conditions (legacy flow data) -------------------------
@@ -800,15 +1027,24 @@ export function composeFullVariant(
     overlay: readonly ButtonConfig[],
     variantId: string,
     name: string,
-    trigger: ButtonCondition
+    trigger: ButtonCondition,
+    /**
+     * Grid of the composed variant. `null` writes no size fields at all, which
+     * is what the v2 -> v3 settings migration needs: absent fields already mean
+     * the 4x4 those variants were, so stored data stays byte-identical.
+     */
+    dimensions: GridDimensions | null = null
 ): CategoryVariant {
-    const baseOccupied = placeButtonsOnGrid(base).slots.map((button) => button !== null);
+    const grid = dimensions ?? LEGACY_GRID_DIMENSIONS;
+    const baseOccupied = placeButtonsOnGrid(base, grid).slots.map(
+        (button) => button !== null
+    );
     const baseCopies = base.map((button) => ({
         ...button,
         id: derivedButtonId(variantId, button.id),
         actions: button.actions?.map((action) => ({ ...action })) ?? [],
     }));
-    const overlayPlacement = placeButtonsOnGrid(overlay, { blocked: baseOccupied });
+    const overlayPlacement = placeButtonsOnGrid(overlay, grid, { blocked: baseOccupied });
     const overlayButtons: ButtonConfig[] = [];
     overlayPlacement.slots.forEach((button, slot) => {
         if (button) overlayButtons.push({ ...button, slot });
@@ -818,6 +1054,7 @@ export function composeFullVariant(
         id: variantId,
         name,
         trigger,
+        ...(dimensions === null ? {} : clampGridDimensions(dimensions)),
         buttons: [...baseCopies, ...overlayButtons].map((button, order) => ({
             ...button,
             order,
@@ -829,12 +1066,14 @@ export function composeFullVariant(
 export function composeFallbackVariant(
     base: readonly ButtonConfig[],
     variantId: string,
-    name = 'Default'
+    name = 'Default',
+    dimensions: GridDimensions | null = null
 ): CategoryVariant {
     return {
         id: variantId,
         name,
         fallback: true,
+        ...(dimensions === null ? {} : clampGridDimensions(dimensions)),
         buttons: base.map((button, order) => ({
             ...button,
             order,
@@ -852,7 +1091,8 @@ export function composeFallbackVariant(
 export function composeVariantsFromConditionGroups(
     base: readonly ButtonConfig[],
     groups: readonly ConditionGroup[],
-    idPrefix: string
+    idPrefix: string,
+    dimensions: GridDimensions | null = null
 ): CategoryVariant[] {
     const variants: CategoryVariant[] = groups.map((group, index) =>
         composeFullVariant(
@@ -860,22 +1100,28 @@ export function composeVariantsFromConditionGroups(
             group.buttons,
             `${idPrefix}-var-${index + 1}`,
             group.name,
-            group.condition
+            group.condition,
+            dimensions
         )
     );
     if (base.length > 0) {
-        variants.push(composeFallbackVariant(base, `${idPrefix}-fallback`));
+        variants.push(
+            composeFallbackVariant(base, `${idPrefix}-fallback`, 'Default', dimensions)
+        );
     }
     return variants;
 }
 
 export function convertCategoryToGrid(category: CategoryConfig): GridConversionResult {
-    if (category.buttons.length > GRID_SLOT_COUNT) {
+    // The new grid is sized to actually hold the flow list — starting at the
+    // default width and growing only as far as the buttons require.
+    const dimensions = fitGridDimensions(category.buttons.length);
+    if (!dimensions) {
         return {
             ok: false,
             reason: 'too_many_buttons',
             buttonCount: category.buttons.length,
-            slotCount: GRID_SLOT_COUNT,
+            slotCount: MAX_GRID_ROWS * MAX_GRID_COLUMNS,
         };
     }
 
@@ -888,13 +1134,30 @@ export function convertCategoryToGrid(category: CategoryConfig): GridConversionR
     const { base, groups } = liftButtonConditions(positioned);
     if (groups.length === 0) {
         // No conditional tools: a plain static grid.
-        return { ok: true, category: { ...category, layout: 'grid', buttons: base } };
+        return {
+            ok: true,
+            category: {
+                ...category,
+                layout: 'grid',
+                rows: dimensions.rows,
+                columns: dimensions.columns,
+                buttons: base,
+            },
+        };
     }
 
-    const variants = composeVariantsFromConditionGroups(base, groups, category.id);
+    // Every composed variant holds the base grid PLUS its group, so the size
+    // has to cover both — `category.buttons.length` is that upper bound.
+    const variants = composeVariantsFromConditionGroups(
+        base,
+        groups,
+        category.id,
+        dimensions
+    );
+    const { rows: _rows, columns: _columns, ...rest } = category;
     return {
         ok: true,
-        category: { ...category, layout: 'grid', buttons: [], variants },
+        category: { ...rest, layout: 'grid', buttons: [], variants },
     };
 }
 
@@ -904,7 +1167,7 @@ export function convertCategoryToGrid(category: CategoryConfig): GridConversionR
  * matches what the user last saw.
  */
 export function convertStaticGridToFlow(category: CategoryConfig): CategoryConfig {
-    const placement = placeButtonsOnGrid(category.buttons);
+    const placement = placeButtonsOnGrid(category.buttons, readGridDimensions(category));
     const ordered: ButtonConfig[] = [
         ...placement.slots.filter((b): b is ButtonConfig => b !== null),
         ...placement.overflow,
@@ -913,7 +1176,8 @@ export function convertStaticGridToFlow(category: CategoryConfig): CategoryConfi
         const { slot: _slot, ...rest } = button;
         return { ...rest, order: index };
     });
-    const { layout: _layout, ...categoryRest } = category;
+    // A flow category has no grid, so it carries no grid dimensions either.
+    const { layout: _layout, rows: _rows, columns: _columns, ...categoryRest } = category;
     return { ...categoryRest, layout: 'flow', buttons };
 }
 

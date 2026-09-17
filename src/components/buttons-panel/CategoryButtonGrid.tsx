@@ -14,8 +14,9 @@ import { containerDroppableId } from '@/utils/buttonDragItems';
 import { useButtonDragOptional } from '@/contexts/ButtonDragContext';
 import { ButtonDragEmptySlot } from '@/components/buttons-panel/ButtonDragEmptySlot';
 import { GridSlotCell } from '@/components/buttons-panel/GridSlotCell';
+import { GridResizeControls } from '@/components/buttons-panel/GridResizeControls';
 import { VariantSelector } from '@/components/buttons-panel/VariantSelector';
-import { GRID_COLUMNS, isGridCategory } from '@/utils/categoryGrid';
+import { isGridCategory } from '@/utils/categoryGrid';
 import {
     useCategoryVariants,
     useGridViewResolution,
@@ -23,10 +24,13 @@ import {
 import {
     isDynamicCategory,
     resolveDynamicCategoryVariant,
+    type GridResizeDirection,
+    type GridResizeEdge,
 } from '@/utils/categoryVariants';
 import { useOCAPContext } from '@/hooks/useOCAPContext';
 import { useButtonCreation } from '@/hooks/useButtonCreation';
 import { useSlotFileDrop } from '@/hooks/useSlotFileDrop';
+import { gridResizeAvailability, useGridResize } from '@/hooks/useGridResize';
 import type { ContextStatus } from '@/components/shared/ContextStatusBadge';
 
 /**
@@ -99,6 +103,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     // variant from the same (normalized) selection the grid renders from.
     const { createButton } = useButtonCreation();
     const { canAcceptFileDrag, dropFileOnSlot } = useSlotFileDrop();
+    const { resizeGrid } = useGridResize();
     const selectionEntry = isDynamic ? (selection[category.id] ?? null) : null;
     const runtimeResolution = React.useMemo(
         () =>
@@ -109,10 +114,18 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     );
 
     /**
-     * Grid layout: slot occupancy of all GRID_SLOT_COUNT cells. During a drag
-     * this comes from the live drag state so the preview is positional too;
-     * otherwise it is the resolved grid. An empty slot simply stays empty —
-     * which is the whole point of the grid: positions never shift.
+     * Dimensions of exactly the grid on screen — the selected variant's own in
+     * a dynamic category, the category's own in a static one. During a drag
+     * the live slot array is authoritative for the cell COUNT (it was built
+     * from this same view), so the two can never disagree mid-drag.
+     */
+    const dimensions = resolution.dimensions;
+
+    /**
+     * Grid layout: slot occupancy of every cell. During a drag this comes from
+     * the live drag state so the preview is positional too; otherwise it is
+     * the resolved grid. An empty slot simply stays empty — which is the whole
+     * point of the grid: positions never shift.
      */
     const gridSlots = React.useMemo(() => {
         if (!isGrid) return null;
@@ -180,12 +193,12 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
 
         // Creation affordances belong to empty cells in edit mode only, and
         // they vanish while a button drag is in flight (the live preview is
-        // then what the cell has to show). A full 4x4 grid therefore offers no
-        // `+` at all — there is no way to aim a 17th tool at it.
+        // then what the cell has to show). A FULL grid therefore offers no `+`
+        // at all — the way in is then to add a column or a row.
         const creationEnabled = enableEditMode && !isDragging;
 
         // Every cell is the same keyed component whether filled or empty, so
-        // the 16 droppable cell nodes survive variant switches (see
+        // the droppable cell nodes survive variant switches (see
         // GridSlotCell). The target cell keeps its ring even when the live
         // preview already fills it — "this is where it lands" stays explicit.
         const cells = gridSlots.map((button, slot) => (
@@ -193,6 +206,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                 key={`slot-${slot}`}
                 categoryId={category.id}
                 slot={slot}
+                columns={dimensions.columns}
                 droppableEnabled={sortableEnabled}
                 isDropTarget={dropTargetSlot === slot}
                 showOutline={showSlotOutlines}
@@ -221,14 +235,51 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
             </div>
         );
 
-        const body = (
+        const gridEl = (
             <div
                 ref={setRefs}
                 className={gridClassName}
-                style={{ '--ocap-grid-columns': GRID_COLUMNS } as React.CSSProperties}
+                style={{ '--ocap-grid-columns': dimensions.columns } as React.CSSProperties}
             >
                 {cells}
             </div>
+        );
+
+        // Edit mode frames the grid with its resize controls: columns to the
+        // right, rows below. They are siblings of the slot grid, never cells
+        // of it (see GridResizeControls), and they are absent in locked mode,
+        // where the panel is pure content.
+        //
+        // The frame stays MOUNTED while a drag is in flight and only refuses
+        // to act: unmounting it would hand its gutter back to the grid and
+        // widen every cell mid-drag — exactly the moving-slot-rect problem the
+        // definite row track solves vertically.
+        const availability = gridResizeAvailability(dimensions);
+        const onResize = isDragging
+            ? undefined
+            : (edge: GridResizeEdge, direction: GridResizeDirection) =>
+                  resizeGrid(category, edge, direction);
+
+        const body = enableEditMode ? (
+            <div className="ocap-grid-frame">
+                <div className="ocap-grid-frame-main">
+                    {gridEl}
+                    <GridResizeControls
+                        edge="column"
+                        dimensions={dimensions}
+                        availability={availability}
+                        onResize={onResize}
+                    />
+                </div>
+                <GridResizeControls
+                    edge="row"
+                    dimensions={dimensions}
+                    availability={availability}
+                    onResize={onResize}
+                />
+            </div>
+        ) : (
+            gridEl
         );
 
         const sortableIds = gridSlots

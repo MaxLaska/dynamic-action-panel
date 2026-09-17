@@ -3,7 +3,7 @@ import { ButtonsPanelPlugin } from '@/types/plugin';
 import { CategoryConfig } from '@/types';
 import { t, tWithParams } from '@/utils/i18n';
 import { ConditionEditor } from '@/components/input';
-import { GRID_SLOT_COUNT, getCategoryLayout, type CategoryLayout } from '@/utils/categoryGrid';
+import { getCategoryLayout, type CategoryLayout } from '@/utils/categoryGrid';
 import {
     applyCategoryLayout,
     findFallbackVariant,
@@ -40,7 +40,7 @@ export class CategoryEditModal extends Modal {
     private nameInput: TextComponent | null = null;
     // OCAP visibility conditions editor (visual builder + advanced JSON)
     private conditionsInput: ConditionEditor | null = null;
-    // OCAP palette: selected button layout (flow / 4x4 grid)
+    // OCAP palette: selected button layout (flow / resizable grid)
     private selectedLayout: CategoryLayout;
     // Explanation line below the layout dropdown
     private layoutHintEl: HTMLElement | null = null;
@@ -269,7 +269,7 @@ export class CategoryEditModal extends Modal {
         if (!this.layoutHintEl) return;
         this.layoutHintEl.setText(
             this.selectedLayout === 'grid'
-                ? tWithParams('category_layout_grid_hint', { slots: GRID_SLOT_COUNT })
+                ? t('category_layout_grid_hint')
                 : t('category_layout_flow_hint')
         );
     }

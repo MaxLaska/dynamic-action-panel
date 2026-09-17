@@ -15,7 +15,7 @@ import {
     titleDroppableId,
     type ButtonDragItems,
 } from '@/utils/buttonDragItems';
-import { GRID_SLOT_COUNT, hasUniqueSlotIds } from '@/utils/categoryGrid';
+import { LEGACY_GRID_SLOT_COUNT, hasUniqueSlotIds } from '@/utils/categoryGrid';
 
 function button(id: string, order: number, slot?: number): ButtonConfig {
     const b: ButtonConfig = { id, name: id, actions: [], order };
@@ -46,12 +46,23 @@ describe('slot droppable ids', () => {
         });
     });
 
-    it('rejects non-slot and out-of-range ids', () => {
+    it('rejects ids that are not slot ids at all', () => {
         expect(parseSlotDroppableId('button-1')).toBeNull();
         expect(parseSlotDroppableId(containerDroppableId('cat'))).toBeNull();
-        expect(parseSlotDroppableId('slot:cat:99')).toBeNull();
         expect(parseSlotDroppableId('slot:cat:abc')).toBeNull();
+        expect(parseSlotDroppableId('slot:cat:-1')).toBeNull();
+        expect(parseSlotDroppableId('slot:cat:1.5')).toBeNull();
         expect(parseSlotDroppableId('slot:cat')).toBeNull();
+    });
+
+    it('leaves the upper bound to the container the id names', () => {
+        // Grids no longer share one slot count, so a well-formed id parses and
+        // is bounded where the container's live state is known.
+        expect(parseSlotDroppableId('slot:cat:99')).toEqual({ categoryId: 'cat', slot: 99 });
+        const items = buildButtonDragItems([grid('g', [])]);
+        expect(
+            applyDragOverToItems(items, 'x', 'slot:g:99', { g: 'grid' })
+        ).toBe(items);
     });
 
     it('resolves the container of a slot droppable', () => {
@@ -66,7 +77,7 @@ describe('buildButtonDragItems', () => {
             grid('g', [button('a', 0, 0), button('b', 1, 3)]),
         ]);
 
-        expect(items['g']).toHaveLength(GRID_SLOT_COUNT);
+        expect(items['g']).toHaveLength(LEGACY_GRID_SLOT_COUNT);
         expect(items['g']![0]).toBe('a');
         expect(items['g']![1]).toBeNull();
         expect(items['g']![2]).toBeNull();
@@ -129,7 +140,7 @@ describe('grid drag-over: within one grid', () => {
 
     it('keeps the array length and slot uniqueness invariant', () => {
         const next = applyDragOverToItems(base(), 'b', slotDroppableId('g', 15), layouts);
-        expect(next['g']).toHaveLength(GRID_SLOT_COUNT);
+        expect(next['g']).toHaveLength(LEGACY_GRID_SLOT_COUNT);
         expect(hasUniqueSlotIds(next['g']!)).toBe(true);
     });
 });
@@ -148,8 +159,8 @@ describe('grid drag-over: grid -> grid across categories', () => {
         expect(next['g2']![8]).toBe('a');
         expect(next['g1']![0]).toBeNull();
         expect(next['g1']![1]).toBe('b');
-        expect(next['g1']).toHaveLength(GRID_SLOT_COUNT);
-        expect(next['g2']).toHaveLength(GRID_SLOT_COUNT);
+        expect(next['g1']).toHaveLength(LEGACY_GRID_SLOT_COUNT);
+        expect(next['g2']).toHaveLength(LEGACY_GRID_SLOT_COUNT);
     });
 
     it('swaps across categories when the target slot is occupied', () => {
@@ -193,7 +204,7 @@ describe('grid drag-over: cross-layout', () => {
 
         expect(next['f']).toEqual(['f1', 'a', 'f2']);
         expect(next['g']![0]).toBeNull();
-        expect(next['g']).toHaveLength(GRID_SLOT_COUNT);
+        expect(next['g']).toHaveLength(LEGACY_GRID_SLOT_COUNT);
     });
 
     it('grid -> flow appends when dropped on the category zone', () => {
@@ -234,7 +245,7 @@ describe('reading drag state back', () => {
     it('exposes 16 slot positions with holes as null', () => {
         const slots = getGridSlotButtonsFromAllCategories(categories[0]!, categories, items);
 
-        expect(slots).toHaveLength(GRID_SLOT_COUNT);
+        expect(slots).toHaveLength(LEGACY_GRID_SLOT_COUNT);
         expect(slots[0]?.id).toBe('a');
         expect(slots[1]).toBeNull();
         expect(slots[6]?.id).toBe('b');
@@ -252,7 +263,7 @@ describe('reading drag state back', () => {
             items
         );
         expect(slots.filter(Boolean)).toEqual([]);
-        expect(slots).toHaveLength(GRID_SLOT_COUNT);
+        expect(slots).toHaveLength(LEGACY_GRID_SLOT_COUNT);
     });
 });
 

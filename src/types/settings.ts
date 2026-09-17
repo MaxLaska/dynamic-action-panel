@@ -79,12 +79,15 @@ export interface ButtonConfig {
      */
     conditions?: ButtonCondition;
     /**
-     * Palette grid slot (0..15) of this button inside a `layout: 'grid'`
-     * category. Ignored by flow categories, where `order` keeps deciding the
-     * position. The slot is a stable spatial identity — it is what a future
-     * slot hotkey will bind to — so it must not be recomputed from the array
-     * index: a button hidden by its conditions leaves its slot empty instead
-     * of letting the following buttons slide up.
+     * Palette grid slot of this button inside a `layout: 'grid'` category,
+     * read row-major against the grid's own dimensions (`slot = row * columns
+     * + column`, 0..rows*columns-1). Ignored by flow categories, where `order`
+     * keeps deciding the position. The slot is a stable spatial identity — it
+     * is what a future slot hotkey will bind to — so it must not be recomputed
+     * from the array index: a button hidden by its conditions leaves its slot
+     * empty instead of letting the following buttons slide up. Resizing the
+     * grid is the one operation that renumbers slots, and it does so
+     * coordinate-aware so the button keeps its logical row/column.
      * Absent/invalid slots are repaired deterministically at render time by
      * placeButtonsOnGrid (src/utils/categoryGrid.ts), never by dropping data.
      */
@@ -92,13 +95,33 @@ export interface ButtonConfig {
 }
 
 /**
+ * Dimensions of ONE grid, stored on the object that owns that grid: on the
+ * category for a static grid, on the variant for a dynamic one (a variant IS a
+ * complete independent grid, so its size is its own).
+ *
+ * Both fields are optional and purely additive: data written before variable
+ * grids existed carries neither, and absent fields read as the historical
+ * fixed 4x4 (see LEGACY_GRID_DIMENSIONS in src/utils/categoryGrid.ts). No
+ * migration and no rewrite of existing `data.json` files is therefore needed;
+ * only grids the user actually resizes — and newly created ones — store them.
+ * Bounded to 1..5 in both directions.
+ */
+export interface GridDimensionFields {
+    /** Number of grid rows (1..5). Absent = legacy 4. */
+    rows?: number;
+    /** Number of grid columns (1..5). Absent = legacy 4. */
+    columns?: number;
+}
+
+/**
  * One complete variant of a dynamic grid category (OCAP category variants).
  *
- * A variant is a FULL, independent configuration of the 4x4 grid: its own
- * buttons with their own slots, actions and appearance. There is no
- * inheritance, no base layer, no overrides and no sharing between variants —
- * if two variants agree on 14 of 16 slots, those buttons are stored twice on
- * purpose. Predictable, independently editable variants beat normalized data.
+ * A variant is a FULL, independent configuration of the grid: its own
+ * dimensions (`rows`/`columns`) and its own buttons with their own slots,
+ * actions and appearance. There is no inheritance, no base layer, no overrides
+ * and no sharing between variants — if two variants agree on all but two
+ * slots, those buttons are stored twice on purpose. Predictable, independently
+ * editable variants beat normalized data.
  *
  * At runtime exactly one variant renders: the first (in array order) whose
  * trigger matches, else the fallback variant, else none (category hidden).
@@ -107,7 +130,7 @@ export interface ButtonConfig {
  * Fully JSON-serializable: no functions, no runtime references, no shared
  * object graphs.
  */
-export interface CategoryVariant {
+export interface CategoryVariant extends GridDimensionFields {
     /** Stable id, independent of the name and of the variant's position. */
     id: string;
     /** User-facing name shown in the variant selector (e.g. "Source"). */
@@ -139,7 +162,7 @@ export interface CategoryVariant {
  * CategoryConfig 分类配置对象类型。
  * 包含分类信息和该分类下的所有按钮。
  */
-export interface CategoryConfig {
+export interface CategoryConfig extends GridDimensionFields {
     /** 分类唯一ID */
     id: string;
     /** 分类名称 */
@@ -183,13 +206,16 @@ export interface CategoryConfig {
      * Button layout of this category.
      * - absent / 'flow': historical behavior — buttons render in `order`
      *   sequence and reflow whenever one is added, removed or context-hidden;
-     * - 'grid': the 4x4 palette with 16 stable slots, where a hidden or
-     *   removed button leaves its slot empty and nothing else moves.
+     * - 'grid': the palette with stable slots (see `rows`/`columns`), where a
+     *   hidden or removed button leaves its slot empty and nothing else moves.
      * Optional additive field: categories without it keep behaving exactly as
      * before, so no settingsVersion bump / migration step is required.
      * See src/utils/categoryGrid.ts for the slot semantics.
      */
     layout?: 'flow' | 'grid';
+    // `rows` / `columns` (GridDimensionFields) size the STATIC grid of this
+    // category. A DYNAMIC category ignores them: every variant carries the
+    // dimensions of its own grid.
 }
 
 /**

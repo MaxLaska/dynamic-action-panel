@@ -20,7 +20,7 @@ import {
     DEFAULT_SETTINGS,
 } from '@/types/settings';
 import type { ButtonCondition } from '@/types/conditions';
-import { placeButtonsOnGrid } from '@/utils/categoryGrid';
+import { LEGACY_GRID_DIMENSIONS, placeButtonsOnGrid } from '@/utils/categoryGrid';
 import {
     composeFallbackVariant,
     composeFullVariant,
@@ -180,7 +180,9 @@ function migrateGridCategoryToLayers(
 
     // Freeze the arrangement the user currently sees before splitting layers,
     // so materializing missing/duplicate slots cannot move anything.
-    const placement = placeButtonsOnGrid(rawButtons);
+    // Every v1 grid was the fixed 4x4 — variable dimensions did not exist yet,
+    // and this step must reproduce exactly what that data meant.
+    const placement = placeButtonsOnGrid(rawButtons, LEGACY_GRID_DIMENSIONS);
     const positioned: ButtonConfig[] = [];
     placement.slots.forEach((button, slot) => {
         if (button) positioned.push({ ...button, slot });

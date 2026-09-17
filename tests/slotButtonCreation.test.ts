@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest';
 import type { ButtonConfig, CategoryConfig, CategoryVariant } from '@/types/settings';
 import { ActionSequence } from '@/actions/ActionSequence';
 import { addButtonToGrid, findVariant } from '@/utils/categoryVariants';
-import { GRID_SLOT_COUNT } from '@/utils/categoryGrid';
+import { LEGACY_GRID_SLOT_COUNT } from '@/utils/categoryGrid';
 import {
     buildVaultFileButtonDraft,
     resolveScriptName,
@@ -48,7 +48,7 @@ function dynamicCategory(variants: CategoryVariant[]): CategoryConfig {
 }
 
 function fullGrid(): ButtonConfig[] {
-    return Array.from({ length: GRID_SLOT_COUNT }, (_, slot) =>
+    return Array.from({ length: LEGACY_GRID_SLOT_COUNT }, (_, slot) =>
         button(`b${slot}`, slot, slot)
     );
 }

@@ -1,6 +1,6 @@
 // CategoryVariantContext.tsx
 // Which variant of each dynamic grid category the panel is currently showing,
-// and the resolved 4x4 grid that follows from it.
+// and the resolved grid (contents AND dimensions) that follows from it.
 //
 // In locked (consumption) mode the variant is decided by the context: the
 // first matching trigger, else the fallback. In the management modes the user
