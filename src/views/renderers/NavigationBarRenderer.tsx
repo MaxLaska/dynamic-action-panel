@@ -1,5 +1,5 @@
 // NavigationBarRenderer.tsx
-// 使用 React 渲染面板顶部的导航栏，但仍由 ItemView 决定挂载位置（view-header 之上）。
+// Renders the panel's top navigation bar with React, while the ItemView decides where it is mounted (above view-header).
 import React from 'react';
 import { ButtonsPanelPlugin } from '@/types/plugin';
 import { PanelConfig } from '@/types';
@@ -8,12 +8,12 @@ import { NavigationBar } from '@/components/shared/NavigationBar';
 
 /**
  * NavigationBarRenderer
- * 负责在 Obsidian 的视图容器中找到（或创建） .nav-header 容器，
- * 并通过 ReactRoot 渲染 NavigationBar 组件。
+ * Finds (or creates) the .nav-header container inside the Obsidian view container
+ * and renders the NavigationBar component into it through ReactRoot.
  *
- * 注意：
- * - NavigationBar 组件是纯 React UI（见 src/components/shared/NavigationBar.tsx）
- * - Renderer 负责把它插入到 Obsidian 原生 DOM 结构中（.view-header 同级、且位于其上方）
+ * Note:
+ * - NavigationBar itself is pure React UI (see src/components/shared/NavigationBar.tsx)
+ * - this renderer only inserts it into the native Obsidian DOM, as a sibling above .view-header
  */
 export class NavigationBarRenderer {
     private plugin: ButtonsPanelPlugin;
@@ -26,12 +26,12 @@ export class NavigationBarRenderer {
     }
 
     /**
-     * 在 Obsidian 视图中创建/更新顶部导航栏 React 组件。
-     * @param containerEl ItemView 的根容器元素
-     * @param onRenderComplete 可选的渲染完成回调
+     * Creates or updates the top navigation bar component inside the Obsidian view.
+     * @param containerEl Root container element of the ItemView
+     * @param onRenderComplete Optional callback invoked once the render finished
      */
     createNavigationBar(containerEl: HTMLElement, onRenderComplete?: () => void): void {
-        // 在 .view-header 之前插入 .nav-header 外层容器
+        // Insert the .nav-header wrapper before .view-header.
         let actionsWrapper: HTMLElement | null = containerEl.querySelector('.nav-header');
 
         if (!actionsWrapper) {
@@ -95,15 +95,15 @@ export class NavigationBarRenderer {
     }
 
     /**
-     * 更新面板配置引用（由 ButtonsPanelView 调用）。
-     * @param panelConfig 新的面板配置
+     * Updates the panel configuration reference; called by ButtonsPanelView.
+     * @param panelConfig New panel configuration
      */
     updatePanelConfig(panelConfig: PanelConfig): void {
         this.panelConfig = panelConfig;
     }
 
     /**
-     * 可选：卸载 React 根节点（当前由 Obsidian 视图整体卸载兜底）。
+     * Unmounts the React root. Optional, because unmounting the Obsidian view already covers it.
      */
     destroy(): void {
         if (this.reactRoot) {

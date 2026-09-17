@@ -3,22 +3,24 @@ import { WorkspaceLeaf } from 'obsidian';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 
 // obsidian.ts
-// Obsidian 相关工具函数（仅保留当前仍在使用的部分）。
+// Obsidian workspace helpers (only the ones still in use).
 
 /**
- * 获取最后激活的内容标签页（排除指定 viewType，如按钮面板，且仅返回 markdown leaf）。
- * 用于在执行命令/脚本等动作前，把焦点切回正文区域，避免动作在面板 leaf 上执行异常。
+ * Returns the last active content leaf, excluding a given viewType (the buttons
+ * panel) and accepting only markdown leaves.
+ * Used to move focus back to the editor before running command or script actions,
+ * so they do not execute against the panel leaf.
  *
- * @param app Obsidian 应用实例
- * @param excludeViewType 要排除的 viewType（如 'buttons-panel-view'）
- * @param lastActiveLeaf 当前记录的 leaf（可选，优先使用）
+ * @param app Obsidian app instance
+ * @param excludeViewType viewType to exclude (e.g. 'buttons-panel-view')
+ * @param lastActiveLeaf Currently tracked leaf (optional, preferred when valid)
  */
 export function getLastActiveContentLeaf(
     app: App,
     excludeViewType: string,
     lastActiveLeaf?: WorkspaceLeaf | null
 ): WorkspaceLeaf | null {
-    // 优先使用传入的 lastActiveLeaf（必须是 markdown 且非排除 viewType）
+    // Prefer the passed lastActiveLeaf (must be markdown and not the excluded viewType).
     if (
         lastActiveLeaf &&
         lastActiveLeaf.view &&
@@ -29,7 +31,7 @@ export function getLastActiveContentLeaf(
         return lastActiveLeaf;
     }
 
-    // 兜底：遍历 workspace 的所有 leaf，返回第一个 markdown 且非 excludeViewType 的 leaf
+    // Fallback: scan all workspace leaves for the first markdown leaf that is not excludeViewType.
     const workspaceAny = app.workspace as unknown as {
         getLeavesOfType?: (type: string) => WorkspaceLeaf[];
         getLeavesOfTypeEmpty?: (type: string) => WorkspaceLeaf[];
@@ -55,11 +57,11 @@ export function getLastActiveContentLeaf(
 }
 
 /**
- * 获取安全的最后激活内容叶子节点（排除按钮面板）
- * 这是一个便捷函数，封装了从插件实例获取 lastActiveContentLeaf 的逻辑
+ * Convenience wrapper that resolves the last active content leaf while excluding
+ * the buttons panel, reading the tracked leaf from the plugin instance.
  *
- * @param app Obsidian 应用实例
- * @param plugin 插件主类实例（可选）
+ * @param app Obsidian app instance
+ * @param plugin Plugin instance (optional)
  * @returns WorkspaceLeaf | null
  */
 export function getSafeLastContentLeaf(

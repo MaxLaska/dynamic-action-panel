@@ -7,29 +7,29 @@ import {
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 
 /**
- * ScriptInput 组件用于在设置面板中创建脚本文件选择输入框，支持 js 文件搜索和回调。
+ * Script file picker for the settings forms, restricted to .js files.
  */
 export interface ScriptInputOptions {
-    /** 输入框名称 */
+    /** Setting name */
     name: string;
-    /** 输入框描述 */
+    /** Setting description */
     description: string;
-    /** 输入框占位符 */
+    /** Input placeholder */
     placeholder: string;
-    /** 搜索按钮提示 */
+    /** Tooltip of the search button */
     searchTooltip: string;
-    /** 限定根文件夹 */
+    /** Restrict suggestions to this root folder */
     rootFolder?: string;
-    /** 脚本变更回调 */
+    /** Called when the script changes */
     onScriptChange?: (scriptName: string) => void;
-    /** 回车键回调 */
+    /** Called when Enter is pressed */
     onEnterKey?: () => void;
-    /** 下拉项元数据解析（用于展示脚本的本地化名称与描述） */
+    /** Resolves suggestion metadata, used to show a script's localized name and description */
     getMeta?: (file: TFile) => SuggestionMeta | null | Promise<SuggestionMeta | null>;
 }
 
 /**
- * ScriptInput 类，封装脚本文件输入与选择逻辑。
+ * Wraps the script file input and its selection logic.
  */
 export class ScriptInput {
     private input!: TextComponent;
@@ -37,11 +37,11 @@ export class ScriptInput {
     private suggest: FileInputSuggest | null = null;
 
     /**
-     * 构造函数
-     * @param container 容器元素
-     * @param options 组件配置项
-     * @param context 上下文（含 app、plugin）
-     * @param onValueChange 输入值变化回调
+     * Creates the component.
+     * @param container Container element
+     * @param options Component options
+     * @param context Render context (app and plugin)
+     * @param onValueChange Called when the value changes
      */
     constructor(
         container: HTMLElement,
@@ -51,13 +51,13 @@ export class ScriptInput {
     ) {
         this.setting = new Setting(container).setName(options.name).setDesc(options.description);
 
-        // 输入框
+        // Text input.
         this.setting.addText((text) => {
             this.input = text;
             text.setPlaceholder(options.placeholder);
         });
 
-        // 附加脚本文件下拉建议（仅 js，列表中展示本地化名称与描述）
+        // Attach the script file dropdown (.js only; rows show the localized name and description).
         this.suggest = new FileInputSuggest(context.app, this.input.inputEl, {
             rootFolder: options.rootFolder || '',
             fileExts: ['js'],
@@ -77,13 +77,13 @@ export class ScriptInput {
             this.suggest?.open();
         });
 
-        // 输入变化回调
+        // Value change callback.
         this.input.onChange((value) => {
             onValueChange?.(value);
             options.onScriptChange?.(value);
         });
 
-        // 添加回车键监听
+        // Enter key listener.
         if (options.onEnterKey) {
             this.input.inputEl.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && options.onEnterKey) {
@@ -93,28 +93,28 @@ export class ScriptInput {
         }
     }
 
-    /** 设置输入值 */
+    /** Sets the input value */
     setValue(value: string) {
         this.input.setValue(value);
     }
 
-    /** 获取输入值 */
+    /** Returns the input value */
     getValue(): string {
         return this.input.getValue();
     }
 
-    /** 获取原生 input 元素 */
+    /** Returns the underlying input element */
     getInputElement(): HTMLInputElement {
         return this.input.inputEl;
     }
 
-    /** 设置错误提示 */
+    /** Marks the input as invalid */
     setError(message: string): void {
         this.input.inputEl.classList.add('input-error');
         this.input.inputEl.setAttribute('title', message);
     }
 
-    /** 清除错误提示 */
+    /** Clears the error state */
     clearError(): void {
         this.input.inputEl.classList.remove('input-error');
         this.input.inputEl.removeAttribute('title');

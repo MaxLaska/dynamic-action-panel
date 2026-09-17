@@ -8,8 +8,9 @@ import { t } from '@/utils/i18n';
 type ActionRenderContext = { app: App; plugin: ButtonsPanelPlugin };
 
 /**
- * 动作序列类，负责管理一组按钮动作的增删改查、渲染、验证和序列化。
- * 用于“添加按钮/编辑按钮”表单中，支持多动作配置、顺序调整、表单校验等。
+ * Manages the action list of one button: adding, removing, reordering,
+ * rendering the form, validating it and serializing it back to JSON.
+ * Used by the add/edit button modals.
  */
 export class ActionSequence {
     actions: IButtonAction[] = [];
@@ -17,22 +18,22 @@ export class ActionSequence {
     private context: ActionRenderContext | null = null;
 
     /**
-     * 构造函数，将原始动作数据转为动作实例。
-     * @param rawActions 原始动作配置数组
+     * Turns raw persisted action data into action instances.
+     * @param rawActions Raw action configuration array
      */
     constructor(rawActions: Array<{ type: string; parameters?: unknown }>) {
         this.actions = rawActions.map((raw) => ButtonActionFactory.fromRaw(raw));
     }
 
     /**
-     * 添加一个动作到序列，并自动渲染。
-     * @param action 新增的动作实例
+     * Appends an action to the sequence and renders it.
+     * @param action The action instance to add
      */
     addAction(action: IButtonAction) {
         this.actions.push(action);
-        // 如果容器已存在，只渲染新添加的动作
+        // When the container already exists, render only the newly added action.
         if (this.container && this.context) {
-            // 找到动作列表容器（排除标题和按钮）
+            // Locate the action list container (excluding the heading and buttons).
             const actionsContainer =
                 (this.container.querySelector('.actions-list-container') as HTMLElement) ||
                 this.container;
@@ -41,42 +42,42 @@ export class ActionSequence {
     }
 
     /**
-     * 移除指定索引的动作，并刷新渲染。
-     * @param idx 要移除的动作索引
+     * Removes the action at the given index and re-renders.
+     * @param idx Index of the action to remove
      */
     removeAction(idx: number) {
         this.actions.splice(idx, 1);
-        // 重新渲染以更新索引
+        // Re-render so the remaining indices stay correct.
         if (this.container && this.context) {
             this.renderAll(this.container, this.context);
         }
     }
 
     /**
-     * 渲染整个动作序列的表单。
-     * @param container 容器元素
-     * @param context 上下文（如插件实例等）
+     * Renders the form for the whole action sequence.
+     * @param container Container element
+     * @param context Render context (app and plugin instance)
      */
     renderAll(container: HTMLElement, context: ActionRenderContext) {
-        // 保存容器和上下文引用
+        // Keep the container and context for later partial re-renders.
         this.container = container;
         this.context = context;
 
-        // 清空容器
+        // Clear the container.
         container.empty();
 
-        // 动作列表标题
+        // Action list heading.
         container.createEl('h4', { text: t('actions_list') });
 
-        // 创建动作列表容器
+        // Action list container.
         const actionsContainer = container.createDiv('actions-list-container');
 
-        // 渲染每个动作
+        // Render every action.
         this.actions.forEach((action, index) => {
             this.renderActionItem(actionsContainer, action, index, context);
         });
 
-        // 添加动作按钮
+        // Add-action button.
         const addActionCard = container.createDiv('add-action');
         new ButtonComponent(addActionCard)
             .setIcon('plus')
@@ -88,7 +89,7 @@ export class ActionSequence {
     }
 
     /**
-     * 渲染单个动作的表单项，包括类型选择、内容渲染、上下移动、删除等。
+     * Renders one action row: type dropdown, action content, move up/down and remove.
      */
     private renderActionItem(
         container: HTMLElement,
@@ -98,41 +99,40 @@ export class ActionSequence {
     ) {
         const actionEl = container.createDiv('action-item');
 
-        // 动作类型选择
+        // Action type dropdown.
         new Setting(actionEl)
             .setName(`${t('action')} ${index + 1}`)
             .setDesc(t('action_type_desc'))
             .addDropdown((dropdown) => {
-                // 从动作实例获取当前类型
+                // Current type of the action instance.
                 const currentType = action.type;
 
-                // 从 ButtonActionFactory 获取所有可用的动作类型
+                // All action types known to ButtonActionFactory.
                 const availableTypes = ButtonActionFactory.getAvailableActionTypes();
 
-                // 动态添加所有可用的动作类型选项
+                // Add an option per available action type.
                 availableTypes.forEach((type) => {
                     dropdown.addOption(type, t(type));
                 });
 
                 dropdown.setValue(currentType).onChange((value) => {
-                    // 验证动作类型是否有效
+                    // Reject unknown action types.
                     if (!ButtonActionFactory.isValidActionType(value)) {
                         console.error('Invalid action type:', value);
                         return;
                     }
-                    // 创建新的动作实例
+                    // Replace the current action with a fresh instance of the chosen type
+                    // and re-render only the action content.
                     const newAction = ButtonActionFactory.createAction(value, {});
-                    // 替换当前动作
                     this.actions[index] = newAction;
-                    // 只重新渲染动作内容部分
                     this.renderActionContent(actionEl, newAction, context);
                 });
             });
 
-        // 渲染动作的具体内容
+        // Render the action-specific content.
         this.renderActionContent(actionEl, action, context);
 
-        // 底部按钮区：所有按钮放在同一个Setting里
+        // Footer: all row buttons share one Setting.
         const footer = actionEl.createDiv('action-footer setting-item');
         const btnSetting = new Setting(footer).setClass('action-btn-setting');
         if (this.actions.length > 1) {
@@ -162,19 +162,19 @@ export class ActionSequence {
     }
 
     /**
-     * 渲染动作的具体内容表单。
+     * Renders the action-specific part of the form.
      */
     private renderActionContent(
         actionEl: HTMLElement,
         action: IButtonAction,
         context: ActionRenderContext
     ) {
-        // 只移除 .action-content，不影响底部按钮区
+        // Remove only .action-content so the footer buttons survive.
         const existingContent = actionEl.querySelector('.action-content');
         if (existingContent) {
             existingContent.remove();
         }
-        // footer 一定存在，直接插入到 footer 前
+        // The footer always exists, so insert the content right before it.
         const footer = actionEl.querySelector('.action-footer');
         const actionContentEl = actionEl.createDiv({ cls: 'action-content' });
         actionEl.insertBefore(actionContentEl, footer);
@@ -182,7 +182,7 @@ export class ActionSequence {
     }
 
     /**
-     * 上下移动动作顺序。
+     * Moves an action one position up or down.
      */
     private moveAction(index: number, direction: 'up' | 'down') {
         if (direction === 'up' && index > 0) {
@@ -196,17 +196,17 @@ export class ActionSequence {
                 this.actions[index]!,
             ];
         }
-        // 重新渲染以更新顺序
+        // Re-render so the new order is reflected.
         if (this.container && this.context) {
             this.renderAll(this.container, this.context);
         }
     }
 
     /**
-     * 添加一个默认“打开文件”动作。
+     * Appends a default open-file action.
      */
     public addDefaultAction() {
-        // 默认添加一个"打开文件"动作
+        // A new button starts with an empty open-file action.
         const defaultAction = ButtonActionFactory.createAction('file', { filePath: '' });
         this.addAction(defaultAction);
     }
@@ -248,7 +248,7 @@ export class ActionSequence {
     }
 
     /**
-     * 批量清除所有动作的错误提示。
+     * Clears the error state of every action.
      */
     clearAllErrors(): void {
         this.actions.forEach((action) => {
@@ -257,7 +257,7 @@ export class ActionSequence {
     }
 
     /**
-     * 序列化为 JSON 数据，便于保存到设置。
+     * Serializes the sequence to the JSON shape stored in the settings.
      */
     toJSON() {
         return this.actions.map((a) => a.toJSON());

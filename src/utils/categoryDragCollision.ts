@@ -27,7 +27,7 @@ function isSameRow(a: ClientRect, b: ClientRect): boolean {
     return Math.abs(a.top - b.top) <= threshold;
 }
 
-/** 水平方向：需越过目标标签中线才触发换位（与从左拖入长标签一致） */
+/** Horizontal: the pointer must cross the target tab's midline to swap (same as dragging into a wide tab from the left). */
 function passesHorizontalMidpoint(
     activeIndex: number,
     overIndex: number,
@@ -43,7 +43,7 @@ function passesHorizontalMidpoint(
     return false;
 }
 
-/** 垂直方向（多行换行时跨行）：需越过目标中线才触发 */
+/** Vertical (across rows in a wrapped tab bar): the pointer must cross the target's midline to swap. */
 function passesVerticalMidpoint(
     activeIndex: number,
     overIndex: number,
@@ -118,7 +118,8 @@ function pickCategoryCollision(collisions: Collision[]): Collision[] {
 }
 
 /**
- * 标签视图：指针进入标签区域即命中（无中线门槛），用于悬停计时与松手换位。
+ * Tabs view: any pointer entry into a tab counts as a hit (no midline threshold),
+ * which drives both the hover timer and the drop swap.
  */
 export const categoryTabDragCollision: CollisionDetection = (args) => {
     const activeId = String(args.active.id);
@@ -131,7 +132,7 @@ export const categoryTabDragCollision: CollisionDetection = (args) => {
     return pickCategoryCollision(withoutActive);
 };
 
-/** 列表视图：指针进入分类区域即命中 */
+/** List view: any pointer entry into a category counts as a hit. */
 export const categoryDragCollisionDetection: CollisionDetection = (args) => {
     const activeId = String(args.active.id);
     if (!parseCategorySortableId(activeId)) return [];
@@ -143,10 +144,10 @@ export const categoryDragCollisionDetection: CollisionDetection = (args) => {
     return pickCategoryCollision(withoutActive);
 };
 
-/** 单行标签栏：水平中线换位 */
+/** Single-row tab bar: swap on the horizontal midline. */
 export const categoryHorizontalTabDragCollision: CollisionDetection = (args) =>
     resolveMidpointCategoryCollision(args, 'horizontal');
 
-/** 多行换行标签栏：同行用水平中线，跨行用垂直中线 */
+/** Wrapped multi-row tab bar: horizontal midline within a row, vertical midline across rows. */
 export const categoryGridTabDragCollision: CollisionDetection = (args) =>
     resolveMidpointCategoryCollision(args, 'grid');

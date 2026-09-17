@@ -39,8 +39,8 @@ function hasExceededDistance(delta: PointerDelta, measurement: number): boolean 
 }
 
 /**
- * 在 dnd-kit AbstractPointerSensor.handleMove 基础上：
- * 长按未激活时，以「主方向滑动」取消激活，避免与面板/标签栏原生滚动冲突。
+ * Extends dnd-kit's AbstractPointerSensor.handleMove:
+ * before the long press activates, a clearly directional swipe cancels it, so it never fights the native scrolling of the panel or the tab bar.
  */
 export function scrollAwarePointerHandleMove(
     sensor: ScrollAwarePointerSensorInstance,

@@ -6,7 +6,7 @@ declare global {
 		'buttons-panel-search': CustomEvent<{ query?: string }>;
 	}
 
-	// dnd-kit 传感器监听目标，供 hover-expand nudge 使用
+	// dnd-kit sensor listener target, used by the hover-expand nudge
 	var __dndSensorTarget: EventTarget | undefined;
 }
 

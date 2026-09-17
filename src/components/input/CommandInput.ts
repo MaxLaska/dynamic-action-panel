@@ -4,26 +4,26 @@ import { CommandInputSuggest } from '@/components/suggest/CommandInputSuggest';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 
 /**
- * CommandInput 组件用于在设置面板中创建命令选择输入框，支持命令搜索和回调。
- * 提供命令输入、搜索按钮、回调处理等功能。
+ * Command picker input for the settings forms.
+ * Provides the text input, the suggestion dropdown and the change callbacks.
  */
 export interface CommandInputOptions {
-    /** 输入框名称 */
+    /** Setting name */
     name: string;
-    /** 输入框描述 */
+    /** Setting description */
     description: string;
-    /** 输入框占位符 */
+    /** Input placeholder */
     placeholder: string;
-    /** 搜索按钮提示 */
+    /** Tooltip of the search button */
     searchTooltip: string;
-    /** 命令变更回调 */
+    /** Called when the command changes */
     onCommandChange?: (commandId: string) => void;
-    /** 回车键回调 */
+    /** Called when Enter is pressed */
     onEnterKey?: () => void;
 }
 
 /**
- * CommandInput 类，封装命令输入与选择逻辑。
+ * Wraps the command input and its selection logic.
  */
 export class CommandInput {
     private input!: TextComponent;
@@ -31,11 +31,11 @@ export class CommandInput {
     private suggest: CommandInputSuggest | null = null;
 
     /**
-     * 构造函数
-     * @param container 容器元素
-     * @param options 组件配置项
-	 * @param context 上下文（含 app、plugin）
-     * @param onValueChange 输入值变化回调
+     * Creates the component.
+     * @param container Container element
+     * @param options Component options
+	 * @param context Render context (app and plugin)
+     * @param onValueChange Called when the value changes
      */
     constructor(
         container: HTMLElement,
@@ -45,35 +45,35 @@ export class CommandInput {
     ) {
         this.setting = new Setting(container).setName(options.name).setDesc(options.description);
 
-        // 输入框
+        // Text input.
         this.setting.addText((text) => {
             this.input = text;
             text.setPlaceholder(options.placeholder);
         });
 
-        // 附加 Obsidian 原生的输入框下拉建议
+        // Attach the native Obsidian input suggestion dropdown.
         this.suggest = new CommandInputSuggest(context.app, this.input.inputEl);
         this.suggest.onSelect((cmd, _evt) => {
             const commandId = cmd.id;
             this.input.setValue(commandId);
             onValueChange?.(commandId);
             options.onCommandChange?.(commandId);
-            // 选中后关闭悬浮建议框
+            // Close the suggestion popup after a selection.
             this.suggest?.close();
         });
 
-        // 聚焦时主动打开建议框（显示全部命令），提升可发现性
+        // Open the dropdown on focus (listing every command) to make the commands discoverable.
         this.input.inputEl.addEventListener('focus', () => {
             this.suggest?.open();
         });
 
-        // 输入变化回调
+        // Value change callback.
         this.input.onChange((value) => {
             onValueChange?.(value);
             options.onCommandChange?.(value);
         });
 
-        // 添加回车键监听
+        // Enter key listener.
         if (options.onEnterKey) {
             this.input.inputEl.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && options.onEnterKey) {
@@ -83,28 +83,28 @@ export class CommandInput {
         }
     }
 
-    /** 设置输入值 */
+    /** Sets the input value */
     setValue(value: string) {
         this.input.setValue(value);
     }
 
-    /** 获取输入值 */
+    /** Returns the input value */
     getValue(): string {
         return this.input.getValue();
     }
 
-    /** 获取原生 input 元素 */
+    /** Returns the underlying input element */
     getInputElement(): HTMLInputElement {
         return this.input.inputEl;
     }
 
-    /** 设置错误提示 */
+    /** Marks the input as invalid */
     setError(message: string): void {
         this.input.inputEl.classList.add('input-error');
         this.input.inputEl.setAttribute('title', message);
     }
 
-    /** 清除错误提示 */
+    /** Clears the error state */
     clearError(): void {
         this.input.inputEl.classList.remove('input-error');
         this.input.inputEl.removeAttribute('title');

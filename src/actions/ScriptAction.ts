@@ -9,7 +9,7 @@ import type { SuggestionMeta } from '@/components/suggest/FileInputSuggest';
 type ActionRenderContext = { app: App; plugin: ButtonsPanelPlugin };
 
 /**
- * “运行脚本”动作类，实现按钮动作表单的渲染、数据管理、校验和序列化。
+ * The run-script action: form rendering, data handling, validation and serialization.
  */
 export class ScriptAction implements IButtonAction {
     type = 'script';
@@ -17,22 +17,22 @@ export class ScriptAction implements IButtonAction {
     private scriptInput: ScriptInput | null = null;
 
     /**
-     * 构造函数，初始化参数。
+     * Initializes the action parameters.
      */
     constructor(params: { scriptName: string }) {
         this.scriptName = params.scriptName;
     }
 
     /**
-     * 渲染表单控件，绑定数据双向同步。
+     * Renders the form controls and keeps them in sync with the action data.
      */
     render(container: HTMLElement, context: ActionRenderContext) {
-        // 构造脚本元数据解析回调，用于下拉项展示当前语言的名称与描述
+        // Metadata resolver so suggestion rows can show the localized name and description.
         const getMeta = context.plugin
             ? this.createScriptMetaGetter(context.plugin)
             : undefined;
 
-        // 使用可复用的脚本输入组件
+        // Reusable script input component.
         this.scriptInput = new ScriptInput(
             container,
             {
@@ -46,20 +46,20 @@ export class ScriptAction implements IButtonAction {
             { app: context.app, plugin: context.plugin },
             (value: string) => {
                 this.scriptName = value;
-                // 当用户输入或通过下拉建议选择了有效脚本文件时，自动清除错误提示
+                // Clear the error as soon as a valid script file is typed or picked.
                 if (this.validate()) {
                     this.clearError();
                 }
             }
         );
 
-        // 设置初始值
+        // Apply the initial value.
         this.scriptInput.setValue(this.scriptName || '');
     }
 
     /**
-     * 构造脚本元数据解析回调，从 ActionDispatcher 的 ScriptService 读取脚本名称与描述，
-     * 并解析为当前语言下的展示文本。
+     * Builds the script metadata resolver: it reads name and description through the
+     * ScriptService of the ActionDispatcher and resolves them for the current language.
      */
     private createScriptMetaGetter(
         plugin: ButtonsPanelPlugin
@@ -78,7 +78,7 @@ export class ScriptAction implements IButtonAction {
     }
 
     /**
-     * 校验表单数据有效性。
+     * Validates the form data.
      */
     validate() {
         return !!(this.scriptName && this.scriptName.trim());
@@ -98,7 +98,7 @@ export class ScriptAction implements IButtonAction {
     }
 
     /**
-     * 序列化为 JSON 数据。
+     * Serializes the action to its JSON shape.
      */
     toJSON() {
         return {

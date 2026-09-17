@@ -41,7 +41,7 @@ export function useCategoryMenu(category: CategoryConfig, categories: CategoryCo
             }
 
             menu.addItem((item: MenuItem) => {
-                item.setTitle(t('copy') || '复制')
+                item.setTitle(t('copy') || 'Copy')
                     .setIcon('copy')
                     .onClick(() => {
                         // Copies every variant AND its tool definitions
@@ -63,7 +63,7 @@ export function useCategoryMenu(category: CategoryConfig, categories: CategoryCo
             menu.addSeparator();
 
             menu.addItem((item: MenuItem) => {
-                item.setTitle(t('delete') || '删除')
+                item.setTitle(t('delete') || 'Delete')
                     .setIcon('trash')
                     .onClick(() => {
                         new CategoryDeleteModal(app, plugin, category, () => {

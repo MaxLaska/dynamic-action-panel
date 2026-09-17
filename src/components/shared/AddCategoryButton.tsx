@@ -14,7 +14,7 @@ interface AddCategoryButtonProps {
 /**
  * AddCategoryButton
  *
- * 统一的"添加分类"按钮组件。
+ * Shared add-category button control.
  *
  * A left click creates a category, as it always did. A right click offers the
  * other way a category can come into being — importing a portable template —
@@ -34,7 +34,7 @@ export const AddCategoryButton: React.FC<AddCategoryButtonProps> = ({
             event.stopPropagation();
             const menu = new Menu();
             menu.addItem((item: MenuItem) => {
-                item.setTitle(t('add_category') || '添加分类')
+                item.setTitle(t('add_category') || 'Add category')
                     .setIcon('plus')
                     .onClick(onClick);
             });
@@ -54,7 +54,7 @@ export const AddCategoryButton: React.FC<AddCategoryButtonProps> = ({
                 icon="plus"
                 onClick={onClick}
                 className={className}
-                ariaLabel={ariaLabel || t('add_category') || '添加分类'}
+                ariaLabel={ariaLabel || t('add_category') || 'Add category'}
             />
         </div>
     );

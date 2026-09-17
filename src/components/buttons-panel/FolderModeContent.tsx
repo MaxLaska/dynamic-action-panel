@@ -41,13 +41,13 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
     // stays rendered and manageable but its tile gets a visual marker class.
     const contextHiddenCategoryIds = useContextHiddenCategoryIds();
 
-    // 默认不自动展开
+    // No folder is expanded by default.
     const [openCategoryId, setOpenCategoryId] = React.useState<string | null>(null);
 
     const openCategoryIdRef = React.useRef(openCategoryId);
     openCategoryIdRef.current = openCategoryId;
 
-    // 拖拽中保留上一个 detail，防止 dnd-kit 传感器元素被移除
+    // Keep the previous detail alive during a drag so dnd-kit's sensor element is not removed.
     const prevOpenIdRef = React.useRef<string | null>(null);
     const [staleCategoryId, setStaleCategoryId] = React.useState<string | null>(null);
     React.useEffect(() => {
@@ -68,16 +68,16 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
     const isFolderLockedRef = React.useRef(isFolderLocked);
     isFolderLockedRef.current = isFolderLocked;
 
-    /** 打开文件夹时 detail 的偏移量（匹配磁贴位置） */
+    /** Offset of the detail layer when a folder opens, so it lines up with its tile */
     const [detailTop, setDetailTop] = React.useState(24);
     const [detailLeft, setDetailLeft] = React.useState(24);
 
-    // 切换文件夹时重置锁定
+    // Reset the lock when switching folders.
     React.useEffect(() => {
         setIsFolderLocked(false);
     }, [openCategoryId]);
 
-    // 打开文件夹时计算磁贴位置，使 detail 出现在该位置且不超出容器
+    // On open, position the detail at the tile without letting it overflow the container.
     React.useEffect(() => {
         if (!openCategoryId) return;
         const raf = window.requestAnimationFrame(() => {
@@ -117,9 +117,9 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
         }
     }, [categories, openCategoryId]);
 
-    // ---- 拖拽交互优化（与标签页视图的 scheduleCategoryTabDropTarget 同模式） ----
-    // autoClose: 移出展开的 detail → 600ms 后自动关闭；移回则取消
-    // hoverExpand: 悬浮磁贴不动 600ms → RAF 轮询 + 时间戳，无 setTimeout 竞态
+    // ---- Drag interaction tuning (same pattern as scheduleCategoryTabDropTarget in the tabs view) ----
+    // autoClose: leaving the expanded detail closes it after 600ms; moving back cancels that.
+    // hoverExpand: hovering a tile for 600ms expands it, driven by RAF polling plus a timestamp so there is no setTimeout race.
     const hoverExpandCategoryRef = React.useRef<string | null>(null);
     const hoverStartTimeRef = React.useRef<number>(0);
     const autoCloseTimerRef = React.useRef<number | null>(null);
@@ -138,7 +138,7 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
         hoverStartTimeRef.current = 0;
     }, []);
 
-    // hover-expand RAF 轮询：每帧检查悬浮时长 >= 600ms
+    // hover-expand RAF polling: check the hover duration against 600ms every frame.
     React.useEffect(() => {
         if (!buttonDrag?.isDragging || !buttonDrag?.activeButtonId) {
             resetHoverExpand();
@@ -153,7 +153,7 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
                 clearAutoCloseTimer();
                 dragShouldCancelRef.current = false;
                 resetHoverExpand();
-                // 等待 React 渲染完成：双重 RAF（render → layout → paint）
+                // Wait for React to finish rendering: double RAF (render -> layout -> paint).
                 window.requestAnimationFrame(() => {
                     window.requestAnimationFrame(() => {
                         const pos = lastPointerRef.current;
@@ -175,7 +175,7 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
         return () => cancelAnimationFrame(rafId);
     }, [buttonDrag?.isDragging, buttonDrag?.activeButtonId, clearAutoCloseTimer, resetHoverExpand]);
 
-    /** 检测指针下磁贴：新磁贴 → 重置计时起点；离开磁贴 → 归零 */
+    /** Tracks the tile under the pointer: a new tile restarts the timer, leaving every tile clears it */
     const checkHoverExpand = React.useCallback(() => {
         const pos = lastPointerRef.current;
         if (!pos || openCategoryIdRef.current) return;
@@ -206,7 +206,7 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
         const handleDragMove = (e: PointerEvent) => {
             lastPointerRef.current = { x: e.clientX, y: e.clientY };
 
-            // 1. 自动关闭：移出 detail 600ms 后关闭；回到 detail 则取消
+            // 1. Auto close: close 600ms after leaving the detail; returning to it cancels the timer.
             if (openCategoryIdRef.current) {
                 const detailEl = activeDocument.querySelector('.buttons-panel-folder-detail');
                 if (detailEl) {
@@ -219,13 +219,13 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
                         if (!autoCloseTimerRef.current) {
                             dragShouldCancelRef.current = true;
                             autoCloseTimerRef.current = window.setTimeout(() => {
-                                // 关闭文件夹，同步更新 ref（避免等待 React 渲染）
+                                // Close the folder and update the ref synchronously, without waiting for a React render.
                                 setOpenCategoryId(null);
                                 openCategoryIdRef.current = null;
                                 autoCloseTimerRef.current = null;
                                 dragShouldCancelRef.current = false;
                                 resetHoverExpand();
-                                // 立即检测指针下是否已有磁贴 → 启动 hover-expand
+                                // Immediately check for a tile under the pointer to start hover-expand.
                                 checkHoverExpand();
                             }, 600);
                         }
@@ -236,7 +236,7 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
                 }
             }
 
-            // 2. 悬停展开
+            // 2. Hover expand.
             if (!openCategoryIdRef.current) {
                 checkHoverExpand();
             } else if (hoverExpandCategoryRef.current) {
@@ -248,7 +248,7 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
         return () => activeDocument.removeEventListener('pointermove', handleDragMove, true);
     }, [buttonDrag?.isDragging, buttonDrag?.activeButtonId, clearAutoCloseTimer, checkHoverExpand, resetDragInteraction, resetHoverExpand]);
 
-    // 拖出文件夹外松手：在 dnd-kit onDragEnd 之前同步取消，防止错误持久化
+    // Dropping outside the folder: cancel synchronously before dnd-kit's onDragEnd, so nothing wrong is persisted.
     React.useEffect(() => {
         if (!buttonDrag?.isDragging) return;
         const onPointerUp = () => {
@@ -443,7 +443,7 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
                 )}
             </div>
 
-            {/* 拖拽中保留旧 detail（不可见 + 不可排序），防止 dnd-kit 传感器元素被移除 */}
+            {/* Keep the stale detail during a drag (invisible and not sortable) so dnd-kit's sensor element survives */}
             {staleCategoryId && staleCategoryId !== openCategoryId && (
                 (() => {
                     const stale = categories.find((c) => c.id === staleCategoryId);

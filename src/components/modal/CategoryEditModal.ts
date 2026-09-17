@@ -25,25 +25,25 @@ import {
 } from '@/utils/categoryStore';
 
 /**
- * CategoryEditModal 分类编辑模态框类。
- * 用于输入新分类名称并保存，支持回车提交、空名校验。
+ * Modal for editing a category.
+ * Renames the category, submitting on Enter and rejecting an empty name.
  * OCAP: additionally edits the category's visibility conditions with the
  * shared visual ConditionEditor.
  */
 export class CategoryEditModal extends Modal {
-    // 插件主类实例
+    // Plugin instance
     plugin: ButtonsPanelPlugin;
-    // 要重命名的分类ID
+    // Id of the category being renamed
     categoryId: string;
-    // 旧的分类名称
+    // Previous category name
     oldCategoryName: string;
-    // 旧的分类可见性条件
+    // Previous category visibility conditions
     private oldConditions: CategoryConfig['conditions'];
-    // 重命名后的回调函数
+    // Called after the rename
     onRename: () => void;
-    // 输入框当前的新分类名称
+    // New category name currently entered
     newName: string;
-    // 输入框组件引用（Obsidian Setting 的 text 控件）
+    // Reference to the text control of the Obsidian Setting
     private nameInput: TextComponent | null = null;
     // OCAP visibility conditions editor (visual builder + advanced JSON)
     private conditionsInput: ConditionEditor | null = null;
@@ -55,11 +55,11 @@ export class CategoryEditModal extends Modal {
     private variantsSectionEl: HTMLElement | null = null;
 
     /**
-     * 构造函数，初始化模态框。
-     * @param app Obsidian应用实例
-     * @param plugin 插件主类实例
-     * @param category 要重命名的分类对象
-     * @param onRename 重命名后的回调
+     * Initializes the modal.
+     * @param app Obsidian app instance
+     * @param plugin Plugin instance
+     * @param category Category to rename
+     * @param onRename Called after the rename
      */
     constructor(
         app: App,
@@ -280,7 +280,7 @@ export class CategoryEditModal extends Modal {
     }
 
     /**
-     * 打开模态框时自动调用，渲染界面。
+     * Called when the modal opens; renders the UI.
      */
     onOpen() {
         const { contentEl, titleEl } = this;
@@ -288,20 +288,20 @@ export class CategoryEditModal extends Modal {
         contentEl.addClass('buttons-panel');
         contentEl.addClass('category-edit');
 
-        // 使用 Obsidian Modal 自带的标题栏
+        // Use the title bar provided by the Obsidian Modal.
         titleEl.setText(t('edit_category'));
 
-        // 分类名称输入框
+        // Category name input.
         const nameSetting = new Setting(contentEl).setName(t('category_name'));
 
         nameSetting.addText((text) => {
             this.nameInput = text;
             text.setValue(this.oldCategoryName).onChange((value) => {
                 this.newName = value;
-                // 清除错误状态
+                // Clear the error state.
                 this.nameInput?.inputEl.classList.remove('input-error');
             });
-            // 支持回车直接提交
+            // Enter submits the form.
             text.inputEl.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     this.handleSave();
@@ -320,7 +320,7 @@ export class CategoryEditModal extends Modal {
             description: t('conditions_category_desc'),
         });
 
-        // 底部操作按钮：保存/取消
+        // Footer buttons: save and cancel.
         new Setting(contentEl)
             .addButton((button) =>
                 button
@@ -338,7 +338,7 @@ export class CategoryEditModal extends Modal {
     }
 
     /**
-     * 处理保存逻辑，校验输入并更新分类名称与可见性条件。
+     * Validates the input and updates the category name and visibility conditions.
      */
     handleSave() {
         if (!this.newName || this.newName.trim() === '') {
@@ -347,20 +347,20 @@ export class CategoryEditModal extends Modal {
             return;
         }
 
-        // 清除错误状态
+        // Clear the error state.
         this.nameInput?.inputEl.classList.remove('input-error');
 
-        // 验证 OCAP 条件输入（可视化编辑器 / JSON）
+        // Validate the OCAP conditions input (visual editor or JSON).
         const conditionsResult = this.conditionsInput?.getResult();
         if (conditionsResult && !conditionsResult.ok) {
             new Notice(conditionsResult.error);
             return;
         }
 
-        // 不再检测重名，允许同名分类
+        // Duplicate names are allowed; no uniqueness check.
 
-        // 根据ID查找分类并用新对象替换：
-        // 对象身份约定（DECISIONS.md）——内容变化必须产生新的对象引用。
+        // Resolve the stored category by id and replace it with a new object:
+        // the object identity contract (DECISIONS.md) requires a new reference on every content change.
         const stored = this.storedCategory();
         if (!stored) {
             new Notice(t('category_not_found'));
@@ -408,7 +408,7 @@ export class CategoryEditModal extends Modal {
     }
 
     /**
-     * 关闭模态框时自动调用，清理内容。
+     * Called when the modal closes; clears its content.
      */
     onClose() {
         const { contentEl } = this;

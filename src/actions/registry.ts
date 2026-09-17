@@ -1,6 +1,6 @@
-// 动作类型映射表，用于根据 type 字符串动态获取对应的动作类。
-// 便于工厂方法和类型校验统一管理所有支持的动作类型。
-// 新增动作类型时只需在此处注册即可。
+// Maps an action `type` string to its action class.
+// Used by the factory and by type validation, so every supported action type is
+// registered in exactly one place. A new action type only needs an entry here.
 import { FileAction } from '@/actions/FileAction';
 import { CommandAction } from '@/actions/CommandAction';
 import { UrlAction } from '@/actions/UrlAction';

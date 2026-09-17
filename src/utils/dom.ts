@@ -1,18 +1,20 @@
 // dom.ts
-// DOM 操作相关工具函数。
+// DOM helpers.
 
 const SCRIPT_LOCAL = 'script';
 
 /**
- * 从原始 SVG 字符串中剥离内联 `<script>...</script>`，避免 DOMParser 在内存中实例化可执行脚本节点。
- * 与解析后遍历移除配合，形成纵深防御。
+ * Strips inline `<script>...</script>` from raw SVG markup so DOMParser never
+ * instantiates an executable script node in memory. Combined with the post-parse
+ * removal below this gives defence in depth.
  */
 function stripSvgScriptMarkup(svgMarkup: string): string {
     return svgMarkup.replace(/<script\b[\s\S]*?<\/script>/gi, '');
 }
 
 /**
- * 移除已解析 DOM 子树中所有 `script` 元素（含 SVG 内嵌 HTML 等变体），不依赖 `querySelectorAll('script')`。
+ * Removes every `script` element from a parsed subtree, including variants such as
+ * HTML embedded in SVG, without relying on `querySelectorAll('script')`.
  */
 function removeScriptElementsFromSubtree(root: Element): void {
     const candidates = root.querySelectorAll('*');
@@ -25,9 +27,10 @@ function removeScriptElementsFromSubtree(root: Element): void {
 }
 
 /**
- * 安全地将SVG字符串插入到指定元素，只允许<svg>标签，移除所有事件属性和可执行脚本内容。
- * @param el 目标元素
- * @param svgString SVG字符串
+ * Safely inserts an SVG string into an element: only a `<svg>` root is accepted, and
+ * all event attributes and executable script content are removed.
+ * @param el Target element
+ * @param svgString SVG markup
  */
 export function safeSetSVG(el: HTMLElement, svgString: string) {
     if (!svgString || !svgString.trim().startsWith('<svg')) {
@@ -39,7 +42,7 @@ export function safeSetSVG(el: HTMLElement, svgString: string) {
     const doc = parser.parseFromString(sanitized, 'image/svg+xml');
     const svg = doc.querySelector('svg');
     if (svg) {
-        // 移除所有事件属性（on*）
+        // Remove all event attributes (on*).
         const removeEventAttrs = (node: Element) => {
             Array.from(node.attributes).forEach((attr) => {
                 if (/^on/i.test(attr.name)) {

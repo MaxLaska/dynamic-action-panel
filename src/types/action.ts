@@ -1,60 +1,54 @@
 // action.ts
-// 按钮动作相关类型
+// Types for button actions.
 
 /**
- * 文件动作参数类型。
- * 用于描述“打开文件”类按钮的参数。
+ * Parameters of the "open file" action.
  */
 export interface FileActionParams {
-    /** 文件路径 */
+    /** Vault-relative file path */
     filePath: string;
 }
 
 /**
- * 命令动作参数类型。
- * 用于描述“执行命令”类按钮的参数。
+ * Parameters of the "run command" action.
  */
 export interface CommandActionParams {
-    /** 命令ID */
+    /** Obsidian command id */
     commandId: string;
-    /** 命令参数（可选） */
+    /** Command arguments (optional) */
 	args?: unknown[];
 }
 
 /**
- * URL 动作参数类型。
- * 用于描述“打开链接”类按钮的参数。
+ * Parameters of the "open URL" action.
  */
 export interface UrlActionParams {
-    /** 目标URL */
+    /** Target URL */
     url: string;
 }
 
 /**
- * 创建文件动作参数类型。
- * 用于描述“新建文件”类按钮的参数。
+ * Parameters of the "create file" action.
  */
 export interface CreateFileActionParams {
-    /** 文件夹路径（可选） */
+    /** Folder path (optional) */
     folderPath?: string;
-    /** 文件名 */
+    /** File name */
     fileName: string;
-    /** 模板名（可选） */
+    /** Template name (optional) */
     templateName?: string;
 }
 
 /**
- * 脚本动作参数类型。
- * 用于描述“执行脚本”类按钮的参数。
+ * Parameters of the "run script" action.
  */
 export interface ScriptActionParams {
-    /** 脚本名 */
+    /** Script name */
     scriptName: string;
 }
 
 /**
- * ButtonAction 联合类型。
- * 描述所有支持的按钮动作类型及其参数。
+ * ButtonAction is the union of every supported action type and its parameters.
  */
 export type ButtonAction =
     | { type: 'file'; parameters: FileActionParams }

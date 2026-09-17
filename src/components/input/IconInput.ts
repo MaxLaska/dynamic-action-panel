@@ -1,6 +1,6 @@
 /**
- * IconInput - 图标输入组件
- * 样式文件: IconInput.css
+ * IconInput - icon input component
+ * Stylesheet: IconInput.css
  */
 import type { App } from 'obsidian';
 import { Setting, TextComponent, getIcon } from 'obsidian';
@@ -10,25 +10,25 @@ import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { IconInputSuggest } from '@/components/suggest/IconInputSuggest';
 
 /**
- * IconInput 组件用于在设置面板中创建图标输入框，支持 SVG 上传、图标搜索、预览和删除。
+ * Icon input for the settings forms, supporting SVG upload, icon search, preview and removal.
  */
 export interface IconInputOptions {
-    /** 输入框名称 */
+    /** Setting name */
     name?: string;
-    /** 输入框描述 */
+    /** Setting description */
     description?: string;
-    /** 输入框占位符 */
+    /** Input placeholder */
     placeholder?: string;
-    /** 上传按钮提示 */
+    /** Tooltip of the upload button */
     uploadTooltip?: string;
-    /** 搜索按钮提示 */
+    /** Tooltip of the search button */
     searchTooltip?: string;
-    /** 图标变更回调 */
+    /** Called when the icon changes */
     onIconChange?: (icon: string) => void;
 }
 
 /**
- * IconInput 类，封装图标输入、SVG 上传、搜索、预览与删除逻辑。
+ * Wraps the icon input together with SVG upload, search, preview and removal.
  */
 export class IconInput {
     private input!: TextComponent;
@@ -38,11 +38,11 @@ export class IconInput {
     private suggest: IconInputSuggest | null = null;
 
     /**
-     * 构造函数
-     * @param container 容器元素
-     * @param options 组件配置项
-     * @param context 上下文（含 app、plugin）
-     * @param onValueChange 输入值变化回调
+     * Creates the component.
+     * @param container Container element
+     * @param options Component options
+     * @param context Render context (app and plugin)
+     * @param onValueChange Called when the value changes
      */
     constructor(
         container: HTMLElement,
@@ -54,7 +54,7 @@ export class IconInput {
             .setName(options.name ?? t('button_icon'))
             .setDesc(options.description ?? t('button_icon_desc'));
 
-        // 上传按钮
+        // Upload button.
         this.setting.addButton((btn) => {
             btn.setButtonText('')
                 .setClass('icon-upload-btn')
@@ -81,7 +81,7 @@ export class IconInput {
             btn.buttonEl.classList.add('icon-upload-btn');
         });
 
-        // 输入框
+        // Text input.
         this.setting.addText((text) => {
             this.input = text;
             text.setPlaceholder(options.placeholder ?? t('button_icon_placeholder')).onChange(
@@ -96,10 +96,10 @@ export class IconInput {
         const iconInputEl = this.setting.controlEl.querySelector('input')!;
         iconInputEl.addEventListener('input', () => this.refreshIconUI());
 
-        // 为图标输入框附加基于 ID 的下拉建议
+        // Attach the icon-id dropdown to the icon input.
         this.suggest = new IconInputSuggest(context.app, iconInputEl);
         this.suggest.onSelect((iconId, _evt) => {
-            // 将选中的图标 ID 转为 SVG 字符串，与原先 IconSearchModal 行为保持一致
+            // Convert the selected icon id into SVG markup, matching the former IconSearchModal behaviour.
             const svg = getIcon?.(iconId)?.outerHTML ?? iconId;
             this.setValue(svg);
             onValueChange?.(svg);
@@ -109,7 +109,7 @@ export class IconInput {
     }
 
     /**
-     * 刷新图标相关 UI（如预览、按钮显示/隐藏等）
+     * Refreshes the icon UI: the preview and the visibility of the upload button.
      */
     private refreshIconUI() {
         const val = this.value;
@@ -117,13 +117,13 @@ export class IconInput {
         const iconInputEl = this.setting.controlEl.querySelector('input')!;
 
         if (val && val.trim() !== '') {
-            // 隐藏上传和搜索按钮
+            // Hide the upload and search buttons.
             const uploadBtn = this.setting.controlEl.querySelector(
                 '.icon-upload-btn'
             ) as HTMLButtonElement;
             if (uploadBtn) uploadBtn.classList.add(HIDDEN_CLASS);
 
-            // SVG预览
+            // SVG preview.
             if (!this.svgPreview) {
                 this.svgPreview = this.setting.controlEl.createSpan();
                 this.svgPreview.className = 'icon-svg-preview';
@@ -132,7 +132,7 @@ export class IconInput {
             this.svgPreview.classList.remove(HIDDEN_CLASS);
             this.setting.controlEl.insertBefore(this.svgPreview, iconInputEl);
         } else {
-            // 显示上传和搜索按钮
+            // Show the upload and search buttons again.
             const uploadBtn = this.setting.controlEl.querySelector(
                 '.icon-upload-btn'
             ) as HTMLButtonElement;
@@ -141,30 +141,30 @@ export class IconInput {
         }
     }
 
-    /** 设置输入值，并刷新 UI */
+    /** Sets the input value and refreshes the UI */
     setValue(value: string) {
         this.value = value;
         this.input.setValue(value);
         this.refreshIconUI();
     }
 
-    /** 获取输入值 */
+    /** Returns the input value */
     getValue(): string {
         return this.value;
     }
 
-    /** 获取原生 input 元素 */
+    /** Returns the underlying input element */
     getInputElement(): HTMLInputElement {
         return this.input.inputEl;
     }
 
-    /** 设置错误提示 */
+    /** Marks the input as invalid */
     setError(message: string): void {
         this.input.inputEl.classList.add('input-error');
         this.input.inputEl.setAttribute('title', message);
     }
 
-    /** 清除错误提示 */
+    /** Clears the error state */
     clearError(): void {
         this.input.inputEl.classList.remove('input-error');
         this.input.inputEl.removeAttribute('title');

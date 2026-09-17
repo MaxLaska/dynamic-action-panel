@@ -1,6 +1,6 @@
 /**
- * FileNameInputSuggest - 文件名输入建议
- * 样式文件: FileNameInputSuggest.css
+ * FileNameInputSuggest - file name input suggestions
+ * Stylesheet: FileNameInputSuggest.css
  */
 import type { App } from 'obsidian';
 import { AbstractInputSuggest, moment } from 'obsidian';
@@ -8,7 +8,7 @@ import { AbstractInputSuggest, moment } from 'obsidian';
 type SafeMoment = () => { format(fmt: string): string };
 
 /**
- * FileNameInputSuggest 为文件名输入框提供日期变量格式的下拉建议。
+ * Dropdown suggestions of date variable formats for the file name input.
  */
 export class FileNameInputSuggest extends AbstractInputSuggest<string> {
     private readonly dateFormats: string[] = [
@@ -33,7 +33,7 @@ export class FileNameInputSuggest extends AbstractInputSuggest<string> {
     }
 
     /**
-     * 将选中的格式写入输入框，使用 {{DATE:...}} 语法。
+     * Writes the selected format into the input using the {{DATE:...}} syntax.
      */
     override selectSuggestion(format: string, evt: MouseEvent | KeyboardEvent): void {
         const value = `{{DATE:${format}}}`;
@@ -42,7 +42,7 @@ export class FileNameInputSuggest extends AbstractInputSuggest<string> {
     }
 
     /**
-     * 渲染每一条日期格式建议（包含预览）。
+     * Renders one date format suggestion, including its preview.
      */
     renderSuggestion(format: string, el: HTMLElement): void {
         const preview = (moment as unknown as SafeMoment)().format(format);
@@ -56,7 +56,7 @@ export class FileNameInputSuggest extends AbstractInputSuggest<string> {
     }
 
     /**
-     * 覆盖 getValue / setValue，可在外部按需使用。
+     * Returns the display text of a format, for callers that render it themselves.
      */
     getDisplayValue(format: string): string {
         const preview = (moment as unknown as SafeMoment)().format(format);

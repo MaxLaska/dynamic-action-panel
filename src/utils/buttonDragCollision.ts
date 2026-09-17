@@ -21,7 +21,8 @@ function isButtonSortableId(id: string): boolean {
 }
 
 /**
- * 按钮 > 网格空槽 > 标题区 > 标签 > 容器；分类排序项不参与按钮拖拽碰撞
+ * Priority: button > empty grid slot > header zone > tab > container. Category sortables
+ * never take part in button drags.
  * An empty grid slot is as precise a target as a button (both are single
  * cells and cannot overlap), so it outranks every area zone.
  */
@@ -45,10 +46,10 @@ function pickPrimaryCollision(collisions: Collision[]): Collision[] {
     const container = collisions.find((c) => String(c.id).startsWith(CONTAINER_PREFIX));
     if (container) return [container];
 
-    return []; // 分类排序项不参与按钮拖拽
+    return []; // Category sortables never take part in button drags.
 }
 
-/** 指针悬停按钮时优先命中按钮；无命中时用 closestCorners 兜底，解决自动展开文件夹后拖放区检测不到的问题 */
+/** Prefer the button under the pointer; fall back to closestCorners so drop zones stay detectable after a folder auto-expands. */
 export const buttonDragCollisionDetection: CollisionDetection = (args) => {
     const pointerCollisions = pointerWithin(args);
 
@@ -57,13 +58,13 @@ export const buttonDragCollisionDetection: CollisionDetection = (args) => {
         return pickPrimaryCollision(withoutActive);
     }
 
-    // 兜底: pointerWithin 无命中时, 用 closestCorners 找最近的按钮。
-    // 但若指针不在任何 detail 内(如磁贴区及其间隙)则不触发, 保持原位
+    // Fallback: when pointerWithin finds nothing, use closestCorners to locate the nearest button.
+    // Skip it while the pointer is outside every detail area (tiles and the gaps between them) so the item stays put.
     if (args.pointerCoordinates) {
         const { x, y } = args.pointerCoordinates;
         const elements = activeDocument.elementsFromPoint(x, y);
 
-        // 手动检测标题区：不依赖 dnd-kit droppable 测量，直接查 DOM
+        // Detect the header zone manually from the DOM instead of relying on dnd-kit droppable measurements.
         const headerEl = elements.find((el) => el.closest('.folder-detail-header'));
         if (headerEl) {
             const detailEl = headerEl.closest('.buttons-panel-folder-detail');

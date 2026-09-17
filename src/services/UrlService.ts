@@ -4,14 +4,14 @@ import { ButtonAction, UrlActionParams } from '@/types/action';
 import { tWithParams } from '@/utils/i18n';
 
 /**
- * URL 动作服务类，负责处理外部链接打开。
- * 支持在新标签页打开外部链接，包含 URL 验证和错误处理。
+ * Handles the open-URL action.
+ * Opens an external link, including URL validation and error handling.
  */
 export class UrlService {
     /**
-     * 构造函数，初始化 app 和插件实例。
-     * @param app Obsidian 应用实例
-     * @param plugin 插件主类实例（可选）
+     * Initializes the service with the app and plugin instance.
+     * @param app Obsidian app instance
+     * @param plugin Plugin instance (optional)
      */
     constructor(
         private app: App,
@@ -19,8 +19,8 @@ export class UrlService {
     ) {}
 
     /**
-     * 在 Obsidian 中打开外部链接。
-     * @param action 按钮动作配置对象，需包含 type: 'url' 及参数
+     * Opens an external link from within Obsidian.
+     * @param action Button action config; must be type: 'url' with its parameters
      */
     async openUrl(action: ButtonAction): Promise<void> {
         const url = this.validateAndExtractUrl(action);
@@ -38,9 +38,9 @@ export class UrlService {
     }
 
     /**
-     * 验证动作类型并提取 URL
-     * @param action 按钮动作配置对象
-     * @returns URL 字符串，如果无效则返回空字符串
+     * Validates the action type and extracts the URL.
+     * @param action Button action config
+     * @returns The URL, or an empty string when it is invalid
      */
     private validateAndExtractUrl(action: ButtonAction): string {
         if (action.type !== 'url') {
@@ -53,8 +53,9 @@ export class UrlService {
     private static readonly allowedUrlProtocols = new Set(['http:', 'https:', 'obsidian:']);
 
     /**
-     * 解析并校验为可打开的绝对 URL；失败返回 null。
-     * 允许 obsidian://、http(s)://（须被 URL 解析器接受），以及可补全为 https:// 的裸主机。
+     * Parses and validates the input into an openable absolute URL; returns null on failure.
+     * Accepts obsidian:// and http(s):// (as far as the URL parser accepts them), plus a bare
+     * host that can be completed to https://.
      */
     private resolveOpenableUrl(url: string): string | null {
         if (!url) {

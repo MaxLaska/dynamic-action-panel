@@ -37,8 +37,8 @@ interface SimpleButtonProps {
 
 /**
  * SimpleButton
- * 最小版本的按钮展示组件，用于验证 React 渲染和样式拆分是否正常工作。
- * 后续会在此基础上逐步扩展为完整的 Button 组件。
+ * Presentational component for a single panel button.
+ * It renders the icon, the label and the edit-mode affordances.
  */
 export const SimpleButton: React.FC<SimpleButtonProps> = ({
     button,
@@ -55,20 +55,20 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
     const iconRef = React.useRef<HTMLSpanElement>(null);
     const buttonRef = React.useRef<HTMLButtonElement>(null);
 
-    // 使用 useEffect 在 DOM 挂载后设置 SVG 图标
+    // Set the SVG icon once the DOM node is mounted.
     React.useEffect(() => {
         if (iconRef.current && button.icon) {
-            // 检查是否为 SVG 代码
+            // SVG markup.
             if (button.icon.trim().startsWith('<svg')) {
                 safeSetSVG(iconRef.current, button.icon);
             } else {
-                // 普通文本图标
+                // Plain text icon.
                 iconRef.current.textContent = button.icon;
             }
         }
     }, [button.icon]);
 
-    // 使用 hook 获取右键菜单处理函数
+    // Context menu handler.
     const handleContextMenu = useButtonMenu(button, category);
 
     // OCAP: in sort/edit mode a button hidden by its conditions stays
@@ -90,7 +90,7 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
     const isContextual = status === 'contextual';
     const showStatusBadge = status !== 'none' && (isManagementMode || isContextual);
 
-    // 悬浮显示完整按钮名称（Obsidian 原生 tooltip 样式）
+    // Show the full button name on hover, using the native Obsidian tooltip.
     React.useEffect(() => {
         const el = buttonRef.current;
         if (el && button.name && plugin.settings.panelConfig.showButtonTooltip) {
@@ -98,13 +98,13 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
         }
         return () => {
             if (el) {
-                // 关闭开关或卸载时移除已绑定的 tooltip
+                // Remove the bound tooltip when the setting is turned off or the button unmounts.
                 setTooltip(el, '');
             }
         };
     }, [button.name, plugin.settings.panelConfig.showButtonTooltip]);
 
-    // 绑定右键菜单
+    // Bind the context menu.
     React.useEffect(() => {
         if (!enableEditMode || !buttonRef.current) return;
 
@@ -116,7 +116,7 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
         };
     }, [enableEditMode, handleContextMenu]);
 
-    // 使用 useMemo 缓存类名计算，避免每次渲染都重新计算
+    // Memoize the class names so they are not recomputed on every render.
     const classNames = React.useMemo(() => {
         const layoutClass = displayStyle === 'icon_top' ? 'icon-top' : 'icon-left';
         const names = ['buttons-panel-simple-button', layoutClass];

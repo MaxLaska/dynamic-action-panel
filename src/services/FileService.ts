@@ -4,14 +4,14 @@ import { ButtonAction, FileActionParams } from '@/types/action';
 import { t } from '@/utils/i18n';
 
 /**
- * 文件动作服务类，负责处理文件打开和相关的动作。
- * 支持唯一标签页激活、文件存在性检查等功能。
+ * Handles the open-file action.
+ * Reuses an already open tab for the file and checks that the file exists.
  */
 export class FileService {
     /**
-     * 构造函数，初始化 app 和插件实例。
-     * @param app Obsidian 应用实例
-     * @param plugin 插件主类实例（可选）
+     * Initializes the service with the app and plugin instance.
+     * @param app Obsidian app instance
+     * @param plugin Plugin instance (optional)
      */
     constructor(
         private app: App,
@@ -19,9 +19,9 @@ export class FileService {
     ) {}
 
     /**
-     * 打开指定路径的文件。
-     * 如果文件已在某个标签页打开，则激活该标签页，否则新建标签页打开。
-     * @param action 按钮动作配置对象，需包含 type: 'file' 及参数
+     * Opens the file at the given path.
+     * If the file is already open in a tab, that tab is activated; otherwise a new tab is opened.
+     * @param action Button action config; must be type: 'file' with its parameters
      */
     async openFile(action: ButtonAction): Promise<void> {
         const filePath = this.validateAndExtractFilePath(action);
@@ -40,10 +40,10 @@ export class FileService {
     }
 
     /**
-     * 验证动作类型并提取文件路径
-     * @param action 按钮动作配置对象
-     * @returns 文件路径
-     * @throws 如果动作类型不是 'file'
+     * Validates the action type and extracts the file path.
+     * @param action Button action config
+     * @returns The file path
+     * @throws When the action type is not 'file'
      */
     private validateAndExtractFilePath(action: ButtonAction): string {
         if (action.type !== 'file') {
@@ -54,9 +54,9 @@ export class FileService {
     }
 
     /**
-     * 根据路径获取文件，如果不存在则显示通知
-     * @param filePath 文件路径
-     * @returns 文件对象，如果不存在则返回 null
+     * Resolves a path to a file, showing a notice when it does not exist.
+     * @param filePath File path
+     * @returns The file, or null when it does not exist
      */
     private getFileByPath(filePath: string) {
         const file = this.app.vault.getFileByPath(filePath);
@@ -68,9 +68,9 @@ export class FileService {
     }
 
     /**
-     * 查找已打开指定文件的 leaf
-     * @param filePath 文件路径
-     * @returns 已打开的 leaf，如果不存在则返回 null
+     * Finds a leaf that already has the given file open.
+     * @param filePath File path
+     * @returns The open leaf, or null when there is none
      */
     private findOpenLeafForFile(filePath: string): WorkspaceLeaf | null {
         const allLeaves = this.getAllLeaves();
@@ -88,24 +88,24 @@ export class FileService {
     }
 
     /**
-     * 激活指定的 leaf
-     * @param leaf 要激活的 leaf
+     * Activates the given leaf.
+     * @param leaf The leaf to activate
      */
     private activateLeaf(leaf: WorkspaceLeaf): void {
         this.app.workspace.setActiveLeaf(leaf, { focus: true });
     }
 
     /**
-     * 在新标签页中打开文件
-     * @param filePath 文件路径
+     * Opens the file in a new tab.
+     * @param filePath File path
      */
     private async openFileInNewLeaf(filePath: string): Promise<void> {
         await this.app.workspace.openLinkText(filePath, '', true);
     }
 
     /**
-     * 获取所有 WorkspaceLeaf。
-     * 使用 Obsidian API 的 iterateAllLeaves 方法，包括主区域、浮动和侧边栏的所有叶子。
+     * Returns every WorkspaceLeaf.
+     * Uses the Obsidian API iterateAllLeaves, which covers the main area, popouts and sidebars.
      */
     private getAllLeaves(): WorkspaceLeaf[] {
         const leaves: WorkspaceLeaf[] = [];

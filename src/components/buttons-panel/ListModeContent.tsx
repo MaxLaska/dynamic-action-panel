@@ -75,7 +75,7 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
         return map;
     });
 
-    // 记录上次 autoCollapseOnMount 的值，用于检测变化
+    // Remember the previous autoCollapseOnMount value to detect a change.
     const prevAutoCollapseRef = React.useRef(autoCollapseOnMount);
 
     React.useEffect(() => {
@@ -88,12 +88,12 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
             let changed = false;
 
             for (const c of categories) {
-                // 新增分类：用默认值
+                // New category: use the default.
                 if (!next.has(c.id)) {
                     next.set(c.id, defaultOpen);
                     changed = true;
                 } else if (autoCollapseChanged) {
-                    // autoCollapseOnMount 切换时：重置所有已有分类
+                    // When autoCollapseOnMount flips, reset every existing category.
                     next.set(c.id, defaultOpen);
                     changed = true;
                 }

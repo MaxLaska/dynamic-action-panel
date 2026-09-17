@@ -1,5 +1,5 @@
 
-/* 通用：添加分类 / 添加按钮 样式 */
+/* Shared styling for the add-category and add-button controls */
 .buttons-panel .add-category,
 .buttons-panel .add-button {
     display: flex;

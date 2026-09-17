@@ -11,7 +11,7 @@ interface FolderDropTargetProps {
     children: React.ReactNode;
 }
 
-/** 文件夹视图：不可排序时的文件夹磁贴，仍可作为按钮拖放目标。 */
+/** Folder view: a folder tile that cannot be sorted but still accepts button drops. */
 export const FolderDropTarget: React.FC<FolderDropTargetProps> = ({
     categoryId,
     className,

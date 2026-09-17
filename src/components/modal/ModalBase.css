@@ -1,4 +1,4 @@
-/* 通用的模态框样式 */
+/* Shared modal styling */
 .buttons-panel .setting-item-description {
     color: var(--text-muted);
     font-size: 0.9em;
@@ -13,13 +13,13 @@
     box-sizing: border-box;
 }
 
-/* 删除类弹框：统一标题样式（与系统标题栏一致，略增强层级） */
+/* Delete dialogs: unified heading styling, matching the system title bar with slightly more emphasis */
 .modal .buttons-panel-delete-title {
     margin: 0;
     letter-spacing: 0;
 }
 
-/* 删除类弹框：正文文案间距与可读性优化 */
+/* Delete dialogs: body text spacing and readability */
 .buttons-panel.category-delete .delete-message,
 .buttons-panel.button-delete .delete-message {
     margin-top: 0;

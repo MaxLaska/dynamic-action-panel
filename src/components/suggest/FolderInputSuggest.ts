@@ -1,15 +1,15 @@
 /**
- * FolderInputSuggest - 文件夹输入建议
- * 样式文件: FolderInputSuggest.css
+ * FolderInputSuggest - folder input suggestions
+ * Stylesheet: FolderInputSuggest.css
  */
 import type { App } from 'obsidian';
 import { AbstractInputSuggest, TFolder } from 'obsidian';
 
 /**
- * FolderInputSuggest 为文件夹路径输入框提供基于 AbstractInputSuggest 的下拉建议。
+ * Dropdown suggestions for the folder path input, built on AbstractInputSuggest.
  */
 export class FolderInputSuggest extends AbstractInputSuggest<string> {
-    /** 预加载并缓存的文件夹路径列表（已排序） */
+    /** Preloaded and sorted list of folder paths */
     private folders: string[] = [];
 
     constructor(app: App, inputEl: HTMLInputElement) {
@@ -18,14 +18,14 @@ export class FolderInputSuggest extends AbstractInputSuggest<string> {
     }
 
     /**
-     * 从 vault 中加载所有文件夹路径并排序。
+     * Loads every folder path from the vault and sorts them.
      */
     private loadFolders(): void {
         const folders: string[] = [];
         const allFiles = this.app.vault.getAllLoadedFiles();
         for (const file of allFiles) {
             if (file instanceof TFolder) {
-                // 根目录 path 为空字符串，统一规范化为 "/"
+                // The vault root has an empty path, so normalize it to "/".
                 folders.push(file.path.replace(/\/$/, '') || '/');
             }
         }
@@ -36,7 +36,7 @@ export class FolderInputSuggest extends AbstractInputSuggest<string> {
     protected async getSuggestions(query: string): Promise<string[]> {
         const normalized = query.trim().toLowerCase();
 
-        // 输入为空时，返回前 50 个文件夹作为默认建议
+        // Empty query: offer the first 50 folders as the default suggestions.
         if (!normalized) {
             return this.folders.slice(0, 50);
         }
@@ -45,12 +45,12 @@ export class FolderInputSuggest extends AbstractInputSuggest<string> {
             folderPath.toLowerCase().includes(normalized)
         );
 
-        // 限制最多返回 50 条建议
+        // Cap the result at 50 suggestions.
         return matches.slice(0, 50);
     }
 
     /**
-     * 渲染每一条文件夹建议。
+     * Renders one folder suggestion.
      */
     renderSuggestion(folder: string, el: HTMLElement): void {
         el.addClass('buttons-panel');

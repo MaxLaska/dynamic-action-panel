@@ -1,15 +1,15 @@
 /**
- * FileInputSuggest - 文件输入建议
- * 样式文件: FileInputSuggest.css
+ * FileInputSuggest - file input suggestions
+ * Stylesheet: FileInputSuggest.css
  */
 import type { App, TFile } from 'obsidian';
 import { AbstractInputSuggest, normalizePath } from 'obsidian';
 
-/** 建议项中可附加的元数据（用于富展示：名称 + 描述）。 */
+/** Optional metadata attached to a suggestion, used for the richer name + description rows. */
 export interface SuggestionMeta {
-    /** 展示名称（已按当前语言解析） */
+    /** Display name, already resolved for the current language */
     name?: string;
-    /** 展示描述（已按当前语言解析） */
+    /** Display description, already resolved for the current language */
     description?: string;
 }
 
@@ -17,29 +17,29 @@ export interface FileInputSuggestOptions {
     rootFolder?: string;
     fileExts?: string[];
     /**
-     * 建议列表中是否只显示文件名（不含路径）。
-     * - 默认 false：显示完整 path
-     * - ScriptInput 等场景可传 true，只显示文件名
+     * Whether the suggestion list shows only the file name instead of the path.
+     * - false (default): show the full path
+     * - true: show only the file name, as ScriptInput does
      */
     showFileNameOnly?: boolean;
     /**
-     * 可选的元数据解析回调：给定文件返回名称/描述，用于富展示。
-     * 返回 null/undefined 时回退到文件名展示。
+     * Optional metadata resolver: returns a name/description for a file, used for the richer rows.
+     * When it returns null/undefined the row falls back to the plain file name.
      */
     getMeta?: (file: TFile) => SuggestionMeta | null | Promise<SuggestionMeta | null>;
-    /** 是否展示描述行（第二行灰色小字）。默认 true（当 getMeta 返回 description 时生效）。 */
+    /** Whether the muted second line is shown. Default true, and only when getMeta returns a description. */
     showDescription?: boolean;
 }
 
 /**
- * FileInputSuggest 为文件输入框提供基于 AbstractInputSuggest 的文件下拉建议。
- * - 限制最多返回 50 条建议，防止列表过长
+ * File dropdown suggestions for the file input, built on AbstractInputSuggest.
+ * - Capped at 50 suggestions so the list stays usable
  */
 export class FileInputSuggest extends AbstractInputSuggest<TFile> {
     private readonly options: FileInputSuggestOptions;
-    /** 预加载并缓存的文件列表（已按 path 排序，并应用 root/fileExts 过滤） */
+    /** Preloaded file list, sorted by path and already filtered by rootFolder/fileExts */
     private files: TFile[] = [];
-    /** 元数据缓存：文件路径 -> SuggestionMeta，用于富展示。 */
+    /** Metadata cache keyed by file path, used for the richer suggestion rows. */
     private metaCache: Map<string, SuggestionMeta | null> = new Map();
 
     constructor(app: App, inputEl: HTMLInputElement, options: FileInputSuggestOptions) {
@@ -49,7 +49,7 @@ export class FileInputSuggest extends AbstractInputSuggest<TFile> {
     }
 
     /**
-     * 从 vault 中加载所有符合条件的文件并排序。
+     * Loads every matching file from the vault and sorts them.
      */
     private loadFiles(): void {
         let files = this.app.vault.getFiles();
@@ -71,7 +71,7 @@ export class FileInputSuggest extends AbstractInputSuggest<TFile> {
     protected async getSuggestions(query: string): Promise<TFile[]> {
         const normalized = query.trim().toLowerCase();
 
-        // 输入为空时，返回前 50 个文件作为默认建议
+        // Empty query: offer the first 50 files as the default suggestions.
         if (!normalized) {
             const top = this.files.slice(0, 50);
             await this.prefetchMeta(top);
@@ -90,7 +90,7 @@ export class FileInputSuggest extends AbstractInputSuggest<TFile> {
     }
 
     /**
-     * 预取一批文件的元数据，供渲染时同步读取（避免 renderSuggestion 异步）。
+     * Prefetches the metadata of a batch of files so renderSuggestion can read it synchronously.
      */
     private async prefetchMeta(files: TFile[]): Promise<void> {
         if (!this.options.getMeta) return;
@@ -108,9 +108,9 @@ export class FileInputSuggest extends AbstractInputSuggest<TFile> {
     }
 
     /**
-     * 渲染每一条文件建议。
-     * 若提供了 getMeta 且返回了有效元数据，则展示“名称 + 描述”两行；
-     * 否则回退为仅显示文件名/路径。
+     * Renders one file suggestion.
+     * With a getMeta callback that returns usable metadata the row shows name and description;
+     * otherwise it falls back to just the file name or path.
      */
     renderSuggestion(file: TFile, el: HTMLElement): void {
         el.addClass('buttons-panel');
@@ -118,12 +118,12 @@ export class FileInputSuggest extends AbstractInputSuggest<TFile> {
         const meta = this.metaCache.get(file.path) ?? null;
         const showDescription = this.options.showDescription ?? true;
 
-        // 主行：优先显示文件名（实际选择与回填的值），无可解析 meta 时回退到路径
+        // Main line: the file name (the value that is actually inserted), or the path.
         const title = this.options.showFileNameOnly ? file.name : file.path;
         const titleEl = el.createDiv({ cls: 'file-suggestion-title' });
         titleEl.setText(title);
 
-        // 次行：有 meta 时显示 “name：description”，否则回退到 description
+        // Second line: name and description when both exist, otherwise whichever one does.
         const name = meta?.name?.trim();
         const desc = meta?.description?.trim();
         let subLine = '';

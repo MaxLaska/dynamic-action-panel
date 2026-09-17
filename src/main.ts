@@ -1,12 +1,12 @@
 // main.ts
-// 本文件为 Obsidian 插件 obsidian-buttons-panel-plugin 的主入口，负责插件的初始化、激活、停用等生命周期管理。
-// 包含主插件类 ButtonsPanelPlugin，注册各类视图、命令、设置页等核心功能。
+// Main entry point of the plugin: initialization, activation and teardown.
+// Holds ButtonsPanelPlugin, which registers the views, commands and the settings tab.
 //
-// 主要内容：
-// - ButtonsPanelPlugin 主插件类
-// - onload、onunload 等生命周期方法
-// - 插件初始化、资源注册、事件监听等关键逻辑
-// - 详细参数、返回值、用途说明
+// Contents:
+// - ButtonsPanelPlugin: the plugin main class
+// - the onload and onunload lifecycle methods
+// - plugin initialization, resource registration and event listeners
+// - settings loading through the migration pipeline, and settings persistence
 //
 import { Plugin, WorkspaceLeaf, TFile, Notice, normalizePath } from 'obsidian';
 import { ButtonsPanelView } from '@/views/ButtonsPanelView';
@@ -20,31 +20,31 @@ import { OCAPContextService } from '@/context/OCAPContextService';
 import { t, tWithParams } from '@/utils/i18n';
 import { pickAndImportTemplate } from '@/export/templateIo';
 
-// 视图类型常量
+// View type constant
 export const BUTTONS_PANEL_VIEW_TYPE = 'buttons-panel-view';
 
 /**
- * 按钮面板插件主类，继承自 Obsidian 的 Plugin。
- * 负责插件的初始化、视图注册、命令注册、设置管理等核心功能。
+ * Plugin main class, extending Obsidian's Plugin.
+ * Handles initialization, view and command registration and the settings.
  */
 export default class ButtonsPanelPlugin extends Plugin {
-    /** 插件设置数据对象 */
+    /** Persisted plugin settings */
     settings!: ButtonsPanelPluginSettings;
-    /** 设置页签对象 */
+    /** Settings tab instance */
     settingTab!: ButtonsPanelSettingTab;
-    /** 按钮动作执行器对象 */
+    /** Action dispatcher instance */
 	actionDispatcher!: ButtonsPanelPluginType['actionDispatcher'];
     /** OCAP context service (reactive workspace context snapshot store) */
     contextService!: OCAPContextService;
-    /** 记录最后激活的内容标签页（排除按钮面板） */
+    /** Last active content leaf (never the buttons panel) */
     lastActiveContentLeaf: WorkspaceLeaf | null = null;
-    /** 分类展开状态（运行时状态，不持久化） */
+    /** Expanded state per category (runtime state, not persisted) */
     categoryOpenState: Record<string, boolean> = {};
-    /** 标签视图当前激活的分类 ID（运行时状态，不持久化） */
+    /** Id of the category active in tabs view (runtime state, not persisted) */
     activeTabCategoryId: string | null = null;
 
     /**
-     * 插件加载时自动调用，完成初始化、视图注册、命令注册、设置页签注册等。
+     * Called when the plugin loads; registers the view, the commands and the settings tab.
      */
     async onload() {
         await this.loadSettings();
@@ -58,14 +58,14 @@ export default class ButtonsPanelPlugin extends Plugin {
         this.contextService = new OCAPContextService(this.app, [BUTTONS_PANEL_VIEW_TYPE]);
         this.contextService.start();
 
-        // 注册按钮面板视图
+        // Register the buttons panel view.
         this.registerView(
             BUTTONS_PANEL_VIEW_TYPE,
             (leaf: WorkspaceLeaf) =>
                 new ButtonsPanelView(leaf, this, this.settings.categories, this.settings.panelConfig)
         );
 
-        // 添加命令：打开按钮面板
+        // Command: open the buttons panel.
         this.addCommand({
             id: 'open-panel',
             name: t('open_panel'),
@@ -74,7 +74,7 @@ export default class ButtonsPanelPlugin extends Plugin {
             },
         });
 
-        // 添加命令：打开按钮面板选项
+        // Command: open the buttons panel settings.
         this.addCommand({
             id: 'open-options',
             name: t('open_options'),
@@ -93,12 +93,12 @@ export default class ButtonsPanelPlugin extends Plugin {
             },
         });
 
-        // 添加左侧功能区图标，点击可快速打开按钮面板
+        // Ribbon icon that opens the buttons panel.
         this.addRibbonIcon('mouse', t('open_panel'), () => {
             void this.activateView();
         });
 
-        // 添加设置标签页（Obsidian设置页）
+        // Register the settings tab in the Obsidian settings.
         this.settingTab = new ButtonsPanelSettingTab(this.app, this);
         this.addSettingTab(this.settingTab);
 
@@ -109,13 +109,13 @@ export default class ButtonsPanelPlugin extends Plugin {
             this.contextService.refresh();
         });
 
-        // 监听标签页切换，记录最后激活的标签页（排除按钮面板）
+        // Track leaf changes to remember the last active content leaf (never the buttons panel).
         this.registerEvent(
             this.app.workspace.on('active-leaf-change', (leaf: WorkspaceLeaf | null) => {
                 if (
                     leaf &&
                     leaf.view &&
-                    !(leaf.view instanceof ButtonsPanelView) // 排除按钮面板
+                    !(leaf.view instanceof ButtonsPanelView) // exclude the buttons panel
                 ) {
                     this.lastActiveContentLeaf = leaf;
                 }
@@ -124,15 +124,15 @@ export default class ButtonsPanelPlugin extends Plugin {
     }
 
     /**
-     * 插件卸载时自动调用。
+     * Called when the plugin unloads.
      */
     onunload() {
         this.contextService?.stop();
     }
 
     /**
-     * 加载插件设置（异步）：迁移/规范化持久化数据（settingsVersion 管道，
-     * 见 src/settings/settingsMigrations.ts），迁移结果持久化一次。
+     * Loads the plugin settings: migrates and normalizes the persisted data through the
+     * settingsVersion pipeline (src/settings/settingsMigrations.ts) and persists the result once.
      */
     async loadSettings() {
         const rawData: unknown = await this.loadData();
@@ -153,7 +153,7 @@ export default class ButtonsPanelPlugin extends Plugin {
     }
 
     /**
-     * 保存插件设置（异步）。
+     * Persists the plugin settings.
      *
      * Persisting must not silently mutate the domain objects: the historical
      * in-place `order` sort that lived here is gone. Ordering is now
@@ -167,12 +167,12 @@ export default class ButtonsPanelPlugin extends Plugin {
             await this.saveData(this.settings);
             this.updatePanels();
         } catch (error) {
-            console.error('保存设置时出错:', error);
+            console.error('Error while saving the settings:', error);
         }
     }
 
     /**
-     * 更新所有已打开的按钮面板视图的设置（如面板样式等）。
+     * Pushes the current settings into every open buttons panel view.
      */
     updatePanels() {
         this.app.workspace.getLeavesOfType(BUTTONS_PANEL_VIEW_TYPE).forEach((leaf) => {
@@ -184,8 +184,8 @@ export default class ButtonsPanelPlugin extends Plugin {
     }
 
     /**
-     * 激活（或创建）右侧按钮面板视图。
-     * 若已存在则激活，否则新建。
+     * Activates the buttons panel view in the right sidebar, creating it when needed.
+     * An existing view is revealed instead of opening a second one.
      */
     private async activateView() {
         const { workspace } = this.app;
@@ -194,10 +194,10 @@ export default class ButtonsPanelPlugin extends Plugin {
         const leaves = workspace.getLeavesOfType(BUTTONS_PANEL_VIEW_TYPE);
 
         if (leaves.length > 0) {
-            // 如果面板已经存在，激活它
+            // The panel already exists, so just reveal it.
             leaf = leaves[0]!;
         } else {
-            // 创建新的面板在右侧边栏
+            // Otherwise create it in the right sidebar.
             leaf = workspace.getRightLeaf(false);
             if (leaf) {
                 await leaf.setViewState({
@@ -208,19 +208,19 @@ export default class ButtonsPanelPlugin extends Plugin {
         }
 
         if (leaf) {
-            // 显式忽略 Promise，避免阻塞调用方
+            // Deliberately ignore the promise so the caller is not blocked.
             void workspace.revealLeaf(leaf);
         }
     }
 
     /**
-     * 打开 Obsidian 设置面板，并直接定位到本插件的设置页
+     * Opens the Obsidian settings and navigates to this plugin's tab
      */
     private async activateSettingsView() {
         const appAny = this.app as unknown as {
             setting?: {
                 open: () => void;
-                // Obsidian 1.4+ 提供的 API，使用 any 以兼容类型定义
+                // API available since Obsidian 1.4; typed loosely because it is not in the public typings.
                 openTabById?: (id: string) => void;
             };
         };
@@ -228,23 +228,23 @@ export default class ButtonsPanelPlugin extends Plugin {
         const setting = appAny.setting;
         if (!setting) return;
 
-        // 打开设置页面
+        // Open the settings dialog.
         setting.open();
 
-        // 尝试直接定位到当前插件的设置页
+        // Try to navigate straight to this plugin's tab.
         if (typeof setting.openTabById === 'function') {
             setting.openTabById(this.manifest.id);
         }
     }
 }
 
-// 在插件 onload 或初始化时注册脚本命令
+// Registers the script commands during plugin initialization.
 async function registerScriptCommands(plugin: ButtonsPanelPluginType) {
     let scriptFolder = plugin.settings.pathConfig?.scriptFolderPath;
     if (!scriptFolder) {
         return;
     }
-    // 使用 normalizePath 清理路径
+    // Normalize the path.
     scriptFolder = normalizePath(scriptFolder);
     const allFiles = plugin.app.vault.getFiles();
 

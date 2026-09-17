@@ -6,31 +6,31 @@ import type { ButtonAction } from '@/types';
 /**
  * useActionDispatcher Hook
  * 
- * 封装 ActionDispatcher 的使用，提供类型安全的动作执行接口。
- * 从 PluginContext 中获取 app 和 plugin，创建或复用 ActionDispatcher 实例。
+ * Wraps the ActionDispatcher behind a type-safe interface for running actions.
+ * Reads app and plugin from PluginContext and creates or reuses the ActionDispatcher instance.
  * 
- * @returns ActionDispatcher 实例的 executeActions 方法
+ * @returns The executeActions method of the ActionDispatcher
  */
 export function useActionDispatcher() {
     const { plugin, app } = usePluginContext();
 
-    // 使用 useMemo 缓存 ActionDispatcher 实例，避免重复创建
+    // Memoize the ActionDispatcher so it is not recreated on every render.
     const dispatcher = useMemo(() => {
-        // 如果 plugin 已经有 actionDispatcher，优先使用（保持向后兼容）
+        // Prefer an actionDispatcher the plugin already owns (backwards compatible).
         const existingDispatcher = plugin.actionDispatcher as ActionDispatcher | null | undefined;
         if (existingDispatcher && typeof existingDispatcher.executeActions === 'function') {
             return existingDispatcher;
         }
-        // 否则创建新实例
+        // Otherwise create a new instance.
         return new ActionDispatcher(app, plugin);
     }, [app, plugin]);
 
     /**
-     * 执行按钮动作序列
-     * @param actions 按钮动作数组
-     * @param executionMode 执行模式（'sequential' 顺序，'parallel' 并行）
-     * @param stopOnError 是否遇到错误时中断（仅顺序模式有效）
-     * @param delayBetweenActions 动作间延迟（毫秒，仅顺序模式有效）
+     * Runs the action sequence of a button
+     * @param actions Button actions to run
+     * @param executionMode 'sequential' or 'parallel'
+     * @param stopOnError Whether to abort on the first error (sequential mode only)
+     * @param delayBetweenActions Delay between actions in milliseconds (sequential mode only)
      */
     const executeActions = useMemo(
         () =>

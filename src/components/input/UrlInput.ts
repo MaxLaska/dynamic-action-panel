@@ -1,57 +1,57 @@
 import { Setting, TextComponent } from 'obsidian';
 
 /**
- * UrlInput 组件用于在设置面板中创建 URL 输入框，支持回调和回车事件。
+ * URL input for the settings forms, with change and Enter callbacks.
  */
 export interface UrlInputOptions {
-    /** 输入框名称 */
+    /** Setting name */
     name: string;
-    /** 输入框描述 */
+    /** Setting description */
     description: string;
-    /** 输入框占位符 */
+    /** Input placeholder */
     placeholder: string;
-    /** URL 变更回调 */
+    /** Called when the URL changes */
     onUrlChange?: (url: string) => void;
-    /** 回车键回调 */
+    /** Called when Enter is pressed */
     onEnterKey?: () => void;
 }
 
 /**
- * UrlInput 类，封装 URL 输入与回调逻辑。
+ * Wraps the URL input and its callbacks.
  */
 export class UrlInput {
     private input!: TextComponent;
     private setting: Setting;
 
     /**
-     * 构造函数
-     * @param container 容器元素
-     * @param options 组件配置项
-     * @param context 上下文（含 app、plugin）
-     * @param onValueChange 输入值变化回调
+     * Creates the component.
+     * @param container Container element
+     * @param options Component options
+     * @param context Unused; kept so the signature matches the other input components
+     * @param onValueChange Called when the value changes
      */
 	constructor(
 		container: HTMLElement,
 		options: UrlInputOptions,
-		// 目前未使用 context，保留参数仅为对齐其它组件签名
+		// context is currently unused; the parameter only keeps the signature aligned with the other inputs.
 		context: unknown,
 		onValueChange?: (value: string) => void
 	) {
         this.setting = new Setting(container).setName(options.name).setDesc(options.description);
 
-        // 输入框
+        // Text input.
         this.setting.addText((text) => {
             this.input = text;
             text.setPlaceholder(options.placeholder || 'https://example.com');
         });
 
-        // 输入变化回调
+        // Value change callback.
         this.input.onChange((value) => {
             onValueChange?.(value);
             options.onUrlChange?.(value);
         });
 
-        // 添加回车键监听
+        // Enter key listener.
         if (options.onEnterKey) {
             this.input.inputEl.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && options.onEnterKey) {
@@ -61,28 +61,28 @@ export class UrlInput {
         }
     }
 
-    /** 设置输入值 */
+    /** Sets the input value */
     setValue(value: string) {
         this.input.setValue(value);
     }
 
-    /** 获取输入值 */
+    /** Returns the input value */
     getValue(): string {
         return this.input.getValue();
     }
 
-    /** 获取原生 input 元素 */
+    /** Returns the underlying input element */
     getInputElement(): HTMLInputElement {
         return this.input.inputEl;
     }
 
-    /** 设置错误提示 */
+    /** Marks the input as invalid */
     setError(message: string): void {
         this.input.inputEl.classList.add('input-error');
         this.input.inputEl.setAttribute('title', message);
     }
 
-    /** 清除错误提示 */
+    /** Clears the error state */
     clearError(): void {
         this.input.inputEl.classList.remove('input-error');
         this.input.inputEl.removeAttribute('title');

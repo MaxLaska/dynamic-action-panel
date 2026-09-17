@@ -7,7 +7,7 @@ import type { ButtonsPanelPlugin } from '@/types/plugin';
 type ActionRenderContext = { app: App; plugin: ButtonsPanelPlugin };
 
 /**
- * “执行命令”动作类，实现按钮动作表单的渲染、数据管理、校验和序列化。
+ * The run-command action: form rendering, data handling, validation and serialization.
  */
 export class CommandAction implements IButtonAction {
     type = 'command';
@@ -16,7 +16,7 @@ export class CommandAction implements IButtonAction {
     private commandInput: CommandInput | null = null;
 
     /**
-     * 构造函数，初始化命令参数。
+     * Initializes the command parameters.
      */
     constructor(params: { commandId: string; args?: unknown[] }) {
         this.commandId = params.commandId;
@@ -24,10 +24,10 @@ export class CommandAction implements IButtonAction {
     }
 
     /**
-     * 渲染表单控件，绑定数据双向同步。
+     * Renders the form controls and keeps them in sync with the action data.
      */
     render(container: HTMLElement, context: ActionRenderContext) {
-        // 使用可复用的命令输入组件
+        // Reusable command input component.
         this.commandInput = new CommandInput(
             container,
             {
@@ -39,19 +39,19 @@ export class CommandAction implements IButtonAction {
             { app: context.app, plugin: context.plugin },
             (value: string) => {
                 this.commandId = value;
-                // 当用户输入或通过下拉建议选择了有效命令 ID 时，自动清除错误提示
+                // Clear the error as soon as a valid command id is typed or picked.
                 if (this.validate()) {
                     this.clearError();
                 }
             }
         );
 
-        // 设置初始值
+        // Apply the initial value.
         this.commandInput.setValue(this.commandId || '');
     }
 
     /**
-     * 校验表单数据有效性。
+     * Validates the form data.
      */
     validate() {
         return !!(this.commandId && this.commandId.trim());
@@ -71,7 +71,7 @@ export class CommandAction implements IButtonAction {
     }
 
     /**
-     * 序列化为 JSON 数据。
+     * Serializes the action to its JSON shape.
      */
     toJSON() {
         return {

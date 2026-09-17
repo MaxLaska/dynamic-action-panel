@@ -11,7 +11,7 @@ interface AddButtonProps {
 /**
  * AddButton
  * 
- * 统一的"添加按钮"组件，用于在分类中添加新按钮。
+ * Shared add-button control used to add a new button to a category.
  */
 export const AddButton: React.FC<AddButtonProps> = ({
     onClick,
@@ -24,7 +24,7 @@ export const AddButton: React.FC<AddButtonProps> = ({
                 icon="plus"
                 onClick={onClick}
                 className={className}
-                ariaLabel={ariaLabel || t('add_button') || '添加按钮'}
+                ariaLabel={ariaLabel || t('add_button') || 'Add button'}
             />
         </div>
     );

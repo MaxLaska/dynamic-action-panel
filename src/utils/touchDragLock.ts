@@ -1,4 +1,4 @@
-/** 拖拽进行中：锁定触摸行为，避免 pan-y/pan-x 与 dnd-kit 纵向拖放冲突 */
+/** While a drag is running: lock touch behaviour so pan-y/pan-x does not fight dnd-kit's vertical dragging. */
 export const PANEL_TOUCH_DRAG_LOCK_CLASS = 'buttons-panel-is-dragging';
 
 export function setPanelTouchDragLock(locked: boolean): void {

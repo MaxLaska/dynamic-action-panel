@@ -3,7 +3,7 @@ import { getEventCoordinates } from '@dnd-kit/utilities';
 
 const IDENTITY_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1 };
 
-/** 将拖拽预览中心对齐到指针（按下点），而非保持按下点在元素内的相对位置 */
+/** Centers the drag preview on the pointer instead of keeping the pointer's relative offset inside the element. */
 export const snapCenterToCursor: Modifier = ({
     activatorEvent,
     draggingNodeRect,

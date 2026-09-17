@@ -1,10 +1,10 @@
 
-/* 通用隐藏：链到 body 提高特异性（替代 !important） */
+/* Shared hidden helper: chained to body for specificity instead of !important */
 body .buttons-panel .is-hidden {
     display: none;
 }
 
-/* 全局：给指定的某些svg图标设置样式 */
+/* Global styling for specific SVG icons */
 body > button.buttons-panel > span.button-icon > svg,
 .buttons-panel .button-list-icon svg,
 .buttons-panel span.icon-svg-preview svg,

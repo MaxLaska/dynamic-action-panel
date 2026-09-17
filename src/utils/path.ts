@@ -1,11 +1,11 @@
 // path.ts
-// 路径处理相关工具函数。
+// Helpers for vault file paths.
 import { normalizePath } from 'obsidian';
 
 /**
- * 从路径中提取文件夹部分。
- * @param path 路径字符串
- * @returns 文件夹路径
+ * Extracts the folder part of a path.
+ * @param path Path string
+ * @returns Folder path, '/' when the path has no folder segment, '' for an empty path
  */
 export function getFolderFromPath(path: string): string {
     if (!path) return '';
@@ -14,9 +14,9 @@ export function getFolderFromPath(path: string): string {
 }
 
 /**
- * 从路径中提取文件名（不含扩展名）。
- * @param path 路径字符串
- * @returns 文件名
+ * Extracts the file name of a path without its extension.
+ * @param path Path string
+ * @returns File name without extension
  */
 export function getFileNameFromPath(path: string): string {
     const lastSlashIndex = path.lastIndexOf('/');
@@ -26,21 +26,21 @@ export function getFileNameFromPath(path: string): string {
 }
 
 /**
- * 根据文件夹和文件名，生成完整的文件路径。
- * @param folder 文件夹路径
- * @param fileName 文件名
- * @returns 完整的文件路径
+ * Builds a full file path from a folder and a file name.
+ * @param folder Folder path
+ * @param fileName File name
+ * @returns Full file path
  */
 export function buildFilePath(folder: string, fileName: string): string {
-    // 使用 normalizePath 清理路径
+    // Normalize the file name before assembling the path.
     fileName = normalizePath(fileName);
 
-    // 确保文件名以 .md 结尾
+    // Ensure the file name ends with .md
     const finalFileName = fileName.endsWith('.md') ? fileName : `${fileName}.md`;
 
     let fullPath = '';
     if (folder && folder.trim() !== '' && folder !== '/') {
-        // 使用 normalizePath 清理文件夹路径
+        // Normalize the folder path as well.
         folder = normalizePath(folder);
         fullPath = `${folder}/${finalFileName}`;
     } else {

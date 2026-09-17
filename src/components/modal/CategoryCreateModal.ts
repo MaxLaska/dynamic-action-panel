@@ -9,23 +9,23 @@ import {
 } from '@/utils/categoryGrid';
 
 /**
- * CategoryCreateModal 分类创建模态框。
- * 用于弹出对话框让用户输入新分类名称，并回调创建逻辑。
+ * Modal for creating a category.
+ * Collects the name of the new category and hands it to the create callback.
  * OCAP: optionally sets the category's visibility conditions with the shared
  * visual ConditionEditor.
  */
 export class CategoryCreateModal extends Modal {
-    /** 插件主类实例 */
+    /** Plugin instance */
     plugin: ButtonsPanelPlugin;
-    /** 创建分类后的回调函数，参数为新分类名称、可选的可见性条件与布局 */
+    /** Called after creation, with the new category name and the optional visibility conditions and layout */
     onCreate: (
         categoryName: string,
         conditions: ButtonCondition | undefined,
         layout: CategoryLayout
     ) => void;
-    /** 输入框当前的分类名称 */
+    /** Category name currently entered */
     newName: string;
-    /** 输入框组件引用（Obsidian Setting 的 text 控件） */
+    /** Reference to the text control of the Obsidian Setting */
     private nameInput: TextComponent | null = null;
     /** OCAP visibility conditions editor (visual builder + advanced JSON) */
     private conditionsInput: ConditionEditor | null = null;
@@ -33,10 +33,10 @@ export class CategoryCreateModal extends Modal {
     private selectedLayout: CategoryLayout = DEFAULT_CATEGORY_LAYOUT;
 
     /**
-     * 构造函数，初始化模态框。
-     * @param app Obsidian应用实例
-     * @param plugin 插件主类实例
-     * @param onCreate 创建分类的回调函数
+     * Initializes the modal.
+     * @param app Obsidian app instance
+     * @param plugin Plugin instance
+     * @param onCreate Called to create the category
      */
     constructor(
         app: App,
@@ -54,7 +54,7 @@ export class CategoryCreateModal extends Modal {
     }
 
     /**
-     * 打开模态框时自动调用，渲染输入界面。
+     * Called when the modal opens; renders the input UI.
      */
     onOpen() {
         const { contentEl, titleEl } = this;
@@ -62,20 +62,20 @@ export class CategoryCreateModal extends Modal {
         contentEl.addClass('buttons-panel');
         contentEl.addClass('category-create');
 
-        // 使用 Obsidian Modal 自带的标题栏
+        // Use the title bar provided by the Obsidian Modal.
         titleEl.setText(t('create_new_category'));
 
-        // 分类名称输入框
+        // Category name input.
         const nameSetting = new Setting(contentEl).setName(t('category_name'));
 
         nameSetting.addText((text) => {
             this.nameInput = text;
             text.setValue(this.newName).onChange((value) => {
                 this.newName = value;
-                // 清除错误状态
+                // Clear the error state.
                 this.nameInput?.inputEl.classList.remove('input-error');
             });
-            // 支持回车直接提交
+            // Enter submits the form.
             text.inputEl.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
@@ -103,7 +103,7 @@ export class CategoryCreateModal extends Modal {
             description: t('conditions_category_desc'),
         });
 
-        // 底部操作按钮：保存/取消
+        // Footer buttons: save and cancel.
         new Setting(contentEl)
             .addButton((button) =>
                 button
@@ -121,27 +121,27 @@ export class CategoryCreateModal extends Modal {
     }
 
     /**
-     * 处理创建分类的逻辑，校验输入并回调。
+     * Validates the input and invokes the create callback.
      */
     handleCreate() {
-        // 校验分类名称不能为空
+        // The category name must not be empty.
         if (!this.newName || this.newName.trim() === '') {
             this.nameInput?.inputEl.classList.add('input-error');
             new Notice(t('category_name_empty'));
             return;
         }
 
-        // 清除错误状态
+        // Clear the error state.
         this.nameInput?.inputEl.classList.remove('input-error');
 
-        // 验证 OCAP 条件输入（可视化编辑器 / JSON）
+        // Validate the OCAP conditions input (visual editor or JSON).
         const conditionsResult = this.conditionsInput?.getResult();
         if (conditionsResult && !conditionsResult.ok) {
             new Notice(conditionsResult.error);
             return;
         }
 
-        // 回调创建逻辑
+        // Hand over to the create callback.
         this.onCreate(
             this.newName.trim(),
             conditionsResult ? conditionsResult.conditions : undefined,
@@ -151,7 +151,7 @@ export class CategoryCreateModal extends Modal {
     }
 
     /**
-     * 关闭模态框时自动调用，清理内容。
+     * Called when the modal closes; clears its content.
      */
     onClose() {
         const { contentEl } = this;

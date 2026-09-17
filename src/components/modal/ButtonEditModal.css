@@ -1,5 +1,5 @@
-/* 编辑按钮模态框：按钮图标设置区域样式 */
-/* SVG预览容器 */
+/* Button edit modal: styling of the button icon section */
+/* SVG preview container */
 .buttons-panel .icon-svg-preview {
     margin-right: 0px;
     margin-left: 0px;
@@ -10,24 +10,24 @@
     align-items: center;
 }
 
-/* SVG图标 */
+/* SVG icon */
 .buttons-panel .icon-svg-preview svg {
     height: 24px;
     width: 24px;
 }
 
-/* 图标输入框容器 */
+/* Icon input container */
 .buttons-panel .icon-input-container {
     position: relative;
 }
 
-/* 编辑按钮模态框：动作类型为创建文件时，其下方的div的样式 */
+/* Button edit modal: styling of the div below a create-file action */
 .buttons-panel .actions-list-container .action-content {
     padding-top: 0.75em;
     border-top: 1px solid var(--background-modifier-border);
 }
 
-/* 动作序列编辑器样式 */
+/* Action sequence editor styling */
 .buttons-panel .actions-list-container {
     margin-top: 12px;
     border: 1px solid var(--background-modifier-border);
@@ -59,7 +59,7 @@
     border-top: 1px solid var(--background-modifier-border);
 }
 
-/* 动作序列：添加动作按钮的样式 */
+/* Action sequence: styling of the add-action button */
 .buttons-panel .add-action {
     display: flex;
     justify-content: center;
@@ -88,7 +88,7 @@
     background-color: transparent;
 }
 
-/* 添加、编辑按钮模态框：让动作序列中的每个动作底部的移动按钮靠左、删除按钮靠右 */
+/* Button create/edit modals: in each action footer, align the move buttons left and the remove button right */
 .buttons-panel .action-btn-setting .setting-item-control {
     display: flex;
     width: 100%;

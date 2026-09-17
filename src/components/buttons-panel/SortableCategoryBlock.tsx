@@ -10,12 +10,12 @@ interface SortableCategoryBlockProps {
     onClick?: React.MouseEventHandler<HTMLDivElement>;
     children: React.ReactNode;
     renderTitle: () => React.ReactNode;
-    /** 拖动时整块占位预览（完整分类内容） */
+    /** Placeholder preview of the whole block while dragging (the full category content) */
     renderDragPreview?: () => React.ReactNode;
 }
 
 /**
- * 列表视图：整块分类可排序；长按分类任意非按钮区域触发拖拽（保留展开状态）。
+ * List view: the whole category block is sortable; a long press on any non-button area starts the drag and the expanded state is kept.
  */
 export const SortableCategoryBlock: React.FC<SortableCategoryBlockProps> = ({
     categoryId,
@@ -34,9 +34,9 @@ export const SortableCategoryBlock: React.FC<SortableCategoryBlockProps> = ({
     });
 
     /**
-     * 以 Context 的 activeCategoryId 标识拖拽源（不用 useSortable.isDragging），
-     * 并始终应用 sortable 的 transform，占位才能随 categoryIds 实时换位而移动。
-     * 若 isDragging 时强制 transform:none，拖回去时占位会留在上次换位后的 DOM 位置（多在下方）。
+     * The drag source is identified by the context's activeCategoryId rather than useSortable.isDragging,
+     * and the sortable transform is always applied so the placeholder follows the live categoryIds order.
+     * Forcing transform:none while isDragging would leave the placeholder at its last swapped DOM position when dragging back.
      */
     const isDragSource =
         panelDragging && categoryDrag?.activeCategoryId === categoryId;

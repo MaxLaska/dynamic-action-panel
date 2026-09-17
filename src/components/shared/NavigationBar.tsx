@@ -15,9 +15,9 @@ interface NavIconButtonProps {
 }
 
 /**
- * 按钮面板导航栏中的单个图标按钮（无下拉菜单）。
- * - 只关注 UI：图标 + 状态样式 + 点击回调
- * - 不直接依赖插件或配置对象
+ * A single icon button in the panel navigation bar, without a dropdown menu.
+ * - Purely presentational: icon, active styling and a click handler
+ * - Never touches the plugin or the config objects directly
  */
 function NavIconButton({
     icon,
@@ -56,7 +56,7 @@ function NavIconButton({
 }
 
 // ---------------------------------------------------------------------------
-// 下拉菜单按钮
+// Dropdown menu button
 // ---------------------------------------------------------------------------
 
 interface MenuOption {
@@ -74,10 +74,10 @@ interface DropdownButtonProps {
 }
 
 /**
- * 带下拉菜单的图标按钮。
- * 点击后在按钮下方弹出 Obsidian 原生 Menu：
- * - 每个选项左侧显示图标，右侧显示对勾表示当前选中状态；
- * - 选择后按钮图标同步切换为当前选项的图标。
+ * Icon button with a dropdown menu.
+ * Clicking it opens a native Obsidian Menu below the button:
+ * - every option shows its icon on the left and a checkmark on the right when it is selected;
+ * - after a selection the button icon switches to the icon of the chosen option.
  */
 function DropdownButton({
     icon,
@@ -118,37 +118,37 @@ function DropdownButton({
 }
 
 // ---------------------------------------------------------------------------
-// NavigationBar 主组件
+// NavigationBar component
 // ---------------------------------------------------------------------------
 
 export interface NavigationBarProps {
-    /** 当前视图模式：list、tabs 或 folder */
+    /** Current view mode: list, tabs or folder */
     panelViewType: PanelViewType;
-    /** 按钮样式：icon_left 或 icon_top */
+    /** Button layout: icon_left or icon_top */
     displayStyle: 'icon_left' | 'icon_top';
     /** Current interaction mode: 'locked' or 'edit'. */
     interactionMode: InteractionMode;
-    /** 是否显示导航栏（由外层控制） */
+    /** Whether the navigation bar is shown (decided by the caller) */
     showTopNavBar?: boolean;
-    /** 视图切换回调，传入选中的视图类型 */
+    /** Called with the selected view type */
     onChangeView: (viewType: PanelViewType) => void;
-    /** 样式切换回调，传入选中的显示样式 */
+    /** Called with the selected display style */
     onChangeStyle: (style: 'icon_left' | 'icon_top') => void;
-    /** 交互模式切换回调 */
+    /** Called when the interaction mode changes */
     onChangeInteractionMode: (mode: InteractionMode) => void;
-    /** 打开设置回调 */
+    /** Called to open the settings */
     onOpenSettings: () => void;
-    /** 搜索关键字变化回调（仅内存过滤，不写入设置） */
+    /** Called when the search query changes (in-memory filtering only, nothing is persisted) */
     onSearchChange?: (query: string) => void;
 }
 
 /**
- * 按钮面板顶部导航栏（纯 UI 组件）。
+ * Top navigation bar of the buttons panel (a pure UI component).
  *
- * - 不直接访问 plugin 或 panelConfig
- * - 通过 props 接收当前状态和回调
- * - 由外层决定是否渲染（showTopNavBar）
- * - 视图/样式按钮使用 Obsidian 原生 Menu 弹出下拉选项
+ * - Never reads plugin or panelConfig directly
+ * - Receives the current state and the callbacks through props
+ * - The caller decides whether it renders at all (showTopNavBar)
+ * - The view and style buttons open their options in a native Obsidian Menu
  */
 export const NavigationBar: React.FC<NavigationBarProps> = ({
     panelViewType,
@@ -176,11 +176,11 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
             const next = !prev;
 
             if (!next) {
-                // 关闭搜索时清空关键字
+                // Clear the query when the search closes.
                 setSearchText('');
                 onSearchChange?.('');
             } else {
-                // 打开搜索时自动聚焦输入框
+                // Focus the input when the search opens.
                 window.setTimeout(() => {
                     searchInputRef.current?.focus();
                 }, 0);
@@ -202,7 +202,7 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
         searchInputRef.current?.focus();
     };
 
-    // ---- 按钮图标：根据当前模式动态变化 ----
+    // ---- Button icons, derived from the current mode ----
     const viewIconMap: Record<PanelViewType, string> = {
         list: 'list',
         tabs: 'tabs',
@@ -226,7 +226,7 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
         ? t('interaction_locked_tooltip')
         : t('interaction_edit_tooltip');
 
-    // ---- 视图模式下拉选项 ----
+    // ---- View mode dropdown options ----
     const viewTypes: PanelViewType[] = ['list', 'tabs', 'folder'];
     const viewOptions: MenuOption[] = viewTypes.map((vt) => ({
         icon: viewIconMap[vt],
@@ -235,8 +235,8 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
         onClick: () => onChangeView(vt),
     }));
 
-    // ---- 样式下拉选项 ----
-    // 文件夹视图只显示"图标在上"
+    // ---- Display style dropdown options ----
+    // Folder view offers only the icon_top style.
     const isFolder = panelViewType === 'folder';
     const styleOptions: MenuOption[] = isFolder
         ? [
@@ -244,7 +244,7 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
                   icon: 'layout-panel-top',
                   title: t('icon_top'),
                   checked: true,
-                  onClick: () => {}, // 文件夹视图强制 icon_top，不允许切换
+                  onClick: () => {}, // Folder view is locked to icon_top, so switching is a no-op.
               },
           ]
         : [
@@ -262,19 +262,19 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
               },
           ];
 
-    // ---- 当前选项的悬浮提示文字 ----
+    // ---- Tooltips of the current options ----
     const viewLabel = viewLabelMap[panelViewType] ?? t('list_view');
     const styleLabel = isFolder ? t('icon_top') : displayStyle === 'icon_left' ? t('icon_left') : t('icon_top');
 
-    // ---- 搜索输入区占位文字 ----
-    const searchPlaceholder = t('search_placeholder') || '输入并开始搜索…';
+    // ---- Placeholder of the search input ----
+    const searchPlaceholder = t('search_placeholder') || 'Type to search…';
 
     return (
         <>
             <div className="nav-buttons-container">
                 <NavIconButton
                     icon="search"
-                    label={t('search') || '筛选'}
+                    label={t('search') || 'Search'}
                     className="search-btn"
                     isActive={isSearchOpen}
                     onClick={handleSearchButtonClick}
@@ -320,7 +320,7 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
                     {searchText && (
                         <div
                             className="search-input-clear-button"
-                            aria-label={t('clear_search') || '清除搜索'}
+                            aria-label={t('clear_search') || 'Clear search'}
                             onClick={handleClearSearch}
                         />
                     )}

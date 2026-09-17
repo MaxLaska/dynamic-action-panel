@@ -5,7 +5,7 @@ import { categorySortableId } from '@/utils/categoryDragItems';
 import { useButtonDragOptional } from '@/contexts/ButtonDragContext';
 import { useCategoryDragOptional } from '@/contexts/ButtonDragContext';
 
-/** 拖拽时悬停标签满此时长后才切换激活标签（按钮跨分类拖拽） */
+/** Hovering a tab for this long during a drag switches the active tab (cross-category button drags) */
 const TAB_HOVER_ACTIVATE_MS = 400;
 
 function assignRef<T>(ref: React.Ref<T> | undefined, value: T | null): void {
@@ -28,8 +28,8 @@ interface SortableCategoryTabProps {
 }
 
 /**
- * 标签视图：分类标签用 Draggable（非 Sortable），拖拽中不改变标签栏布局；
- * 悬停目标满 0.4s 松手后由 Context 统一换位。同时保留按钮跨标签拖放的 droppable。
+ * Tabs view: category tabs use Draggable rather than Sortable, so the tab bar layout does not change mid-drag;
+ * after hovering a target for 0.4s the drop swap is performed by the context. The droppable for cross-tab button drops is kept.
  */
 export const SortableCategoryTab: React.FC<SortableCategoryTabProps> = ({
     categoryId,
@@ -58,13 +58,13 @@ export const SortableCategoryTab: React.FC<SortableCategoryTabProps> = ({
         disabled: !categorySortableEnabled,
     });
 
-    /** 与 Draggable 同 id，供 pointerWithin 命中以驱动悬停 0.4s / 松手换位 */
+    /** Same id as the Draggable, so pointerWithin hits it and drives the 0.4s hover and the drop swap */
     const { setNodeRef: setCategoryDropRef } = useDroppable({
         id: categoryDragId,
         disabled: !categorySortableEnabled,
     });
 
-    /** 以 Context 为准，避免悬停确认放置后 useSortable.isDragging 提前结束导致占位消失 */
+    /** Trust the context: useSortable.isDragging ends too early after a confirmed hover drop, which would make the placeholder vanish */
     const isDragSource =
         panelCategoryDragging && categoryDrag?.activeCategoryId === categoryId;
 

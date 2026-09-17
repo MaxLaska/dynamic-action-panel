@@ -7,17 +7,17 @@ import type { ButtonConfig } from '@/types';
 /**
  * useButtonActions Hook
  * 
- * 封装按钮动作执行的业务逻辑，提供便捷的按钮点击处理函数。
- * 自动处理按钮的执行模式、错误处理、延迟等配置。
+ * Wraps the button action execution behind a ready-made click handler.
+ * The execution mode, error policy and delay of the button are applied automatically.
  * 
- * @returns 按钮动作执行函数
+ * @returns A function that runs the actions of a button
  */
 export function useButtonActions() {
     const { executeActions } = useActionDispatcher();
 
     /**
-     * 执行按钮的所有动作
-     * @param button 按钮配置对象
+     * Runs every action of the button
+     * @param button Button configuration
      */
     const executeButtonActions = useCallback(
         async (button: ButtonConfig) => {

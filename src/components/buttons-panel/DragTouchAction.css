@@ -1,4 +1,4 @@
-/* 触摸拖拽 touch-action：用 CSS 变量切换 idle / dragging，避免 !important */
+/* Touch drag touch-action: switch between idle and dragging through a CSS variable instead of !important */
 body .buttons-panel,
 body .view-content.buttons-panel {
     --bp-touch-action-item: none;

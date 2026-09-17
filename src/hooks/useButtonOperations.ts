@@ -14,7 +14,7 @@ import type { ButtonConfig, CategoryConfig } from '@/types';
 /**
  * useButtonOperations Hook
  *
- * 封装按钮操作（复制、删除等）的业务逻辑，提供统一的操作接口。
+ * Button operations such as copy and remove, behind a single interface.
  *
  * OCAP v5: a copy creates a NEW tool definition plus a new placement in the
  * grid/variant (or flow list) the source occupies — never implicit sharing.
@@ -22,15 +22,15 @@ import type { ButtonConfig, CategoryConfig } from '@/types';
  * nothing references it anymore and it is not a library tool (exactly the
  * pre-v5 behavior for every tool that was not explicitly kept).
  *
- * @returns 按钮操作函数对象
+ * @returns The button operation functions
  */
 export function useButtonOperations() {
     const { plugin, app } = usePluginContext();
 
     /**
-     * 复制按钮
-     * @param button 要复制的按钮 (view shape; its id is the tool id)
-     * @param category 按钮所属的分类
+     * Copies a button
+     * @param button Button to copy (view shape; its id is the tool id)
+     * @param category Category the button belongs to
      */
     const copyButton = useCallback(
         async (button: ButtonConfig, category: CategoryConfig) => {
@@ -50,10 +50,10 @@ export function useButtonOperations() {
     );
 
     /**
-     * 删除按钮（显示确认对话框）
-     * @param button 要删除的按钮
-     * @param category 按钮所属的分类
-     * @param onDelete 删除成功后的回调
+     * Removes a button after a confirmation dialog
+     * @param button Button to remove
+     * @param category Category the button belongs to
+     * @param onDelete Called after a successful removal
      */
     const deleteButton = useCallback(
         (button: ButtonConfig, category: CategoryConfig, onDelete?: () => void) => {

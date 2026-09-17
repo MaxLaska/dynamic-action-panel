@@ -2,33 +2,33 @@ import { Setting, TextComponent } from 'obsidian';
 import { t } from '@/utils/i18n';
 
 /**
- * NameInput 组件用于在设置面板中创建名称输入框，支持校验、错误提示、禁用、聚焦等功能。
+ * Name input for the settings forms, with validation, error display, disabling and focus control.
  */
 export interface NameInputOptions {
-    /** 输入框名称 */
+    /** Setting name */
     name?: string;
-    /** 输入框描述 */
+    /** Setting description */
     description?: string;
-    /** 输入框占位符 */
+    /** Input placeholder */
     placeholder?: string;
-    /** 默认值 */
+    /** Initial value */
     value?: string;
-    /** 输入值变化回调 */
+    /** Called when the value changes */
     onValueChange?: (value: string) => void;
-    /** 回车键回调 */
+    /** Called when Enter is pressed */
     onEnter?: () => void;
-    /** 校验错误回调 */
+    /** Called when validation fails */
     onValidationError?: (error: string) => void;
-    /** 是否显示错误 */
+    /** Whether the error state is shown */
     showError?: boolean;
-    /** 错误信息 */
+    /** Error message */
     errorMessage?: string;
-    /** 是否禁用输入 */
+    /** Whether the input is disabled */
     disabled?: boolean;
 }
 
 /**
- * NameInput 类，封装名称输入、校验、错误提示、禁用、聚焦等逻辑。
+ * Wraps the name input together with validation, error display, disabling and focus control.
  */
 export class NameInput {
     private container: HTMLElement;
@@ -38,9 +38,9 @@ export class NameInput {
     private inputEl!: HTMLInputElement;
 
     /**
-     * 构造函数
-     * @param container 容器元素
-     * @param options 组件配置项
+     * Creates the component.
+     * @param container Container element
+     * @param options Component options
      */
     constructor(container: HTMLElement, options: NameInputOptions = {}) {
         this.container = container;
@@ -52,12 +52,12 @@ export class NameInput {
         this.render();
     }
 
-    /** 渲染输入框及相关 UI */
+    /** Renders the input and its surrounding UI */
     private render(): void {
-        // 创建 Setting 实例
+        // Create the Setting instance.
         this.setting = new Setting(this.container);
 
-        // 设置名称和描述
+        // Apply name and description.
         if (this.options.name) {
             this.setting.setName(this.options.name);
         }
@@ -65,11 +65,11 @@ export class NameInput {
             this.setting.setDesc(this.options.description);
         }
 
-        // 创建输入框
+        // Create the text input.
         this.textComponent = new TextComponent(this.setting.controlEl);
         this.inputEl = this.textComponent.inputEl;
 
-        // 设置属性
+        // Apply the input properties.
         this.textComponent
             .setPlaceholder(this.options.placeholder || '')
             .setValue(this.options.value || '')
@@ -77,7 +77,7 @@ export class NameInput {
                 this.handleValueChange(value);
             });
 
-        // 监听回车事件
+        // Enter key listener.
         this.inputEl.addEventListener('keydown', (evt) => {
             if (evt.key === 'Enter') {
                 evt.preventDefault();
@@ -85,18 +85,18 @@ export class NameInput {
             }
         });
 
-        // 设置禁用状态
+        // Apply the disabled state.
         if (this.options.disabled) {
             this.textComponent.setDisabled(true);
         }
 
-        // 设置错误状态
+        // Apply the initial error state.
         this.updateErrorState();
     }
 
-    /** 处理输入值变化，校验并回调 */
+    /** Validates the new value and forwards it to the callback */
     private handleValueChange(value: string): void {
-        // 验证输入
+        // Validate the new value.
         const validationError = this.validateInput(value);
 
         if (validationError) {
@@ -106,16 +106,16 @@ export class NameInput {
             this.clearErrorInternal();
         }
 
-        // 调用回调
+        // Forward it to the caller.
         this.options.onValueChange?.(value);
     }
 
-    /** 处理回车事件 */
+    /** Handles the Enter key */
     private handleEnter(): void {
         this.options.onEnter?.();
     }
 
-    /** 校验输入值，返回错误信息或 null */
+    /** Validates a value and returns an error message, or null when it is valid */
     private validateInput(value: string): string | null {
         if (!value || value.trim() === '') {
             return t('button_name_required');
@@ -125,7 +125,7 @@ export class NameInput {
             return t('button_name_too_long');
         }
 
-        // 检查特殊字符
+        // Reject characters that are invalid in file names.
         const invalidChars = /[<>:"/\\|?*]/;
         if (invalidChars.test(value)) {
             return t('button_name_invalid_chars');
@@ -134,19 +134,19 @@ export class NameInput {
         return null;
     }
 
-    /** 设置错误状态（内部方法） */
+    /** Applies the error state to the input element */
     private setErrorInternal(message: string): void {
         this.inputEl.classList.add('input-error');
         this.inputEl.setAttribute('title', message);
     }
 
-    /** 清除错误状态（内部方法） */
+    /** Removes the error state from the input element */
     private clearErrorInternal(): void {
         this.inputEl.classList.remove('input-error');
         this.inputEl.removeAttribute('title');
     }
 
-    /** 根据 options 更新错误状态 */
+    /** Syncs the error state with the current options */
     private updateErrorState(): void {
         if (this.options.showError && this.options.errorMessage) {
             this.setErrorInternal(this.options.errorMessage);
@@ -155,59 +155,59 @@ export class NameInput {
         }
     }
 
-    // 公开方法
-    /** 获取输入值 */
+    // Public API
+    /** Returns the input value */
     public getValue(): string {
         return this.textComponent.getValue();
     }
 
-    /** 设置输入值 */
+    /** Sets the input value */
     public setValue(value: string): void {
         this.textComponent.setValue(value);
     }
 
-    /** 设置禁用状态 */
+    /** Sets the disabled state */
     public setDisabled(disabled: boolean): void {
         this.textComponent.setDisabled(disabled);
     }
 
-    /** 设置错误提示 */
+    /** Marks the input as invalid */
     public setError(message: string): void {
         this.options.showError = true;
         this.options.errorMessage = message;
         this.updateErrorState();
     }
 
-    /** 清除错误提示 */
+    /** Clears the error state */
     public clearError(): void {
         this.options.showError = false;
         this.options.errorMessage = '';
         this.updateErrorState();
     }
 
-    /** 聚焦输入框 */
+    /** Focuses the input */
     public focus(): void {
         this.inputEl.focus();
     }
 
-    /** 失焦输入框 */
+    /** Removes focus from the input */
     public blur(): void {
         this.inputEl.blur();
     }
 
-    /** 销毁组件，清空容器 */
+    /** Destroys the component and clears its container */
     public destroy(): void {
         this.container.empty();
     }
 
-    // 链式调用方法
-    /** 设置名称 */
+    // Chainable setters
+    /** Sets the setting name */
     public setName(name: string): this {
         this.setting.setName(name);
         return this;
     }
 
-    /** 设置描述 */
+    /** Sets the setting description */
     public setDesc(description: string): this {
         this.setting.setDesc(description);
         return this;

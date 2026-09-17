@@ -4,27 +4,27 @@ import { FileNameInputSuggest } from '@/components/suggest/FileNameInputSuggest'
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 
 /**
- * FileNameInput 组件用于在设置面板中创建文件名输入框，支持文件名建议和回调。
+ * File name input for the settings forms, with date-variable suggestions.
  */
 export interface FileNameInputOptions {
-    /** 输入框名称 */
+    /** Setting name */
     name: string;
-    /** 输入框描述 */
+    /** Setting description */
     description: string;
-    /** 输入框占位符 */
+    /** Input placeholder */
     placeholder: string;
-    /** 搜索按钮提示 */
+    /** Tooltip of the search button */
     searchTooltip: string;
-    /** 建议按钮提示 */
+    /** Tooltip of the suggestion button */
     suggestTooltip: string;
-    /** 文件名变更回调 */
+    /** Called when the file name changes */
     onFileNameChange?: (fileName: string) => void;
-    /** 回车键回调 */
+    /** Called when Enter is pressed */
     onEnterKey?: () => void;
 }
 
 /**
- * FileNameInput 类，封装文件名输入与建议逻辑。
+ * Wraps the file name input and its suggestion logic.
  */
 export class FileNameInput {
     private input!: TextComponent;
@@ -32,11 +32,11 @@ export class FileNameInput {
     private suggest: FileNameInputSuggest | null = null;
 
     /**
-     * 构造函数
-     * @param container 容器元素
-     * @param options 组件配置项
-     * @param context 上下文（含 app、plugin）
-     * @param onValueChange 输入值变化回调
+     * Creates the component.
+     * @param container Container element
+     * @param options Component options
+     * @param context Render context (app and plugin)
+     * @param onValueChange Called when the value changes
      */
     constructor(
         container: HTMLElement,
@@ -46,13 +46,13 @@ export class FileNameInput {
     ) {
         this.setting = new Setting(container).setName(options.name).setDesc(options.description);
 
-        // 输入框
+        // Text input.
         this.setting.addText((text) => {
             this.input = text;
             text.setPlaceholder(options.placeholder);
         });
 
-        // 附加日期变量格式下拉建议
+        // Attach the dropdown with the date variable formats.
         this.suggest = new FileNameInputSuggest(context.app, this.input.inputEl);
         this.suggest.onSelect((format, _evt) => {
             const value = `{{DATE:${format}}}`;
@@ -66,13 +66,13 @@ export class FileNameInput {
             this.suggest?.open();
         });
 
-        // 输入变化回调
+        // Value change callback.
         this.input.onChange((value) => {
             onValueChange?.(value);
             options.onFileNameChange?.(value);
         });
 
-        // 添加回车键监听
+        // Enter key listener.
         if (options.onEnterKey) {
             this.input.inputEl.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && options.onEnterKey) {
@@ -82,28 +82,28 @@ export class FileNameInput {
         }
     }
 
-    /** 设置输入值 */
+    /** Sets the input value */
     setValue(value: string) {
         this.input.setValue(value);
     }
 
-    /** 获取输入值 */
+    /** Returns the input value */
     getValue(): string {
         return this.input.getValue();
     }
 
-    /** 获取原生 input 元素 */
+    /** Returns the underlying input element */
     getInputElement(): HTMLInputElement {
         return this.input.inputEl;
     }
 
-    /** 设置错误提示 */
+    /** Marks the input as invalid */
     setError(message: string): void {
         this.input.inputEl.classList.add('input-error');
         this.input.inputEl.setAttribute('title', message);
     }
 
-    /** 清除错误提示 */
+    /** Clears the error state */
     clearError(): void {
         this.input.inputEl.classList.remove('input-error');
         this.input.inputEl.removeAttribute('title');

@@ -17,10 +17,10 @@ export const ConfigProvider: React.FC<React.PropsWithChildren<ConfigProviderProp
     children,
 }) => {
     const [panelConfig, updatePanelConfig] = useState<PanelConfig>(initialConfig);
-    // 标记是否为内部 setPanelConfig 调用，避免被外部 prop 同步覆盖
+    // Marks an internal setPanelConfig call, so the external prop sync does not overwrite it.
     const internalUpdateRef = useRef(false);
 
-    // 外部 prop 变化时同步到 state
+    // Sync the state when the external prop changes.
     useEffect(() => {
         if (internalUpdateRef.current) {
             internalUpdateRef.current = false;

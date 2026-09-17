@@ -26,7 +26,7 @@ interface SortableCategoryFolderProps {
 }
 
 /**
- * 文件夹视图：分类文件夹磁贴可长按拖拽排序，并作为按钮跨分类拖放目标。
+ * Folder view: a folder tile that can be reordered with a long-press drag and also accepts buttons dropped from other categories.
  */
 export const SortableCategoryFolder: React.FC<SortableCategoryFolderProps> = ({
     categoryId,

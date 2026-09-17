@@ -101,7 +101,7 @@ function dndDebug(...args: unknown[]): void {
         console.debug('[OCAP-DND]', ...args);
     }
 }
-/** 标签视图：悬停目标标签满此时长后才视为可放置位置 */
+/** Tabs view: a hovered target tab only counts as a drop position after this duration */
 const CATEGORY_TAB_DROP_HOVER_MS = 400;
 
 export interface ButtonDragContextValue {
@@ -121,7 +121,7 @@ export interface CategoryDragContextValue {
     isDragging: boolean;
     activeCategoryId: string | null;
     categoryIds: string[];
-    /** 标签视图：悬停满 0.4s 后确认的目标分类 id（用于高亮） */
+    /** Tabs view: the target category id confirmed after 0.4s of hovering, used for highlighting */
     categoryTabDropTargetId: string | null;
     getOrderedCategories: (categories: CategoryConfig[]) => CategoryConfig[];
     setListCategoryOpenById: (openByCategoryId: Map<string, boolean>) => void;
@@ -229,7 +229,7 @@ function resolveGridDropTarget(
     return target;
 }
 
-/** 统一面板拖拽：按钮与分类共用一个 DndContext */
+/** Unified panel dragging: buttons and categories share one DndContext */
 export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     categories,
     gridViews,
@@ -251,7 +251,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     );
     const [activeButtonId, setActiveButtonId] = useState<string | null>(null);
     const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
-    /** 标签视图：锁定拖拽预览宽度，避免脱离 tab-bar 后换行导致字形变化 */
+    /** Tabs view: pin the drag preview width, so leaving the tab bar cannot wrap the label and change its glyphs */
     const [categoryTabOverlayWidth, setCategoryTabOverlayWidth] = useState<number | null>(
         null
     );
@@ -305,13 +305,13 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     );
     const listCategoryOpenByIdRef = useRef<Map<string, boolean>>(new Map());
     const categoryTabDragStartIdsRef = useRef<string[]>([]);
-    /** 列表视图：拖拽开始时的分类顺序，用于对比是否变更 */
+    /** List view: the category order at drag start, compared against the final order */
     const categoryListDragStartIdsRef = useRef<string[]>([]);
     const categoryTabHoverOverIdRef = useRef<string | null>(null);
     const categoryTabCommittedOverIdRef = useRef<string | null>(null);
     const categoryTabHoverTimerRef = useRef<number | null>(null);
     /**
-     * 文件夹模式：拖出展开的文件夹外松手时取消拖拽 → 阻止 handleDragEnd 错误持久化
+     * Folder mode: dropping outside the expanded folder cancels the drag, so handleDragEnd never persists a wrong position.
      *
      * That flow cancels mid-drag and dnd-kit still delivers a drag end, which
      * consumes the flag. A keyboard cancel (Escape) delivers NO drag end, so
@@ -741,7 +741,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             }
 
             if (!over || active.id === over.id) {
-                // 指针离开按钮区（如磁贴区）：回退到拖拽开始时的位置
+                // The pointer left the button area (e.g. onto the tiles): fall back to the position at drag start.
                 if (!over) {
                     setDropTargetSlot(null);
                     const baseline = buildBaselineItems();
@@ -819,7 +819,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                         finalIds = applyCategoryDragOver(baseline, activeId, committedOverId);
                     }
                 } else {
-                    // 列表/文件夹视图：以 dragOver 累积的 categoryIdsRef 为准（触屏松手时 over 常为 null）
+                    // List and folder view: trust categoryIdsRef as accumulated by dragOver, because `over` is often null on a touch drop.
                     finalIds = categoryIdsRef.current;
                     if (active && over && active.id !== over.id) {
                         const overId = String(over.id);
@@ -842,7 +842,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                     try {
                         await persistCategoryOrder(finalIds, plugin);
                     } catch (error) {
-                        console.error('保存分类排序时出错:', error);
+                        console.error('Error while saving the category order:', error);
                         setCategoryIds(baseline);
                         categoryIdsRef.current = baseline;
                     }
@@ -860,7 +860,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             }
             flushButtonDragOver();
 
-            // 文件夹拖拽取消：跳过位置应用与持久化
+            // Folder drag cancelled: skip both applying and persisting the position.
             if (dragForceCancelledRef.current) {
                 dragForceCancelledRef.current = false;
                 setActiveButtonId(null);
@@ -869,7 +869,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 return;
             }
 
-            // 碰撞检测返回空（如拖到磁贴区松手）→ 回退到原始位置
+            // Collision detection returned nothing (e.g. a drop on the tile area): fall back to the original position.
             if (!over) {
                 const baseline = buildBaselineItems();
                 itemsRef.current = baseline;
@@ -952,7 +952,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 try {
                     await persistItems(finalItems, plugin);
                 } catch (error) {
-                    console.error('保存按钮排序时出错:', error);
+                    console.error('Error while saving the button order:', error);
                     committedPropsRef.current = null;
                     itemsRef.current = baseline;
                     setItems(baseline);
@@ -1006,7 +1006,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         resetCategoryTabDragHoverState,
     ]);
 
-    // 文件夹模式：拖出文件夹外松手时取消拖拽
+    // Folder mode: dropping outside the folder cancels the drag.
     const handleDragCancelRef = useRef(handleDragCancel);
     handleDragCancelRef.current = handleDragCancel;
     useEffect(() => {

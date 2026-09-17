@@ -1,40 +1,41 @@
 // plugin.ts
-// 插件主类接口类型扩展，约束插件主类结构。
+// Interface extension that describes the structure of the plugin main class.
 import type { Plugin, SettingTab, WorkspaceLeaf } from 'obsidian';
 import { ButtonsPanelPluginSettings } from '@/types';
 import type { OCAPContextService } from '@/context/OCAPContextService';
 
 /**
- * ButtonsPanelPlugin 插件主类接口类型扩展。
- * 用于类型提示和类型安全，约束插件主类的结构。
+ * ButtonsPanelPlugin describes the plugin main class.
+ * It exists for type safety at the call sites that only see the plugin instance.
  */
 export interface ButtonsPanelPlugin extends Plugin {
-    /** 加载设置方法，异步（从持久化存储读取并合并默认值） */
+    /** Loads the settings asynchronously (reads persisted data and merges the defaults) */
     loadSettings(): Promise<void>;
 
-    /** 插件设置对象 */
+    /** Plugin settings */
     settings: ButtonsPanelPluginSettings;
-    /** 设置页签对象（类型可自定义） */
+    /** Settings tab instance */
 	settingTab: SettingTab;
 
-    /** 动作调度器实例（暴露最小可用表面，具体结构由实现类决定） */
+    /** Action dispatcher instance (minimal surface; the concrete shape is up to the implementation) */
     actionDispatcher: unknown;
 
     /** OCAP context service (reactive workspace context snapshot store) */
     contextService: OCAPContextService;
 
-    /** 保存设置方法，异步 */
+    /** Saves the settings asynchronously */
     saveSettings(): Promise<void>;
 
-    /** 分类展开状态（运行时状态，不持久化） */
+    /** Expanded state per category (runtime state, not persisted) */
     categoryOpenState: Record<string, boolean>;
 
-    /** 标签视图当前激活的分类 ID（运行时状态，不持久化） */
+    /** Id of the category active in tabs view (runtime state, not persisted) */
     activeTabCategoryId?: string | null;
 
 	/**
-	 * 记录最后一个激活的内容视图叶子（非按钮面板），用于在执行命令、脚本等动作前恢复焦点。
-	 * 运行时状态，不持久化。
+	 * Tracks the last active content leaf (never the buttons panel) so focus can be
+	 * restored before running command or script actions.
+	 * Runtime state, not persisted.
 	 */
 	lastActiveContentLeaf?: WorkspaceLeaf | null;
 }

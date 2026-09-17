@@ -1,4 +1,4 @@
-/* 文件建议下拉项的富展示样式（名称 + 描述两行） */
+/* Rich file suggestion rows: name line plus description line */
 .file-suggestion-title {
     font-weight: var(--font-semibold, 500);
     line-height: 1.3;

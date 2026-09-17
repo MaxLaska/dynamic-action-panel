@@ -9,22 +9,23 @@ import { UrlService } from '@/services/UrlService';
 import { ScriptService } from '@/services/ScriptService';
 
 /**
- * 动作调度器类，负责统一调度和执行所有类型的按钮动作。
- * 通过依赖各 Service 层实现具体业务逻辑，解耦表单配置与实际执行。
- * 支持顺序/并行执行、错误中断、动作间延迟等功能。
+ * Dispatches and runs every kind of button action.
+ * The concrete work is delegated to the service layer, which keeps the form config
+ * separate from execution.
+ * Supports sequential and parallel execution, stop-on-error and inter-action delays.
  */
 export class ActionDispatcher {
     private fileService: FileService;
     private createFileService: CreateFileService;
     private commandService: CommandService;
     private urlService: UrlService;
-    /** 脚本动作服务，供表单层（如 ScriptAction）读取脚本元数据使用。 */
+    /** Script action service; the form layer (e.g. ScriptAction) reads script metadata through it. */
     scriptService: ScriptService;
 
     /**
-     * 构造函数，初始化各业务 Service 实例。
-     * @param app Obsidian 应用实例
-     * @param plugin 插件主类实例
+     * Initializes the individual services.
+     * @param app Obsidian app instance
+     * @param plugin Plugin instance
      */
     constructor(
         private app: App,
@@ -38,11 +39,11 @@ export class ActionDispatcher {
     }
 
     /**
-     * 执行一组按钮动作（支持顺序或并行）。
-     * @param actions 按钮动作数组
-     * @param executionMode 执行模式（'sequential' 顺序，'parallel' 并行）
-     * @param stopOnError 是否遇到错误时中断（仅顺序模式有效）
-     * @param delayBetweenActions 动作间延迟（毫秒，仅顺序模式有效）
+     * Runs a list of button actions, sequentially or in parallel.
+     * @param actions Button actions to run
+     * @param executionMode 'sequential' or 'parallel'
+     * @param stopOnError Whether to abort on the first error (sequential mode only)
+     * @param delayBetweenActions Delay between actions in milliseconds (sequential mode only)
      */
     async executeActions(
         actions: ButtonAction[],
@@ -63,8 +64,8 @@ export class ActionDispatcher {
     }
 
     /**
-     * 并行执行所有动作
-     * @param actions 按钮动作数组
+     * Runs all actions in parallel.
+     * @param actions Button actions to run
      */
     private async executeParallel(actions: ButtonAction[]): Promise<void> {
         const promises = actions.map((action) => this.executeSingleAction(action));
@@ -72,10 +73,10 @@ export class ActionDispatcher {
     }
 
     /**
-     * 顺序执行动作，支持延迟和错误处理
-     * @param actions 按钮动作数组
-     * @param stopOnError 是否遇到错误时中断
-     * @param delayBetweenActions 动作间延迟（毫秒）
+     * Runs the actions one after another, honouring the delay and the error policy.
+     * @param actions Button actions to run
+     * @param stopOnError Whether to abort on the first error
+     * @param delayBetweenActions Delay between actions in milliseconds
      */
     private async executeSequential(
         actions: ButtonAction[],
@@ -85,7 +86,7 @@ export class ActionDispatcher {
         for (let i = 0; i < actions.length; i++) {
             try {
                 await this.executeSingleAction(actions[i]!);
-                // 在动作之间添加延迟（最后一个动作后不需要延迟）
+                // Delay between actions (not needed after the last one).
                 if (i < actions.length - 1 && delayBetweenActions > 0) {
                     await new Promise((resolve) => window.setTimeout(resolve, delayBetweenActions));
                 }
@@ -99,13 +100,13 @@ export class ActionDispatcher {
     }
 
     /**
-     * 处理动作执行错误
-     * @param error 错误对象
-     * @param index 动作索引（从0开始）
-     * @param stopOnError 是否中断执行
+     * Handles an error raised by a single action.
+     * @param error The error
+     * @param index Zero-based index of the failing action
+     * @param stopOnError Whether execution is aborted
      */
     private handleActionError(error: unknown, index: number, stopOnError: boolean): void {
-        console.error(`执行动作序列中的第 ${index + 1} 个动作时出错:`, error);
+        console.error(`Error in action ${index + 1} of the action sequence:`, error);
         const errorMessage = error instanceof Error ? error.message : String(error);
         if (stopOnError) {
             new Notice(t('sequence_stopped_on_error') + `: ${errorMessage}`);
@@ -115,8 +116,8 @@ export class ActionDispatcher {
     }
 
     /**
-     * 执行单个按钮动作，根据类型分发到对应 Service。
-     * @param action 按钮动作对象
+     * Runs a single button action by dispatching it to the matching service.
+     * @param action The button action
      */
     private async executeSingleAction(action: ButtonAction): Promise<void> {
         switch (action.type) {
@@ -136,7 +137,7 @@ export class ActionDispatcher {
                 await this.scriptService.runScript(action);
                 break;
             default:
-                // 理论上不会到这里，除非类型未注册
+                // Unreachable unless an action type is not registered here.
                 return;
         }
     }

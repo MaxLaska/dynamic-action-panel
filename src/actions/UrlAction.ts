@@ -7,7 +7,7 @@ import type { ButtonsPanelPlugin } from '@/types/plugin';
 type ActionRenderContext = { app: App; plugin: ButtonsPanelPlugin };
 
 /**
- * “打开链接”动作类，实现按钮动作表单的渲染、数据管理、校验和序列化。
+ * The open-URL action: form rendering, data handling, validation and serialization.
  */
 export class UrlAction implements IButtonAction {
     type = 'url';
@@ -15,17 +15,17 @@ export class UrlAction implements IButtonAction {
     private urlInput: UrlInput | null = null;
 
     /**
-     * 构造函数，初始化参数。
+     * Initializes the action parameters.
      */
     constructor(params: { url: string }) {
         this.url = params.url;
     }
 
     /**
-     * 渲染表单控件，绑定数据双向同步。
+     * Renders the form controls and keeps them in sync with the action data.
      */
     render(container: HTMLElement, context: ActionRenderContext) {
-        // 使用可复用的 URL 输入组件
+        // Reusable URL input component.
         this.urlInput = new UrlInput(
             container,
             {
@@ -36,19 +36,19 @@ export class UrlAction implements IButtonAction {
             context,
             (value: string) => {
                 this.url = value;
-                // 当用户输入或修改为有效 URL 时，自动清除错误提示
+                // Clear the error as soon as the entered URL is valid.
                 if (this.validate()) {
                     this.clearError();
                 }
             }
         );
 
-        // 设置初始值
+        // Apply the initial value.
         this.urlInput.setValue(this.url || '');
     }
 
     /**
-     * 校验表单数据有效性。
+     * Validates the form data.
      */
     validate() {
         return !!(this.url && this.url.trim());
@@ -60,21 +60,21 @@ export class UrlAction implements IButtonAction {
     }
 
     /**
-     * 序列化为 JSON 数据。
+     * Marks the URL input as invalid.
      */
     setError(message: string): void {
         this.urlInput?.setError(message);
     }
 
     /**
-     * 序列化为 JSON 数据。
+     * Clears the error state of the URL input.
      */
     clearError(): void {
         this.urlInput?.clearError();
     }
 
     /**
-     * 序列化为 JSON 数据。
+     * Serializes the action to its JSON shape.
      */
     toJSON() {
         return { type: this.type, parameters: { url: this.url } };

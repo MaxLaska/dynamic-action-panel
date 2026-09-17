@@ -4,28 +4,28 @@ import { FileInputSuggest } from '@/components/suggest/FileInputSuggest';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 
 /**
- * FileInput 组件用于在设置面板中创建文件选择输入框，支持文件搜索和回调。
- * 可配置只显示文件名或完整路径。
+ * File picker input for the settings forms.
+ * Can show either the bare file name or the full path.
  */
 export interface FileInputOptions {
-    /** 输入框名称 */
+    /** Setting name */
     name: string;
-    /** 输入框描述 */
+    /** Setting description */
     description: string;
-    /** 输入框占位符 */
+    /** Input placeholder */
     placeholder: string;
-    /** 搜索按钮提示 */
+    /** Tooltip of the search button */
     searchTooltip: string;
-    /** 限定根文件夹 */
+    /** Restrict suggestions to this root folder */
     rootFolder?: string;
-    /** 允许的文件扩展名 */
+    /** Allowed file extensions */
     fileExts?: string[];
-    /** 是否只显示文件名 */
+    /** Show only the file name instead of the full path */
     showFileNameOnly?: boolean;
 }
 
 /**
- * FileInput 类，封装文件输入与选择逻辑。
+ * Wraps the file input and its selection logic.
  */
 export class FileInput {
     private input!: TextComponent;
@@ -33,11 +33,11 @@ export class FileInput {
     private suggest: FileInputSuggest | null = null;
 
     /**
-     * 构造函数
-     * @param container 容器元素
-     * @param options 组件配置项
-     * @param context 上下文（含 app、plugin）
-     * @param onValueChange 输入值变化回调
+     * Creates the component.
+     * @param container Container element
+     * @param options Component options
+     * @param context Render context (app and plugin)
+     * @param onValueChange Called when the value changes
      */
     constructor(
         container: HTMLElement,
@@ -47,13 +47,13 @@ export class FileInput {
     ) {
         this.setting = new Setting(container).setName(options.name).setDesc(options.description);
 
-        // 输入框
+        // Text input.
         this.setting.addText((text) => {
             this.input = text;
             text.setPlaceholder(options.placeholder);
         });
 
-        // 附加基于 AbstractInputSuggest 的文件下拉建议
+        // Attach the AbstractInputSuggest-based file dropdown.
         this.suggest = new FileInputSuggest(context.app, this.input.inputEl, {
             rootFolder: options.rootFolder || '',
             fileExts: options.fileExts || ['md'],
@@ -66,39 +66,39 @@ export class FileInput {
             this.suggest?.close();
         });
 
-        // 聚焦时打开建议框，方便直接选择
+        // Open the dropdown on focus so a file can be picked right away.
         this.input.inputEl.addEventListener('focus', () => {
             this.suggest?.open();
         });
 
-        // 输入变化回调
+        // Value change callback.
         this.input.onChange((value) => {
             onValueChange?.(value);
         });
     }
 
-    /** 设置输入值 */
+    /** Sets the input value */
     setValue(value: string) {
         this.input.setValue(value);
     }
 
-    /** 获取输入值 */
+    /** Returns the input value */
     getValue(): string {
         return this.input.getValue();
     }
 
-    /** 获取原生 input 元素 */
+    /** Returns the underlying input element */
     getInputElement(): HTMLInputElement {
         return this.input.inputEl;
     }
 
-    /** 设置错误提示 */
+    /** Marks the input as invalid */
     setError(message: string): void {
         this.input.inputEl.classList.add('input-error');
         this.input.inputEl.setAttribute('title', message);
     }
 
-    /** 清除错误提示 */
+    /** Clears the error state */
     clearError(): void {
         this.input.inputEl.classList.remove('input-error');
         this.input.inputEl.removeAttribute('title');

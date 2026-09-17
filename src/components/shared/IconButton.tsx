@@ -12,13 +12,13 @@ interface IconButtonProps {
 /**
  * IconButton
  * 
- * 封装带图标的按钮组件，统一处理 setIcon 逻辑。
+ * Button with an icon, wrapping the setIcon handling.
  * 
- * @param icon 图标名称或 SVG 字符串
- * @param onClick 点击回调
- * @param className 额外的 CSS 类名
- * @param ariaLabel 无障碍标签
- * @param type 按钮类型
+ * @param icon Icon name or SVG markup
+ * @param onClick Click handler
+ * @param className Additional CSS class names
+ * @param ariaLabel Accessible label
+ * @param type Button type
  */
 export const IconButton: React.FC<IconButtonProps> = ({
     icon,

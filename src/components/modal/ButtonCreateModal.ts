@@ -1,6 +1,6 @@
 /**
- * ButtonCreateModal - 按钮创建模态框
- * 样式文件: ButtonCreateModal.css
+ * ButtonCreateModal - modal for creating a button
+ * Stylesheet: ButtonCreateModal.css
  */
 import type { App } from 'obsidian';
 import { Modal, Notice, Setting } from 'obsidian';
@@ -28,23 +28,23 @@ export interface ButtonModalCategoryRef {
 }
 
 /**
- * ButtonCreateModal 按钮创建模态框类。
- * 用于在指定分类下创建新按钮，支持基本信息填写、动作配置、保存校验等。
+ * Modal for creating a new button.
+ * Collects the basic fields and the action configuration for a new button in a given category, and validates them on save.
  */
 export class ButtonCreateModal extends Modal {
-    // 插件主类实例
+    // Plugin instance
 	plugin: ButtonsPanelPlugin;
-    // 按钮所属分类
+    // Category the button belongs to
     parentCategory: ButtonModalCategoryRef;
-    // 保存成功回调
+    // Called after a successful save
     onSave?: () => void;
-    // 临时按钮对象
+    // Working copy of the button being edited
     tempButton: ButtonConfig;
-    // 动作序列对象
+    // Action sequence of the button
     actionSequence: ActionSequence;
-    // 名称输入组件
+    // Name input component
     nameInput: NameInput | null = null;
-    // 图标输入组件
+    // Icon input component
     iconInput: IconInput | null = null;
     // OCAP visibility conditions editor (visual builder + advanced JSON)
     conditionsInput: ConditionEditor | null = null;
@@ -62,13 +62,13 @@ export class ButtonCreateModal extends Modal {
     private readonly targetSlot: number | null;
 
     /**
-     * 构造函数，初始化模态框和临时按钮对象。
-     * @param app Obsidian应用实例
-     * @param plugin 插件主类实例
-     * @param parentCategory 按钮所属分类
-     * @param onSave 保存成功回调
-     * @param targetVariantId 目标 variant（仅 dynamic grid 分类）
-     * @param targetSlot 目标槽位（仅 grid 分类）
+     * Initializes the modal and its working copy of the button.
+     * @param app Obsidian app instance
+     * @param plugin Plugin instance
+     * @param parentCategory Category the button belongs to
+     * @param onSave Called after a successful save
+     * @param targetVariantId Target variant (dynamic grid categories only)
+     * @param targetSlot Target slot (grid categories only)
      */
 	constructor(app: App, plugin: ButtonsPanelPlugin, parentCategory: ButtonModalCategoryRef, onSave?: () => void, targetVariantId: string | null = null, targetSlot: number | null = null) {
         super(app);
@@ -79,14 +79,14 @@ export class ButtonCreateModal extends Modal {
         this.targetSlot = targetSlot;
         this.tempButton = createDefaultButtonConfig();
         this.actionSequence = new ActionSequence(this.tempButton.actions);
-        // 新建时如果没有动作，自动添加一个默认动作
+        // A new button starts with one default action.
         if (this.tempButton.actions.length === 0) {
             this.actionSequence.addDefaultAction();
         }
     }
 
     /**
-     * 打开模态框时自动调用，渲染表单界面。
+     * Called when the modal opens; renders the form.
      */
     onOpen(): void {
         const { contentEl, titleEl } = this;
@@ -94,11 +94,11 @@ export class ButtonCreateModal extends Modal {
         contentEl.addClass('buttons-panel');
         contentEl.addClass('button-edit');
 
-        // 使用 Obsidian Modal 自带的标题栏
+        // Use the title bar provided by the Obsidian Modal.
         titleEl.setText(t('add_button'));
 
         const formContainer = contentEl.createDiv('form-container');
-        // 拆分为两个独立容器
+        // Split the body into two independent containers.
         const basicInfoContainer = formContainer.createDiv('basic-info-container');
         const actionSettingsContainer = formContainer.createDiv('action-settings-container');
         this.createBasicSettings(basicInfoContainer);
@@ -107,13 +107,13 @@ export class ButtonCreateModal extends Modal {
     }
 
     /**
-     * 渲染基本信息设置区域。
-     * @param container 容器元素
+     * Renders the basic settings section.
+     * @param container Container element
      */
     createBasicSettings(container: HTMLElement): void {
         container.createEl('h3', { text: t('basic_info') });
 
-        // 使用可复用的名称输入组件
+        // Reusable name input component.
         this.nameInput = new NameInput(container, {
             name: t('button_name'),
             description: t('button_name_desc'),
@@ -123,7 +123,7 @@ export class ButtonCreateModal extends Modal {
                 this.tempButton.name = value;
             },
             onEnter: () => {
-                // 回车时保存按钮
+                // Enter saves the button.
                 void this.saveButton();
             },
             onValidationError: (error: string) => {
@@ -131,7 +131,7 @@ export class ButtonCreateModal extends Modal {
             },
         });
 
-        // 使用可复用的图标输入组件
+        // Reusable icon input component.
         this.iconInput = new IconInput(
             container,
             {
@@ -147,7 +147,7 @@ export class ButtonCreateModal extends Modal {
             }
         );
 
-        // 设置初始值
+        // Apply the initial values.
         this.nameInput.setValue(this.tempButton.name || '');
         this.iconInput.setValue(this.tempButton.icon || '');
 
@@ -165,16 +165,16 @@ export class ButtonCreateModal extends Modal {
     }
 
     /**
-     * 渲染动作设置区域。
-     * @param container 容器元素
+     * Renders the action settings section.
+     * @param container Container element
      */
     createActionSettings(container: HTMLElement): void {
         container.empty();
         container.createEl('h3', { text: t('action_sequence') });
-        // 新增：基本设置小标题和容器
+        // Sub-heading and container for the basic action options.
         const basicActionSettings = container.createDiv('basic-action-options');
         basicActionSettings.createEl('h4', { text: t('basic_options') });
-        // 执行模式
+        // Execution mode.
         new Setting(basicActionSettings)
             .setName(t('execution_mode'))
             .setDesc(t('execution_mode_desc'))
@@ -184,13 +184,13 @@ export class ButtonCreateModal extends Modal {
                 drop.setValue(this.tempButton.executionMode || 'sequential');
                 drop.onChange((value: string) => {
                     this.tempButton.executionMode = value as 'sequential' | 'parallel';
-                    // 触发UI刷新以禁用/启用相关选项
+                    // Re-render so the dependent options are enabled or disabled.
                     container.empty();
                     this.createActionSettings(container);
                 });
             });
         const isParallel = this.tempButton.executionMode === 'parallel';
-        // 错误时是否中断
+        // Whether to stop on error.
         const stopSetting = new Setting(basicActionSettings)
             .setName(t('stop_on_error'))
             .setDesc(t('stop_on_error_desc'))
@@ -206,7 +206,7 @@ export class ButtonCreateModal extends Modal {
             stopSetting.settingEl.addClass('is-hidden');
             stopSetting.setDesc(t('only_sequential_effective'));
         }
-        // 动作间延迟
+        // Delay between actions.
         const delaySetting = new Setting(basicActionSettings)
             .setName(t('delay_between_actions'))
             .setDesc(t('delay_between_actions_desc'))
@@ -224,13 +224,13 @@ export class ButtonCreateModal extends Modal {
             delaySetting.setDesc(t('only_sequential_effective'));
         }
         const actionValueContainer = container.createDiv({ cls: 'action-list' });
-        // 用面向对象的 ActionSequence 渲染所有动作
+        // Let ActionSequence render all actions.
         this.actionSequence.renderAll(actionValueContainer, { app: this.app, plugin: this.plugin });
     }
 
     /**
-     * 创建保存和取消按钮。
-     * @param container 容器元素
+     * Creates the save and cancel buttons.
+     * @param container Container element
      */
     private createActionButtons(container: HTMLElement): void {
         new Setting(container)
@@ -247,18 +247,18 @@ export class ButtonCreateModal extends Modal {
             });
     }
 
-    /** 获取当前临时按钮对象 */
+    /** Returns the current working copy of the button */
     getCurrentButton(): ButtonConfig {
         return this.tempButton;
     }
 
     /**
-     * 校验并保存按钮，保存成功后关闭模态框。
+     * Validates and saves the button, then closes the modal.
      */
     async saveButton(): Promise<void> {
         let hasError = false;
 
-        // 验证名称输入
+        // Validate the name input.
         if (!this.nameInput?.getValue()?.trim()) {
             this.nameInput?.setError(t('please_complete_required_fields'));
             hasError = true;
@@ -273,20 +273,20 @@ export class ButtonCreateModal extends Modal {
             hasError = true;
         }
 
-        // 验证 OCAP 条件输入（JSON + 结构校验）
+        // Validate the OCAP conditions input (JSON plus structural checks).
         const conditionsResult = this.conditionsInput?.getResult();
         if (conditionsResult && !conditionsResult.ok) {
             new Notice(conditionsResult.error);
             return;
         }
 
-        // 如果有错误，显示通知并返回
+        // On any error, show a notice and stop.
         if (hasError || !actionResult.ok) {
             new Notice(t('please_complete_required_fields'));
             return;
         }
 
-        // 保存按钮（ActionSequence 序列化结果转为 ButtonAction[]）
+        // Take over the serialized ActionSequence result as ButtonAction[].
         this.tempButton.actions = actionResult.actions as ButtonAction[];
         this.tempButton.conditions = conditionsResult ? conditionsResult.conditions : undefined;
 

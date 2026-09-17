@@ -14,59 +14,60 @@ import type {
 import { parseScriptMeta } from '@/utils/scriptMetaParser';
 
 /**
- * 脚本动作服务类，负责处理用户自定义脚本执行。
+ * Runs user-defined script files.
  *
- * 脚本按 CommonJS 惯用写法导出：
+ * A script exports in CommonJS style:
  * module.exports = { entry, name, description, tags }
- * 入口函数内通过 `this.$context` 获取运行上下文。
+ * The entry function reads its runtime context from `this.$context`.
  */
 export class ScriptService {
     /**
-     * 构造函数，初始化 app 和插件实例。
-     * @param app Obsidian 应用实例
-     * @param plugin 插件主类实例（可选）
+     * Initializes the service with the app and plugin instance.
+     * @param app Obsidian app instance
+     * @param plugin Plugin instance (optional)
      */
     constructor(
         private app: obsidian.App,
         private plugin?: ButtonsPanelPlugin
     ) {}
 
-    /** 脚本元数据缓存：以脚本文件完整路径为 key，避免重复解析。 */
+    /** Script metadata cache, keyed by the full script file path, to avoid re-parsing. */
     private metaCache: Map<string, ScriptFileMeta | null> = new Map();
 
     /**
-     * 运行用户自定义的脚本文件。
+     * Runs a user-defined script file.
      *
-     * 支持用户通过按钮一键运行库中的 JS 脚本，实现自定义自动化、批量处理等高级功能。
-     * 脚本需通过 module.exports = { entry, name, description, tags } 导出，
-     * 入口函数内使用 `this.$context` 访问 app / plugin / obsidian / requestUrl / notice。
+     * This lets a button run a JS script from the script folder for custom automation
+     * or batch processing. A script must export via
+     * module.exports = { entry, name, description, tags }, and its entry function reaches
+     * app / plugin / obsidian / requestUrl / notice through `this.$context`.
      *
-     * @param action 按钮动作配置对象，需包含 type: 'script' 及参数
+     * @param action Button action config; must be type: 'script' with its parameters
      */
     async runScript(action: ButtonAction): Promise<void> {
         try {
-            // 动作执行前，自动激活最后激活的内容标签页（排除按钮面板）
+            // Focus the last active content leaf (never the buttons panel) before running.
             const lastContentLeaf = getSafeLastContentLeaf(this.app, this.plugin);
             if (lastContentLeaf) {
                 this.app.workspace.setActiveLeaf(lastContentLeaf, { focus: true });
             }
 
-            // 解析脚本路径
+            // Resolve the script path.
             const { scriptFilePath, scriptFileName } = this.resolveScriptPath(action);
 
-            // 读取脚本内容
+            // Read the script source.
             const scriptContent = await this.readScriptContent(scriptFilePath);
             if (!scriptContent) {
                 return;
             }
 
-            // 求值脚本模块，得到 module.exports
+            // Evaluate the script module to obtain module.exports.
             const module = await this.evaluateModule(scriptContent);
 
-            // 执行导出的入口函数
+            // Run the exported entry function.
             await this.executeEntry(module, scriptFileName);
         } catch (error) {
-            // 捕获并通知脚本运行异常
+            // Report any script failure as a notice.
             const errorMessage = error instanceof Error ? error.message : String(error);
             new obsidian.Notice(t('script_run_failed') + `: ${errorMessage}`);
         }
@@ -112,12 +113,12 @@ export class ScriptService {
     }
 
     /**
-     * 从多语言文本或普通字符串中，按当前语言取出展示文本。
-     * 回退顺序：当前语言 → en → zh → 第一个有值 → 兜底 fallback。
+     * Picks the display text for the current language from a localized object or a plain string.
+     * Fallback order: current language -> en -> zh -> first non-empty value -> `fallback`.
      *
-     * @param text 本地化文本对象或普通字符串
-     * @param fallback 取不到时的兜底文本
-     * @returns 当前语言下的展示文本
+     * @param text Localized text object or plain string
+     * @param fallback Text used when nothing else resolves
+     * @returns Display text for the current language
      */
     resolveLocalizedText(
         text: LocalizedText | Record<string, string> | string | undefined,
@@ -136,8 +137,8 @@ export class ScriptService {
     }
 
     /**
-     * 构建脚本运行上下文，作为脚本访问宿主能力的唯一入口。
-     * @returns 脚本上下文对象
+     * Builds the script runtime context, the only way a script reaches host capabilities.
+     * @returns The script context object
      */
     private createContext(): ScriptContext {
         return {
@@ -151,9 +152,9 @@ export class ScriptService {
     }
 
     /**
-     * 从 module.exports 中解析脚本元数据。
-     * @param exports module.exports 的内容
-     * @returns 提取到的 ScriptMeta，或 null
+     * Extracts the script metadata from module.exports.
+     * @param exports The value of module.exports
+     * @returns The extracted ScriptMeta, or null
      */
     private parseMetaFromExports(exports: unknown): ScriptMeta | null {
         if (!exports || typeof exports !== 'object') return null;
@@ -170,24 +171,24 @@ export class ScriptService {
     }
 
     /**
-     * 解析脚本路径
-     * @param action 按钮动作配置对象
-     * @returns 脚本文件路径和文件名
+     * Resolves the script path.
+     * @param action Button action config
+     * @returns The script file path and file name
      */
     private resolveScriptPath(action: ButtonAction): {
         scriptFilePath: string;
         scriptFileName: string;
     } {
-        // 在 ButtonAction 类型中，parameters 在 type === 'script' 时已经拥有 scriptName 字段
+        // In the ButtonAction union, parameters already carries scriptName when type === 'script'.
         const scriptFileName =
             action.type === 'script' ? action.parameters.scriptName : '';
 
-        // 获取脚本文件夹路径（从插件设置中读取）
+        // Read the script folder path from the plugin settings.
         let scriptFolderPath = this.plugin?.settings?.pathConfig?.scriptFolderPath ?? '';
-        // 使用 normalizePath 清理路径
+        // Normalize it.
         scriptFolderPath = obsidian.normalizePath(scriptFolderPath);
 
-        // 拼接完整脚本文件路径
+        // Assemble the full script file path.
         let scriptFilePath = scriptFolderPath
             ? `${scriptFolderPath}/${scriptFileName}`
             : scriptFileName;
@@ -197,30 +198,31 @@ export class ScriptService {
     }
 
     /**
-     * 读取脚本文件内容
-     * @param scriptFilePath 脚本文件路径
-     * @returns 脚本内容字符串，如果文件不存在则返回 null
+     * Reads the content of a script file.
+     * @param scriptFilePath Script file path
+     * @returns The script source, or null when the file does not exist
      */
     private async readScriptContent(
         scriptFilePath: string
     ): Promise<string | null> {
         const scriptFile = this.app.vault.getFileByPath(scriptFilePath);
         if (!scriptFile) {
-            // 未找到脚本文件，弹出通知
+            // Script file not found: show a notice.
             new obsidian.Notice(t('script_file_not_found') + `: ${scriptFilePath}`);
             return null;
         }
 
-        // 读取脚本内容（文本）
+        // Read the script source as text.
         return await this.app.vault.read(scriptFile);
     }
 
     /**
-     * 在 CommonJS 风格的沙箱作用域内求值脚本，得到模块导出。
-     * 只注入 module / exports，其余能力统一由入口函数的 `this.$context` 提供。
+     * Evaluates the script inside a CommonJS-style sandbox scope and returns its module exports.
+     * Only module / exports are injected; every other capability comes from `this.$context`
+     * inside the entry function.
      *
-     * @param scriptContent 脚本内容字符串
-     * @returns 模块对象（含 exports）
+     * @param scriptContent Script source
+     * @returns The module object (carrying exports)
      */
     private async evaluateModule(
         scriptContent: string
@@ -235,23 +237,23 @@ export class ScriptService {
         ) as { constructor: AsyncFunctionConstructor };
         const AsyncFunctionConstructor = asyncFunctionPrototype.constructor;
 
-        // 动态构造异步函数，仅注入 module 与 exports
+        // Build an async function dynamically, injecting only module and exports.
         const fn: (...args: unknown[]) => Promise<unknown> = new AsyncFunctionConstructor(
             'module',
             'exports',
             scriptContent
         );
 
-        // 执行脚本内容。脚本内部通过 module.exports = { ... } 覆盖导出对象。
+        // Run the script body; it replaces the exports object via module.exports = { ... }.
         await fn.call(undefined, module, module.exports);
 
         return module;
     }
 
     /**
-     * 执行模块导出的入口函数，并注入 `this.$context`。
-     * @param module 模块对象
-     * @param scriptFileName 脚本文件名（用于错误提示）
+     * Runs the entry function exported by the module, with `this.$context` injected.
+     * @param module The module object
+     * @param scriptFileName Script file name (used in the error notice)
      */
     private async executeEntry(
         module: { exports: unknown },
@@ -260,7 +262,7 @@ export class ScriptService {
         const meta = this.parseMetaFromExports(module.exports);
 
         if (!meta) {
-            // 未正确使用 module.exports = { entry, ... } 格式，弹出通知
+            // The script did not use the module.exports = { entry, ... } shape: show a notice.
             new obsidian.Notice(tWithParams('script_invalid_export', { scriptFileName }));
             return;
         }

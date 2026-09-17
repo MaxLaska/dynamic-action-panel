@@ -3,14 +3,14 @@ import { useCallback } from 'react';
 /**
  * useRefresh Hook
  * 
- * 封装刷新逻辑，提供统一的刷新接口。
- * 触发 'buttons-panel-refresh' 事件来刷新按钮面板。
+ * Wraps the panel refresh behind a single entry point.
+ * Dispatches the 'buttons-panel-refresh' event to refresh the panel.
  * 
- * @returns 刷新函数
+ * @returns The refresh function
  */
 export function useRefresh() {
     /**
-     * 触发按钮面板刷新
+     * Triggers a refresh of the buttons panel
      */
     const refresh = useCallback(() => {
         activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));

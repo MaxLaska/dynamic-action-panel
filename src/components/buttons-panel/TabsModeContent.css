@@ -78,7 +78,7 @@
     padding: 8px 0 0 0;
 }
 
-/* 标签视图：编辑模式下“添加分类”标签按钮样式 */
+/* Tabs view: styling of the add-category tab button in edit mode */
 .buttons-panel .buttons-panel-tab-bar .add-category {
     height: 32px;
 }

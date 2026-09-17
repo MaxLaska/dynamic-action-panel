@@ -7,7 +7,7 @@ import type { ButtonsPanelPlugin } from '@/types/plugin';
 type ActionRenderContext = { app: App; plugin: ButtonsPanelPlugin };
 
 /**
- * “打开文件”动作类，实现按钮动作表单的渲染、数据管理、校验和序列化。
+ * The open-file action: form rendering, data handling, validation and serialization.
  */
 export class FileAction implements IButtonAction {
     type = 'file';
@@ -15,17 +15,17 @@ export class FileAction implements IButtonAction {
     private fileInput: FileInput | null = null;
 
     /**
-     * 构造函数，初始化参数。
+     * Initializes the action parameters.
      */
     constructor(params: { filePath: string }) {
         this.filePath = params.filePath;
     }
 
     /**
-     * 渲染表单控件，绑定数据双向同步。
+     * Renders the form controls and keeps them in sync with the action data.
      */
     render(container: HTMLElement, context: ActionRenderContext) {
-        // 使用可复用的文件输入组件
+        // Reusable file input component.
         this.fileInput = new FileInput(
             container,
             {
@@ -40,19 +40,19 @@ export class FileAction implements IButtonAction {
             { app: context.app, plugin: context.plugin },
             (value: string) => {
                 this.filePath = value;
-                // 当用户通过输入或下拉建议选择了有效路径时，自动清除错误提示
+                // Clear the error as soon as a valid path is typed or picked.
                 if (this.validate()) {
                     this.clearError();
                 }
             }
         );
 
-        // 设置初始值
+        // Apply the initial value.
         this.fileInput.setValue(this.filePath || '');
     }
 
     /**
-     * 校验表单数据有效性。
+     * Validates the form data.
      */
     validate() {
         return !!(this.filePath && this.filePath.trim());
@@ -72,7 +72,7 @@ export class FileAction implements IButtonAction {
     }
 
     /**
-     * 序列化为 JSON 数据。
+     * Serializes the action to its JSON shape.
      */
     toJSON() {
         return { type: this.type, parameters: { filePath: this.filePath } };

@@ -4,21 +4,21 @@ import { FolderInputSuggest } from '@/components/suggest/FolderInputSuggest';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 
 /**
- * FolderInput 组件用于在设置面板中创建文件夹选择输入框，支持文件夹搜索和回调。
+ * Folder picker input for the settings forms.
  */
 export interface FolderInputOptions {
-    /** 输入框名称 */
+    /** Setting name */
     name: string;
-    /** 输入框描述 */
+    /** Setting description */
     description: string;
-    /** 输入框占位符 */
+    /** Input placeholder */
     placeholder: string;
-    /** 搜索按钮提示 */
+    /** Tooltip of the search button */
     searchTooltip: string;
 }
 
 /**
- * FolderInput 类，封装文件夹输入与选择逻辑。
+ * Wraps the folder input and its selection logic.
  */
 export class FolderInput {
     private input!: TextComponent;
@@ -26,11 +26,11 @@ export class FolderInput {
     private suggest: FolderInputSuggest | null = null;
 
     /**
-     * 构造函数
-     * @param container 容器元素
-     * @param options 组件配置项
-     * @param context 上下文（含 app、plugin）
-     * @param onValueChange 输入值变化回调
+     * Creates the component.
+     * @param container Container element
+     * @param options Component options
+     * @param context Render context (app and plugin)
+     * @param onValueChange Called when the value changes
      */
     constructor(
         container: HTMLElement,
@@ -40,13 +40,13 @@ export class FolderInput {
     ) {
         this.setting = new Setting(container).setName(options.name).setDesc(options.description);
 
-        // 输入框
+        // Text input.
         this.setting.addText((text) => {
             this.input = text;
             text.setPlaceholder(options.placeholder);
         });
 
-        // 附加文件夹路径下拉建议
+        // Attach the folder path dropdown.
         this.suggest = new FolderInputSuggest(context.app, this.input.inputEl);
         this.suggest.onSelect((folderPath, _evt) => {
             this.input.setValue(folderPath);
@@ -58,34 +58,34 @@ export class FolderInput {
             this.suggest?.open();
         });
 
-        // 输入变化回调
+        // Value change callback.
         this.input.onChange((value) => {
             onValueChange?.(value);
         });
     }
 
-    /** 设置输入值 */
+    /** Sets the input value */
     setValue(value: string) {
         this.input.setValue(value);
     }
 
-    /** 获取输入值 */
+    /** Returns the input value */
     getValue(): string {
         return this.input.getValue();
     }
 
-    /** 获取原生 input 元素 */
+    /** Returns the underlying input element */
     getInputElement(): HTMLInputElement {
         return this.input.inputEl;
     }
 
-    /** 设置错误提示 */
+    /** Marks the input as invalid */
     setError(message: string): void {
         this.input.inputEl.classList.add('input-error');
         this.input.inputEl.setAttribute('title', message);
     }
 
-    /** 清除错误提示 */
+    /** Clears the error state */
     clearError(): void {
         this.input.inputEl.classList.remove('input-error');
         this.input.inputEl.removeAttribute('title');

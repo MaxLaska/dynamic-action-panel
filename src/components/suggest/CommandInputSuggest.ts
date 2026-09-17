@@ -1,13 +1,13 @@
 /**
- * CommandInputSuggest - 命令输入建议
- * 样式文件: CommandInputSuggest.css
+ * CommandInputSuggest - command input suggestions
+ * Stylesheet: CommandInputSuggest.css
  */
 import type { App, Command } from 'obsidian';
 import { AbstractInputSuggest } from 'obsidian';
 
 /**
- * CommandInputSuggest 为命令输入框提供基于 Obsidian AbstractInputSuggest 的下拉建议。
- * 直接挂载在输入框上，输入时在下方悬浮展示匹配的命令列表。
+ * Dropdown suggestions for the command input, built on Obsidian's AbstractInputSuggest.
+ * It attaches to the input element and floats the matching commands below it while typing.
  */
 export class CommandInputSuggest extends AbstractInputSuggest<Command> {
     constructor(app: App, inputEl: HTMLInputElement) {
@@ -18,7 +18,7 @@ export class CommandInputSuggest extends AbstractInputSuggest<Command> {
         const anyApp = this.app as unknown as {
             commands?: {
                 listCommands?: () => Command[];
-                // 内部字段，作为兼容兜底
+                // Internal field, used only as a compatibility fallback.
                 commands?: Record<string, Command>;
             };
         };
@@ -26,18 +26,18 @@ export class CommandInputSuggest extends AbstractInputSuggest<Command> {
         let allCommands: Command[] = [];
 
         if (anyApp.commands && typeof anyApp.commands.listCommands === 'function') {
-            // 注意要保留 this 绑定，不能把 listCommands 单独取出来调用
+            // Keep the `this` binding: listCommands must not be destructured and called on its own.
             allCommands = anyApp.commands.listCommands() ?? [];
         }
 
-        // 兼容兜底：某些版本下可以直接从内部 commands 映射中取值
+        // Compatibility fallback: some versions expose the commands through the internal map.
         if (!allCommands.length && anyApp.commands && anyApp.commands.commands) {
             allCommands = Object.values(anyApp.commands.commands);
         }
 
         if (!allCommands.length) {
-            // 如果仍然拿不到命令列表，至少保证不会抛错
-            console.warn('[Buttons Panel] 无法获取 Obsidian 命令列表，命令建议为空。');
+            // Still no command list: degrade to an empty result instead of throwing.
+            console.warn('[Buttons Panel] Could not read the Obsidian command list; command suggestions are empty.');
             return [];
         }
 
@@ -52,7 +52,7 @@ export class CommandInputSuggest extends AbstractInputSuggest<Command> {
     }
 
     /**
-     * 渲染每一条命令建议。
+     * Renders one command suggestion.
      */
     renderSuggestion(cmd: Command, el: HTMLElement): void {
         el.addClass('buttons-panel');

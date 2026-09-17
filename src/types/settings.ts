@@ -1,5 +1,5 @@
 // settings.ts
-// 用户设置/配置相关类型定义。
+// Type definitions for the persisted settings and the runtime view shapes.
 import type { ButtonAction } from '@/types/action';
 import type { ButtonCondition } from '@/types/conditions';
 
@@ -49,8 +49,7 @@ import type { ButtonCondition } from '@/types/conditions';
 export const CURRENT_SETTINGS_VERSION = 5;
 
 /**
- * ButtonConfig 按钮配置对象类型。
- * 描述单个按钮的所有属性。
+ * ButtonConfig describes all properties of a single button.
  *
  * Since settings version 5 this is the RUNTIME VIEW shape (and the shape of
  * pre-v5 stored data inside the migration chain): the persisted model splits
@@ -61,23 +60,23 @@ export const CURRENT_SETTINGS_VERSION = 5;
  * modals keep consuming exactly this shape.
  */
 export interface ButtonConfig {
-    /** 按钮唯一ID */
+    /** Unique button id */
     id: string;
-    /** 按钮名称 */
+    /** Button label */
     name: string;
-    /** 按钮图标（SVG或字符） */
+    /** Button icon (SVG markup or a single character) */
     icon?: string;
-    /** 按钮动作序列 */
+    /** Action sequence run on click */
     actions: ButtonAction[];
-    /** 按钮在分类内的排序值 */
+    /** Sort value of the button inside its category */
     order: number;
-    /** 按钮自定义样式（可选） */
+    /** Custom CSS for this button (optional) */
     customCss?: string;
-    /** 动作执行模式（顺序/并行） */
+    /** How the actions are executed (sequentially or in parallel) */
     executionMode?: 'sequential' | 'parallel';
-    /** 某个动作失败时是否停止 */
+    /** Whether to stop the sequence when an action fails */
     stopOnError?: boolean;
-    /** 顺序执行时动作间延迟（毫秒） */
+    /** Delay between actions in sequential mode (milliseconds) */
     delayBetweenActions?: number;
     /**
      * Optional declarative visibility condition (OCAP Context Engine).
@@ -322,8 +321,7 @@ export interface CategoryVariant extends GridDimensionFields, GridCellStyleField
 }
 
 /**
- * CategoryConfig 分类配置对象类型。
- * 包含分类信息和该分类下的所有按钮。
+ * CategoryConfig describes a category and the buttons it contains.
  *
  * Since settings version 5 this is the RUNTIME VIEW shape (materialized from
  * StoredCategory + the tool registry — see src/domain/tools.ts) and the
@@ -331,14 +329,14 @@ export interface CategoryVariant extends GridDimensionFields, GridCellStyleField
  * this; write paths operate on StoredCategory and the registry.
  */
 export interface CategoryConfig extends GridDimensionFields, GridCellStyleFields {
-    /** 分类唯一ID */
+    /** Unique category id */
     id: string;
-    /** 分类名称 */
+    /** Category name */
     name: string;
-    /** 分类在全局的排序值 */
+    /** Global sort value of the category */
     order: number;
     /**
-     * 分类下的按钮数组。
+     * Buttons of this category.
      * - flow category: all buttons, in `order` sequence (historical behavior);
      * - STATIC grid category (`layout: 'grid'`, no `variants`): the one full
      *   grid of the category — always the same buttons, no context behavior;
@@ -401,48 +399,45 @@ export interface CategoryConfig extends GridDimensionFields, GridCellStyleFields
 export type InteractionMode = 'locked' | 'edit';
 
 /**
- * PanelConfig 面板设置类型。
- * 控制面板的标题、显示方式、布局等。
+ * PanelConfig holds the panel-wide display and layout settings.
  */
 export interface PanelConfig {
-    /** 按钮显示样式（icon_left:图标在左文字在右，icon_top:图标在上文字在下） */
+    /** Button layout (icon_left: icon left of the label, icon_top: icon above the label) */
     displayStyle: 'icon_left' | 'icon_top';
-    /** 面板视图类型（列表/标签页/文件夹） */
+    /** Panel view type (list / tabs / folder) */
     panelViewType: 'list' | 'tabs' | 'folder';
-    /** 是否启用按钮动画 */
+    /** Whether button animations are enabled */
     enableAnimation?: boolean;
-    /** 悬浮按钮时是否显示完整名称提示 */
+    /** Whether hovering a button shows its full name as a tooltip */
     showButtonTooltip?: boolean;
     /** Interaction mode: 'locked' (normal use) or 'edit' (manage everything). */
     interactionMode?: InteractionMode;
-    /** 是否显示顶部导航栏 */
+    /** Whether the top navigation bar is shown */
     showTopNavBar?: boolean;
-    /** 标签页是否自动换行 */
+    /** Whether the tab bar wraps onto multiple rows */
     tabsWrap?: boolean;
-    /** 列表视图：是否在每次打开列表视图时默认折叠所有分类 */
+    /** List view: collapse all categories every time the list view opens */
     listAutoCollapse?: boolean;
-    /** 文件夹视图：已展开文件夹名称是否可编辑 */
+    /** Folder view: whether the name of an expanded folder is editable */
     folderDetailNameEditable?: boolean;
-    /** 文件夹视图：是否显示按钮个数 */
+    /** Folder view: whether the button count is shown */
     folderShowBtnCount?: boolean;
-    /** 文件夹视图：点击空白处关闭 */
+    /** Folder view: close the expanded folder when clicking empty space */
     folderCloseOnBlankClick?: boolean;
 }
 
 /**
- * PathConfig 路径设置类型。
- * 包含模板和脚本文件夹路径。
+ * PathConfig holds the template and script folder paths.
  */
 export interface PathConfig {
-    /** 模板文件夹路径 */
+    /** Template folder path */
     templateFolderPath?: string;
-    /** 脚本文件夹路径 */
+    /** Script folder path */
     scriptFolderPath?: string;
 }
 
 /**
- * ButtonsPanelPluginSettings 插件全局设置类型。
- * 包含所有分类、面板设置等。
+ * ButtonsPanelPluginSettings is the plugin-wide persisted settings shape.
  */
 export interface ButtonsPanelPluginSettings {
     /**
@@ -456,17 +451,16 @@ export interface ButtonsPanelPluginSettings {
      * Placements reference into this; nothing else stores tool data.
      */
     tools: ToolRegistry;
-    /** 分类数组 (stored v5 shape; the runtime view is materialized from it) */
+    /** Categories (stored v5 shape; the runtime view is materialized from it) */
     categories: StoredCategory[];
-    /** 面板设置 */
+    /** Panel settings */
     panelConfig: PanelConfig;
-    /** 路径设置 */
+    /** Path settings */
     pathConfig: PathConfig;
 }
 
 /**
- * DEFAULT_SETTINGS 插件默认设置常量。
- * 提供插件初始化时的默认配置。
+ * DEFAULT_SETTINGS is the configuration a fresh install starts from.
  */
 export const DEFAULT_SETTINGS: ButtonsPanelPluginSettings = {
     settingsVersion: CURRENT_SETTINGS_VERSION,

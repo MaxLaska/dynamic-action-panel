@@ -40,7 +40,7 @@ function FolderPreviewIcon({ button }: { button: ButtonConfig }) {
 }
 
 /**
- * 文件夹视图：单个分类文件夹磁贴（名称 + 内部按钮预览）。
+ * Folder view: one category folder tile, showing the name and a preview of its buttons.
  */
 export const CategoryFolderTile: React.FC<CategoryFolderTileProps> = ({
     category,

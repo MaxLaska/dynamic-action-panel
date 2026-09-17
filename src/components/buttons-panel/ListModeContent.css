@@ -1,4 +1,4 @@
-/* 列表视图：隐藏 view-content 右侧纵向滚动条，保留滚动（class 由 PanelContent 同步） */
+/* List view: hide the vertical view-content scrollbar while keeping scrolling (the class is synced by PanelContent) */
 body .view-content.buttons-panel.buttons-panel-view-list {
     scrollbar-width: none;
     -ms-overflow-style: none;

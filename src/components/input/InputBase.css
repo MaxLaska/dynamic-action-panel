@@ -1,4 +1,4 @@
-/* 输入校验错误边框：链到 body + 插件根容器，压过主题默认 input 边框（替代 !important） */
+/* Validation error border: chained to body + the plugin root to outrun the theme's default input border without !important */
 body .modal .buttons-panel input.input-error,
 body .modal .buttons-panel textarea.input-error,
 body .vertical-tab-content .buttons-panel input.input-error,

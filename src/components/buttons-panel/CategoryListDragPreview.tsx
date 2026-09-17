@@ -12,14 +12,14 @@ interface CategoryListDragPreviewProps {
     displayStyle: 'icon_left' | 'icon_top';
     plugin: ButtonsPanelPlugin;
     app: App;
-    /** 与列表项一致的分类容器 class（如 list-category-open） */
+    /** Category container class matching the list item, e.g. list-category-open */
     categoryClassName: string;
-    /** 与列表项一致的标题 class（如 is-collapsible） */
+    /** Header class matching the list item, e.g. is-collapsible */
     titleClassName: string;
     className?: string;
 }
 
-/** 列表视图分类拖拽：占位与跟随预览的完整内容（标题 + 按钮区） */
+/** List view category drag: the full content of both the placeholder and the follow preview (header plus button area) */
 export const CategoryListDragPreview: React.FC<CategoryListDragPreviewProps> = ({
     category,
     orderedButtons,

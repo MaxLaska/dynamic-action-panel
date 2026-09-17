@@ -303,7 +303,7 @@ export const TabsModeContent: React.FC<TabsModeContentProps> = ({
                             icon="plus"
                             onClick={() => createCategory()}
                             className="add-category-btn"
-                            ariaLabel={t('add_category') || '添加分类'}
+                            ariaLabel={t('add_category') || 'Add category'}
                         />
                     </div>
                 )}

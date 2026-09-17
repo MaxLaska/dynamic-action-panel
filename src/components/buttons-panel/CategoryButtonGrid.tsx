@@ -84,7 +84,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     const gridRef = React.useRef<HTMLDivElement>(null);
     const isDragging = buttonDrag?.isDragging ?? false;
 
-    // 必须在任何提前 return 之前无条件调用，保证 sortableEnabled 切换分支时 hooks 数量一致。
+    // Must be called unconditionally before any early return, so the hook count stays stable when sortableEnabled flips.
     const setRefs = React.useCallback(
         (node: HTMLDivElement | null) => {
             setNodeRef(node);

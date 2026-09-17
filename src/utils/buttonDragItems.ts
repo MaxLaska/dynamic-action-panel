@@ -33,7 +33,7 @@ export type ContainerLayouts = Record<string, CategoryLayout>;
 
 export const CONTAINER_PREFIX = 'container:';
 export const TAB_PREFIX = 'tab:';
-/** 拖到文件夹标题区 → 始终追加到末尾 */
+/** Dropping onto a folder header always appends to the end. */
 export const TITLE_PREFIX = 'title:';
 /** Grid palette: one droppable per empty slot, `slot:<categoryId>:<index>`. */
 export const SLOT_PREFIX = 'slot:';
@@ -98,7 +98,7 @@ export function isSlotZoneOverId(overId: string | number): boolean {
     return String(overId).startsWith(SLOT_PREFIX);
 }
 
-/** 拖放到分类区域末尾（容器 / 标签 / 标题区） */
+/** Dropping onto a category area (container / tab / header) appends to its end. */
 export function isAppendToCategoryEndOverId(overId: string | number): boolean {
     return isContainerZoneOverId(overId) || isTabZoneOverId(overId) || isTitleZoneOverId(overId);
 }
@@ -394,7 +394,8 @@ function applyGridDragOver(
 }
 
 /**
- * 根据 dragOver 计算下一 items；若无变化则返回 prev（同一引用），避免 React #185 无限更新。
+ * Computes the next items from a dragOver event; returns `prev` by identity when nothing
+ * changed, which avoids the React #185 infinite update loop.
  * `layouts` decides whether a container's index means order (flow) or slot (grid).
  */
 export function applyDragOverToItems(
@@ -429,7 +430,7 @@ export function applyDragOverToItems(
     if (activeIndex === -1) return prev;
 
     if (activeContainer === overContainer) {
-        // 拖到标题区 → 同一分类末尾
+        // Dropping onto the header means: end of the same category.
         if (isTitleZoneOverId(overId)) {
             const lastIndex = overItems.length - 1;
             if (activeIndex === lastIndex) return prev;
@@ -439,7 +440,7 @@ export function applyDragOverToItems(
                 arrayMove([...overItems], activeIndex, lastIndex)
             );
         }
-        // 同分类内：网格 container 铺满按钮区，指针穿透占位符会误命中 container 导致与「末尾」来回跳
+        // Within one category: the grid container covers the whole button area, so a pointer passing over a placeholder would also hit the container and make the item flip between its slot and the end.
         if (isContainerZoneOverId(overId)) {
             return prev;
         }

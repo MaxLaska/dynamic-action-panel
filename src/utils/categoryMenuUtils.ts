@@ -87,7 +87,7 @@ export function addTemplateMenuItems(
 }
 
 /**
- * 创建分类右键菜单处理函数
+ * Builds the context menu handler for a category.
  */
 export function createCategoryMenuHandler(
     category: CategoryConfig,
@@ -123,7 +123,7 @@ export function createCategoryMenuHandler(
         }
 
         menu.addItem((item: MenuItem) => {
-            item.setTitle(t('copy') || '复制')
+            item.setTitle(t('copy') || 'Copy')
                 .setIcon('copy')
                 .onClick(() => {
                     // Copies every variant AND its tool definitions (fresh
@@ -145,7 +145,7 @@ export function createCategoryMenuHandler(
         menu.addSeparator();
 
         menu.addItem((item: MenuItem) => {
-            item.setTitle(t('delete') || '删除')
+            item.setTitle(t('delete') || 'Delete')
                 .setIcon('trash')
                 .onClick(() => {
                     new CategoryDeleteModal(app, plugin, category, () => {

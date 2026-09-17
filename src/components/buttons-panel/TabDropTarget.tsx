@@ -3,14 +3,14 @@ import { useDroppable } from '@dnd-kit/core';
 import { tabDroppableId } from '@/utils/buttonDragItems';
 import { useButtonDragOptional } from '@/contexts/ButtonDragContext';
 
-/** 拖拽时悬停标签满此时长后才切换激活标签 */
+/** Hovering a tab for this long during a drag switches the active tab */
 const TAB_HOVER_ACTIVATE_MS = 400;
 
 interface TabDropTargetProps {
     categoryId: string;
     className: string;
     onClick: () => void;
-    /** 悬停满 {@link TAB_HOVER_ACTIVATE_MS} 后激活该标签 */
+    /** Activates this tab after {@link TAB_HOVER_ACTIVATE_MS} of hovering */
     onDragTabHoverActivate?: (categoryId: string) => void;
     children: React.ReactNode;
 }

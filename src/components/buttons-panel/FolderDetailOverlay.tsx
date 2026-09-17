@@ -31,8 +31,8 @@ interface FolderDetailOverlayProps {
 }
 
 /**
- * 文件夹视图：打开后的文件夹详情层。
- * 单击标题可编辑名称，ESC 关闭，点击遮罩关闭。
+ * Folder view: the detail layer of an expanded folder.
+ * Clicking the title edits the name; Escape and a click on the backdrop close it.
  */
 export const FolderDetailOverlay: React.FC<FolderDetailOverlayProps> = ({
     category,
@@ -60,20 +60,20 @@ export const FolderDetailOverlay: React.FC<FolderDetailOverlayProps> = ({
     const [editName, setEditName] = React.useState(category.name);
     const buttonDrag = useButtonDragOptional();
 
-    // 标题区作为拖放目标：拖到此处 → 按钮放到该分类末尾
+    // The header is a drop target: dropping here appends the button to the end of this category.
     const { setNodeRef: setTitleDroppableRef } = useDroppable({
         id: titleDroppableId(category.id),
         disabled: !sortableEnabled,
     });
 
-    // 锁定图标
+    // Lock icon.
     React.useEffect(() => {
         if (lockBtnRef.current) {
             setIcon(lockBtnRef.current, 'pin');
         }
     }, []);
 
-    // 点击文件夹外部任意位置关闭
+    // A click anywhere outside the folder closes it.
     React.useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (locked || isEditingName) return;
@@ -92,7 +92,7 @@ export const FolderDetailOverlay: React.FC<FolderDetailOverlayProps> = ({
         };
     }, [onClose, isEditingName, locked]);
 
-    // ESC：拖拽中先取消拖拽，再次 ESC 关闭文件夹（锁定时不关闭）
+    // Escape cancels an active drag first; a second Escape closes the folder unless it is locked.
     React.useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key !== 'Escape' || isEditingName) return;
@@ -108,7 +108,7 @@ export const FolderDetailOverlay: React.FC<FolderDetailOverlayProps> = ({
         return () => activeDocument.removeEventListener('keydown', handleKeyDown, true);
     }, [onClose, isEditingName, locked, buttonDrag?.isDragging]);
 
-    // 右键菜单
+    // Context menu.
     React.useEffect(() => {
         const titleEl = titleRef.current;
         if (!titleEl || !enableEditMode || isEditingName) return;
@@ -168,7 +168,7 @@ export const FolderDetailOverlay: React.FC<FolderDetailOverlayProps> = ({
                 onClick={closeOnBlankClick ? (e: React.MouseEvent) => {
                     if (locked) return;
                     const target = e.target as HTMLElement;
-                    // 不消费按钮、可编辑标题文字的点击
+                    // Do not swallow clicks on buttons or on the editable title text.
                     if (target.closest('button')) return;
                     if (target.closest('.folder-detail-title')) return;
                     if (target.closest('.folder-detail-title-input')) return;

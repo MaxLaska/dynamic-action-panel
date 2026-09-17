@@ -1,31 +1,31 @@
 // scripts/deploy.mjs
-// 统一的 Obsidian 插件部署脚本
+// Deployment script for the Obsidian plugin.
 //
-// 用法：
-//   node scripts/deploy.mjs dev   // 开发模式：在 Vault 中创建指向 dist 的软链接
-//   node scripts/deploy.mjs build // 构建模式：将 dist 中的文件复制到 Vault 插件目录
+// Usage:
+//   node scripts/deploy.mjs dev   // dev mode: symlink dist into the vault
+//   node scripts/deploy.mjs build // build mode: copy dist into the vault plugin directory
 //
-// 约定：
-// - 必须显式传入模式参数（"dev" 或 "build"），否则脚本会报错退出。
-// - 需要在项目根目录提供 .env 文件，并设置：
-//     VAULT_PATH=/你的/Obsidian/Vault/路径
-// - 插件 ID 从 manifest.json 的 id 字段读取，最终部署到：
+// Conventions:
+// - The mode argument ("dev" or "build") is required; without it the script exits with an error.
+// - A .env file in the project root must define:
+//     VAULT_PATH=/path/to/your/Obsidian/vault
+// - The plugin id is read from the id field of manifest.json; the deploy target is:
 //     <VAULT_PATH>/.obsidian/plugins/<pluginId>/
 //
-// 典型流程：
-// 1. 解析模式参数（dev/build）。
-// 2. 解析 Vault 路径和插件 ID，并校验配置。
-// 3. 准备 dist 目录（确保存在 .hotreload 标记）。
-// 4. 在 dev 模式下创建/复用软链接，在 build 模式下复制构建产物。
+// Flow:
+// 1. Parse the mode argument (dev/build).
+// 2. Resolve and validate the vault path and the plugin id.
+// 3. Prepare the dist directory, including the .hotreload marker.
+// 4. Create or reuse the symlink in dev mode, or copy the build output in build mode.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /**
- * 将 .env 文件中的键值对合并进 process.env（不覆盖已有环境变量，与 dotenv 默认行为一致）。
- * 仅支持常见格式：KEY=value、可选引号、# 行注释与空行。
- * @param {string} filePath .env 绝对路径
+ * Merges the key/value pairs of a .env file into process.env without overwriting existing variables (the dotenv default).
+ * Only the common format is supported: KEY=value, optional quotes, # comment lines and blank lines.
+ * @param {string} filePath Absolute path of the .env file
  */
 function applyDotenvFile(filePath) {
 	const content = fs.readFileSync(filePath, 'utf8');
@@ -62,11 +62,11 @@ const envPath = path.join(projectRoot, '.env');
 const distDir = path.join(projectRoot, 'dist');
 const manifestPath = path.join(projectRoot, 'manifest.json');
 
-// ==================== 通用工具函数 ====================
+// ==================== Helpers ====================
 
 /**
- * 简单的日志工具，统一控制台输出格式并添加清晰的图标前缀。
- * 在本脚本中，建议优先使用该工具而不是直接使用 console.log/console.error。
+ * Small logging helper that unifies the console output and prefixes it with an icon.
+ * Prefer it over console.log/console.error inside this script.
  */
 const log = {
 	success: (msg) => console.log(`✅ ${msg}`),
@@ -76,10 +76,10 @@ const log = {
 };
 
 /**
- * 递归复制目录，将 src 目录完整复制到 dest（包含子目录和文件）。
- * 常用于将构建产物整体复制到插件目录。
- * @param src 源目录路径
- * @param dest 目标目录路径
+ * Recursively copies a directory, including all sub-directories and files.
+ * Used to copy the build output into the plugin directory.
+ * @param src Source directory
+ * @param dest Target directory
  */
 function copyDir(src, dest) {
 	fs.mkdirSync(dest, { recursive: true });
@@ -98,41 +98,41 @@ function copyDir(src, dest) {
 }
 
 /**
- * 创建可点击的路径链接（使用 OSC 8 转义序列，在部分终端中可直接点击文件路径）。
- * 主要用于在控制台输出中提供方便跳转的本地文件链接。
- * @param filePath 本地文件或目录路径
- * @param displayText 展示给用户看的文本（可选，默认显示原始路径）
- * @returns 带有终端点击跳转能力的字符串
+ * Builds a clickable path link using OSC 8 escape sequences, which some terminals render as a link.
+ * Used to make local paths in the console output directly openable.
+ * @param filePath Local file or directory path
+ * @param displayText Text shown to the user (optional; defaults to the raw path)
+ * @returns A string carrying the terminal hyperlink escape sequences
  */
 function createClickablePath(filePath, displayText) {
 	const resolvedPath = path.resolve(filePath);
 	let targetPathForUrl = resolvedPath;
 
-	// 如果目标是目录，给 URL 结尾补上 "/"，部分终端/系统对目录打开更稳定
+	// Append a trailing "/" for directories; some terminals and systems open them more reliably that way.
 	try {
 		if (fs.existsSync(resolvedPath) && fs.lstatSync(resolvedPath).isDirectory()) {
 			targetPathForUrl = resolvedPath.endsWith(path.sep) ? resolvedPath : resolvedPath + path.sep;
 		}
 	} catch {
-		// 忽略：只要能生成 URL 即可
+		// Ignored: producing the URL at all is enough.
 	}
 
-	// 使用标准 API 生成 file:// URL（自动处理 Windows 盘符与空格编码）
+	// Build the file:// URL through the standard API, which handles Windows drive letters and spaces.
 	const fileUrl = pathToFileURL(targetPathForUrl).href;
 	const text = displayText ?? path.basename(resolvedPath);
 	return `\x1b]8;;${fileUrl}\x1b\\${text}\x1b]8;;\x1b\\`;
 }
 
-// ==================== 参数与配置解析 ====================
+// ==================== Argument and config parsing ====================
 
 /**
- * 解析命令行参数，返回当前模式字符串。
- * 支持两种模式：dev 和 build。
- * - 传入 "dev"  → dev 模式
- * - 传入 "build" → build 模式
- * - 未传参数或传入其他值 → 视为非法，直接报错退出
- * @param argv Node.js 的 process.argv 数组
- * @returns mode 字符串："dev" | "build"
+ * Parses the command line arguments and returns the mode.
+ * Two modes are supported: dev and build.
+ * - "dev"   -> dev mode
+ * - "build" -> build mode
+ * - anything else, or no argument at all, is rejected and exits with an error
+ * @param argv The Node.js process.argv array
+ * @returns The mode string: "dev" | "build"
  */
 function parseMode(argv) {
 	const arg = argv[2];
@@ -146,23 +146,23 @@ function parseMode(argv) {
 	}
 
 	if (!arg) {
-		log.error('缺少模式参数，请使用 "dev" 或 "build"。');
+		log.error('Missing mode argument; use "dev" or "build".');
 	} else {
-		log.error(`不支持的模式参数: "${arg}"，请使用 "dev" 或 "build"。`);
+		log.error(`Unsupported mode argument: "${arg}"; use "dev" or "build".`);
 	}
 	process.exit(1);
 }
 
 /**
- * 解析并返回 Obsidian Vault 的绝对路径。
- * - 如果 .env 不存在，则静默退出（便于在 CI/CD 场景中跳过部署）。
- * - 如果 VAULT_PATH 未设置，则输出错误并退出。
- * @returns 解析后的 VAULT 绝对路径
+ * Resolves the absolute path of the Obsidian vault.
+ * - Without a .env file the script exits silently, so CI/CD can skip the deployment.
+ * - Without VAULT_PATH it prints an error and exits.
+ * @returns The resolved absolute vault path
  */
 function getVaultPath() {
-	// 如果没有 .env，静默退出（允许 CI/CD 场景）
+	// No .env: exit silently, which keeps CI/CD runs green.
 	if (!fs.existsSync(envPath)) {
-		log.warn('.env 文件不存在，跳过部署');
+		log.warn('No .env file found; skipping the deployment');
 		process.exit(0);
 	}
 
@@ -170,7 +170,7 @@ function getVaultPath() {
 	const vaultPath = process.env.VAULT_PATH;
 
 	if (!vaultPath) {
-		log.error('未设置 VAULT_PATH，请在 .env 文件中设置 VAULT_PATH=你的vault路径');
+		log.error('VAULT_PATH is not set; add VAULT_PATH=/path/to/your/vault to the .env file');
 		process.exit(1);
 	}
 
@@ -178,14 +178,14 @@ function getVaultPath() {
 }
 
 /**
- * 从 manifest.json 读取插件 ID，作为部署目标目录名。
- * - 当 manifest.json 不存在或无法解析时会直接退出。
- * @returns 插件 ID（通常与插件文件夹名相同）
+ * Reads the plugin id from manifest.json, which names the deploy target directory.
+ * - Exits when manifest.json is missing or cannot be parsed.
+ * @returns The plugin id, which is also the plugin folder name
  */
 function getPluginId() {
-	// 读取插件ID（统一从项目根目录读取 manifest.json）
+	// Read the plugin id from the manifest.json in the project root.
 	if (!fs.existsSync(manifestPath)) {
-		log.error(`manifest.json 文件未找到，无法获取插件ID: ${manifestPath}`);
+		log.error(`manifest.json not found, so the plugin id cannot be read: ${manifestPath}`);
 		process.exit(1);
 	}
 
@@ -195,24 +195,24 @@ function getPluginId() {
 		if (!pluginId) throw new Error();
 		return pluginId;
 	} catch {
-		log.error('无法从 manifest.json 获取插件ID。');
+		log.error('Could not read the plugin id from manifest.json.');
 		process.exit(1);
 	}
 }
 
-// ==================== 目录准备与校验 ====================
+// ==================== Directory preparation ====================
 
 /**
- * 确保 dist 目录及热重载标记文件就绪。
- * - 如果 dist 目录不存在则自动创建。
- * - 如果 .hotreload 文件不存在则创建空文件，便于其他工具做热重载检测。
+ * Makes sure the dist directory and the hot reload marker are in place.
+ * - Creates dist when it does not exist.
+ * - Creates an empty .hotreload file so hot reload tooling can detect it.
  */
 function ensureDistReady() {
-	// 检查 dist 目录
+	// Check the dist directory.
 	if (!fs.existsSync(distDir)) {
 		fs.mkdirSync(distDir, { recursive: true });
 	}
-	// 确保 .hotreload 文件存在
+	// Make sure the .hotreload file exists.
 	const hotreloadPath = path.join(distDir, '.hotreload');
 	if (!fs.existsSync(hotreloadPath)) {
 		fs.writeFileSync(hotreloadPath, '');
@@ -220,16 +220,16 @@ function ensureDistReady() {
 }
 
 /**
- * 计算插件目录路径：基于 vault 根路径和插件 ID。
- * 如果插件目录与 dist 目录相同，则直接退出，避免递归复制或循环链接。
- * @param vaultPath Vault 根路径
- * @param pluginId 插件 ID
- * @returns 插件目录绝对路径
+ * Computes the plugin directory from the vault root and the plugin id.
+ * Exits when it resolves to the dist directory itself, which would cause a recursive copy or a link loop.
+ * @param vaultPath Vault root path
+ * @param pluginId Plugin id
+ * @returns The absolute plugin directory path
  */
 function getPluginDir(vaultPath, pluginId) {
 	const pluginDir = path.join(vaultPath, '.obsidian', 'plugins', pluginId);
 
-	// 如果插件目录与 dist 目录相同，则直接退出，避免递归复制或循环链接
+	// Same directory as dist: exit, to avoid a recursive copy or a link loop.
 	if (path.resolve(pluginDir) === path.resolve(distDir)) {
 		process.exit(0);
 	}
@@ -237,17 +237,17 @@ function getPluginDir(vaultPath, pluginId) {
 	return pluginDir;
 }
 
-// ==================== 插件目录处理 ====================
+// ==================== Plugin directory handling ====================
 
 /**
- * 同步插件目录与 dist 中的 data.json。
- * - 仅当插件目录存在且为目录时生效。
- * - 若插件目录存在 data.json，则复制到 dist（调用方需已保证 dist 存在），避免重新部署时丢失用户配置。同步失败时，会打印错误并退出。
- * - 若插件目录不存在 data.json，则删除 dist 中的 data.json（若存在），避免沿用旧配置。同步失败时，会打印错误并退出。
- * @param pluginDir 插件目录绝对路径
+ * Syncs data.json between the plugin directory and dist.
+ * - Only runs when the plugin directory exists and is a directory.
+ * - When the plugin directory has a data.json it is copied into dist (the caller must have created dist), so redeploying never loses the user configuration. A failure prints an error and exits.
+ * - When it has none, any data.json in dist is removed, so no stale configuration is carried over. A failure prints an error and exits.
+ * @param pluginDir Absolute plugin directory path
  */
 function backupDataJson(pluginDir) {
-	// 不存在或不是文件夹则直接跳过
+	// Skip when it does not exist or is not a directory.
 	if (!fs.existsSync(pluginDir)) return;
 	const stats = fs.lstatSync(pluginDir);
 	if (!stats.isDirectory()) return;
@@ -255,12 +255,12 @@ function backupDataJson(pluginDir) {
 	const dataJsonPath = path.join(pluginDir, 'data.json');
 	const distDataJsonPath = path.join(distDir, 'data.json');
 
-	// 若插件目录不存在 data.json，则删除 dist 中的 data.json（若存在），避免沿用旧配置
+	// No data.json in the plugin directory: drop the one in dist so no stale configuration is reused.
 	if (!fs.existsSync(dataJsonPath)) {
 		try {
 			fs.rmSync(distDataJsonPath, { force: true });
 		} catch (err) {
-			log.warn(`无法删除 dist 中的 data.json: ${err?.message ?? err}`);
+			log.warn(`Could not remove data.json from dist: ${err?.message ?? err}`);
 		}
 		return;
 	}
@@ -269,9 +269,9 @@ function backupDataJson(pluginDir) {
 }
 
 /**
- * 判断现有路径是否为指向 dist 的软链接（支持相对路径解析）。
- * @param pluginDir 现有插件目录路径（可能为软链接）
- * @returns 是否为指向 dist 目录的软链接
+ * Returns whether an existing path is a symlink pointing at dist (relative targets are resolved).
+ * @param pluginDir Existing plugin directory path, possibly a symlink
+ * @returns Whether it is a symlink pointing at the dist directory
  */
 function isExistingSymlinkToDist(pluginDir) {
 	const linkTarget = fs.readlinkSync(pluginDir);
@@ -280,79 +280,79 @@ function isExistingSymlinkToDist(pluginDir) {
 }
 
 /**
- * 删除指定路径（文件或目录），失败时打印错误并退出。
- * @param targetPath 需要删除的文件或目录路径
+ * Removes a file or directory; on failure it prints an error and exits.
+ * @param targetPath File or directory to remove
  */
 function removePath(targetPath) {
 	try {
 		fs.rmSync(targetPath, { recursive: true, force: true });
 	} catch (err) {
-		log.error(`处理目标路径时出错: ${err.message}`);
+		log.error(`Error while handling the target path: ${err.message}`);
 		process.exit(1);
 	}
 }
 
-// ==================== 部署实现 ====================
+// ==================== Deployment ====================
 
 /**
- * dev 模式：创建从 dist 到插件目录的符号链接（Windows 使用 junction）。
- * - 如果插件目录已存在且是指向 dist 的软链接，会直接复用并返回。
- * - 否则在创建链接前会清理旧目录并确保父目录存在。
- * @param context 部署上下文（包含 mode、vaultPath、pluginId、pluginDir 等）
+ * dev mode: creates a symlink from the plugin directory to dist (a junction on Windows).
+ * - An existing symlink that already points at dist is reused.
+ * - Otherwise the old directory is removed and the parent directory is created first.
+ * @param context Deployment context (mode, vaultPath, pluginId, pluginDir)
  */
 function deployDev(context) {
 	const { pluginDir, pluginId } = context;
 	const linkType = process.platform === 'win32' ? 'junction' : 'dir';
 
-	// 如果目标目录已存在，优先尝试复用已有的软链接
+	// When the target already exists, prefer reusing an existing symlink.
 	if (fs.existsSync(pluginDir)) {
 		const stats = fs.lstatSync(pluginDir);
 
-		// 已存在且是软链接，且指向 dist：直接复用并返回
+		// Already a symlink pointing at dist: reuse it and return.
 		if (stats.isSymbolicLink() && isExistingSymlinkToDist(pluginDir)) {
-			log.info(`链接成功：${createClickablePath(distDir, 'dist')} → ${createClickablePath(pluginDir, pluginId)}`);
+			log.info(`Linked: ${createClickablePath(distDir, 'dist')} → ${createClickablePath(pluginDir, pluginId)}`);
 			return;
 		}
 
-		// 否则删除旧目录/文件，为重新创建链接做准备
+		// Otherwise remove the old directory or file before recreating the link.
 		removePath(pluginDir);
 	}
 
-	// 确保父目录存在
+	// Make sure the parent directory exists.
 	fs.mkdirSync(path.dirname(pluginDir), { recursive: true });
 	
 	fs.symlinkSync(distDir, pluginDir, linkType);
-	log.info(`链接成功：${createClickablePath(distDir, 'dist')} → ${createClickablePath(pluginDir, pluginId)}`);
+	log.info(`Linked: ${createClickablePath(distDir, 'dist')} → ${createClickablePath(pluginDir, pluginId)}`);
 }
 
 /**
- * build 模式：将 dist 内的构建产物完整复制到插件目录。
- * 会先确保插件目录存在，然后将 dist 下的所有文件/子目录复制过去。
- * @param context 部署上下文（包含 mode、vaultPath、pluginId、pluginDir 等）
+ * build mode: copies the whole build output from dist into the plugin directory.
+ * The plugin directory is created first, then every file and sub-directory of dist is copied.
+ * @param context Deployment context (mode, vaultPath, pluginId, pluginDir)
  */
 function deployBuild(context) {
 	const { pluginDir, pluginId } = context;
 
-	// 如果目标目录已存在，先删除旧目录，避免残留文件影响结果
+	// Remove an existing target directory first, so no leftover files survive.
 	if (fs.existsSync(pluginDir)) {
 		removePath(pluginDir);
 	}
 
 	fs.mkdirSync(pluginDir, { recursive: true });
 	copyDir(distDir, pluginDir);
-	// 统计复制后的文件数量，用于日志输出
+	// Count the copied files for the log output.
 	const fileNames = fs.readdirSync(pluginDir).sort();
-	log.info(`复制成功：${createClickablePath(distDir, 'dist')} → ${createClickablePath(pluginDir, pluginId)}`);
+	log.info(`Copied: ${createClickablePath(distDir, 'dist')} → ${createClickablePath(pluginDir, pluginId)}`);
 }
 
-// ==================== 主流程入口 ====================
+// ==================== Main ====================
 
 /**
- * 部署脚本主入口：
- * 1. 解析运行模式（dev/build）。
- * 2. 解析 Vault 路径和插件 ID。
- * 3. 准备 dist 目录并处理已有插件目录（备份配置 / 复用链接）。
- * 4. 根据模式执行软链接或复制部署。
+ * Entry point of the deployment script:
+ * 1. Parse the mode (dev/build).
+ * 2. Resolve the vault path and the plugin id.
+ * 3. Prepare dist and handle an existing plugin directory (preserve data.json, reuse the link).
+ * 4. Deploy by symlink or by copy, depending on the mode.
  */
 function main() {
 	const mode = parseMode(process.argv);
@@ -363,12 +363,12 @@ function main() {
 	backupDataJson(pluginDir);
 	ensureDistReady();
 
-	log.info(`开始部署：${mode} 模式`);
+	log.info(`Starting deployment in ${mode} mode`);
 	
-	// 构造部署上下文
+	// Build the deployment context.
 	const context = { mode, vaultPath, pluginId, pluginDir };
 
-	// 执行部署操作
+	// Run the deployment.
 	try {
 		switch (mode) {
 			case 'dev':
@@ -378,13 +378,13 @@ function main() {
 				deployBuild(context);
 				break;
 			default:
-				log.error(`不支持的模式: ${mode}`);
+				log.error(`Unsupported mode: ${mode}`);
 				process.exit(1);
 		}
 
-		log.success(`部署完成！`);
+		log.success(`Deployment complete.`);
 	} catch (err) {
-		log.error(`${mode === 'dev' ? '创建软链接' : '复制'}失败: ${err.message}`);
+		log.error(`${mode === 'dev' ? 'Creating the symlink' : 'Copying'} failed: ${err.message}`);
 		process.exit(1);
 	}
 }

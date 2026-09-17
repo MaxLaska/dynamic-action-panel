@@ -4,8 +4,8 @@ import { CategoryConfig, ButtonConfig } from '@/types';
 import { t, tWithParams } from '@/utils/i18n';
 
 /**
- * ButtonDeleteModal 按钮删除模态框类。
- * 用于弹出确认对话框，确认后删除指定按钮。
+ * Confirmation modal for deleting a button.
+ * The button is removed only after the user confirms.
  */
 export class ButtonDeleteModal extends Modal {
     plugin: ButtonsPanelPlugin;
@@ -14,12 +14,12 @@ export class ButtonDeleteModal extends Modal {
     onDelete: () => void;
 
     /**
-     * 构造函数，初始化模态框。
-     * @param app Obsidian应用实例
-     * @param plugin 插件主类实例
-     * @param button 待删除的按钮对象
-     * @param category 按钮所属分类
-     * @param onDelete 删除后的回调
+     * Initializes the modal.
+     * @param app Obsidian app instance
+     * @param plugin Plugin instance
+     * @param button Button to delete
+     * @param category Category the button belongs to
+     * @param onDelete Called after the deletion
      */
     constructor(
         app: App,
@@ -36,7 +36,7 @@ export class ButtonDeleteModal extends Modal {
     }
 
     /**
-     * 打开模态框时自动调用，渲染确认界面。
+     * Called when the modal opens; renders the confirmation UI.
      */
     onOpen() {
         const { contentEl, titleEl } = this;
@@ -44,7 +44,7 @@ export class ButtonDeleteModal extends Modal {
         contentEl.addClass('buttons-panel');
         contentEl.addClass('button-delete');
 
-        // 使用 Obsidian Modal 自带标题栏，和“添加分类”保持一致
+        // Use the Obsidian Modal title bar, consistent with the add-category modal.
         titleEl.setText(t('delete_button'));
         titleEl.addClass('buttons-panel-delete-title');
         contentEl.createEl('p', {
@@ -71,7 +71,7 @@ export class ButtonDeleteModal extends Modal {
     }
 
     /**
-     * 关闭模态框时自动调用，清理内容。
+     * Called when the modal closes; clears its content.
      */
     onClose() {
         this.titleEl.removeClass('buttons-panel-delete-title');

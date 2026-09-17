@@ -14,16 +14,16 @@ import {
 /**
  * useCategoryCreation Hook
  * 
- * 封装分类创建的业务逻辑，提供统一的创建接口。
+ * Wraps category creation behind a single entry point.
  * 
- * @returns 分类创建函数
+ * @returns A function that opens the create-category modal
  */
 export function useCategoryCreation() {
     const { plugin, app } = usePluginContext();
 
     /**
-     * 创建新分类（显示创建对话框）
-     * @param onCreated 创建成功后的回调
+     * Creates a new category by opening the create modal
+     * @param onCreated Called after a successful creation
      */
     const createCategory = useCallback(
         (onCreated?: (category: StoredCategory) => void) => {

@@ -7,7 +7,7 @@ import type { ButtonsPanelPlugin } from '@/types/plugin';
 type ActionRenderContext = { app: App; plugin: ButtonsPanelPlugin };
 
 /**
- * “创建文件”动作类，实现按钮动作表单的渲染、数据管理、校验和序列化。
+ * The create-file action: form rendering, data handling, validation and serialization.
  */
 export class CreateFileAction implements IButtonAction {
     type = 'create_file';
@@ -18,7 +18,7 @@ export class CreateFileAction implements IButtonAction {
     private folderInput: FolderInput | null = null;
 
     /**
-     * 构造函数，初始化参数。
+     * Initializes the action parameters.
      */
     constructor(params: { folderPath?: string; fileName?: string; templateName?: string }) {
         this.folderPath = params.folderPath || '';
@@ -27,10 +27,10 @@ export class CreateFileAction implements IButtonAction {
     }
 
     /**
-     * 渲染表单控件，绑定数据双向同步。
+     * Renders the form controls and keeps them in sync with the action data.
      */
     render(container: HTMLElement, context: ActionRenderContext) {
-        // 使用可复用的文件夹输入组件
+        // Reusable folder input component.
         this.folderInput = new FolderInput(
             container,
             {
@@ -42,18 +42,18 @@ export class CreateFileAction implements IButtonAction {
             { app: context.app, plugin: context.plugin },
             (value: string) => {
                 this.folderPath = value;
-                // 修正文件夹路径时，只要当前字段非空就清除该字段的错误样式
+                // Clear the error of this field as soon as it is non-empty.
                 if (this.folderPath && this.folderPath.trim()) {
                     this.folderInput?.clearError();
                 }
-                // 如果两个必填字段都已有效，则整体清除错误
+                // Clear the action-level error once both required fields are valid.
                 if (this.validate()) {
                     this.clearError();
                 }
             }
         );
 
-        // 使用可复用的文件名输入组件
+        // Reusable file name input component.
         this.fileNameInput = new FileNameInput(
             container,
             {
@@ -69,18 +69,18 @@ export class CreateFileAction implements IButtonAction {
             { app: context.app, plugin: context.plugin },
             (value: string) => {
                 this.fileName = value;
-                // 修正文件名时，只要当前字段非空就清除该字段的错误样式
+                // Clear the error of this field as soon as it is non-empty.
                 if (this.fileName && this.fileName.trim()) {
                     this.fileNameInput?.clearError();
                 }
-                // 如果两个必填字段都已有效，则整体清除错误
+                // Clear the action-level error once both required fields are valid.
                 if (this.validate()) {
                     this.clearError();
                 }
             }
         );
 
-        // 使用可复用的文件输入组件作为模板选择
+        // Reusable file input component, used here to pick the template.
         const templateInput = new FileInput(
             container,
             {
@@ -98,17 +98,17 @@ export class CreateFileAction implements IButtonAction {
             }
         );
 
-        // 设置初始值
+        // Apply the initial values.
         this.folderInput.setValue(this.folderPath || '');
         this.fileNameInput.setValue(this.fileName || '');
         templateInput.setValue(this.templateName || '');
     }
 
     /**
-     * 校验表单数据有效性。
+     * Validates the form data.
      */
     validate() {
-        // 同时验证文件夹路径和文件名
+        // Both the folder path and the file name are required.
         return !!(
             this.folderPath &&
             this.folderPath.trim() &&
@@ -131,7 +131,7 @@ export class CreateFileAction implements IButtonAction {
     }
 
     setError(message: string): void {
-        // 如果验证失败，对文件夹路径和文件名输入框都设置错误状态
+        // Mark every required field that is still empty.
         if (!this.folderPath || !this.folderPath.trim()) {
             this.folderInput?.setError(message);
         }
@@ -141,13 +141,13 @@ export class CreateFileAction implements IButtonAction {
     }
 
     clearError(): void {
-        // 清除所有输入框的错误状态
+        // Clear the error state of every input.
         this.fileNameInput?.clearError();
         this.folderInput?.clearError();
     }
 
     /**
-     * 获取完整文件路径。
+     * Returns the full path of the file that would be created.
      */
     getFullPath(): string {
         if (!this.fileName) return '';
@@ -156,7 +156,7 @@ export class CreateFileAction implements IButtonAction {
     }
 
     /**
-     * 序列化为 JSON 数据。
+     * Serializes the action to its JSON shape.
      */
     toJSON() {
         return {

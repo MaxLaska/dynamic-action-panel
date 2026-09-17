@@ -1,13 +1,12 @@
 // ButtonsPanelView.tsx
-// 本文件定义了按钮面板主视图类 ButtonsPanelView，是 Obsidian 插件的核心 UI 视图之一。
-// 该视图负责渲染和管理按钮面板的全部交互、展示、移动、分类、样式应用等功能，协调各个模块化组件，
-// 遵循高内聚低耦合原则，极大提升了代码的可维护性和扩展性。
+// Defines ButtonsPanelView, the main view of the buttons panel.
+// It renders the panel, owns its interaction state and coordinates the individual components.
 //
-// 主要内容：
-// - ButtonsPanelView 类：主视图类，继承自 Obsidian 的 ItemView
-// - 构造函数与生命周期方法（onOpen/onClose）
-// - 视图渲染、按钮/面板配置更新、移动模式、分类移动模式等核心逻辑
-// - 详细参数、返回值、用途说明
+// Contents:
+// - ButtonsPanelView: the main view class, extending Obsidian's ItemView
+// - constructor and lifecycle methods (onOpen/onClose)
+// - view rendering plus the button, panel config and move mode logic
+// - the materialization boundary between stored and runtime shapes
 
 import React from 'react';
 import { ItemView, WorkspaceLeaf, debounce } from 'obsidian';
@@ -20,34 +19,34 @@ import { ReactRoot } from '@/utils/ReactRoot';
 import { ButtonsPanelApp } from '@/components/buttons-panel/ButtonsPanelApp';
 
 /**
- * 按钮面板主视图类
- * 负责渲染和管理按钮面板的全部交互、展示、移动、分类、样式应用等功能。
- * 通过组合多个模块化组件实现高内聚低耦合。
+ * Main view class of the buttons panel.
+ * Renders the panel and owns its interaction, display, move and category state.
+ * The concrete UI is composed from the individual panel components.
  */
 export class ButtonsPanelView extends ItemView {
-    /** 当前面板的分类数据 (stored shape; the render path materializes views) */
+    /** Categories of this panel (stored shape; the render path materializes views) */
     private categories: StoredCategory[] = [];
-    /** 面板的显示设置 */
+    /** Display settings of the panel */
     private panelConfig: PanelConfig;
-    /** 导航栏搜索关键字（仅内存状态，不写入设置） */
+    /** Search query from the navigation bar (in-memory only, never persisted) */
     private searchQuery: string = '';
-    /** 插件主类实例 */
+    /** Plugin instance */
     private plugin: ButtonsPanelPlugin;
-    // React 根节点管理器（替代原有 DOM 渲染器）
+    // React root manager, which replaced the former DOM renderer.
     private reactRoot: ReactRoot | null = null;
-    /** 刷新事件处理函数句柄 */
+    /** Handle of the refresh event listener */
     private handleRefreshEvent: (() => void) | null = null;
-    /** 防抖渲染函数，使用 Obsidian API 的 debounce */
+    /** Debounced render function, using the Obsidian debounce helper */
     private debouncedRender: () => void;
-    /** 顶部导航栏渲染器（挂载在 Obsidian view-header 同级位置） */
+    /** Renderer of the top navigation bar, mounted as a sibling of the Obsidian view-header */
     private navigationBarRenderer: NavigationBarRenderer | null = null;
 
     /**
-     * 构造函数，初始化视图和所有模块化组件
-     * @param leaf Obsidian 工作区叶子节点
-     * @param plugin 插件主类实例
-     * @param categories 分类配置数组
-     * @param panelConfig 面板配置
+     * Initializes the view and its components
+     * @param leaf Obsidian workspace leaf
+     * @param plugin Plugin instance
+     * @param categories Category configuration
+     * @param panelConfig Panel configuration
      */
     constructor(
         leaf: WorkspaceLeaf,
@@ -59,31 +58,31 @@ export class ButtonsPanelView extends ItemView {
         this.plugin = plugin;
         this.categories = categories;
         this.panelConfig = panelConfig;
-        // 初始化防抖渲染函数（React 模式下主要用于触发重新挂载）
+        // Debounced render, which in React mode mainly triggers a remount.
         this.debouncedRender = debounce(() => {
             this.renderPanel();
         }, 100, true);
-        // 初始化顶部导航栏渲染器（挂在 Obsidian 的 view-header 上方，而不是 view-content 内部）
+        // Navigation bar renderer, mounted above the Obsidian view-header rather than inside view-content.
         this.navigationBarRenderer = new NavigationBarRenderer(this.plugin, this.panelConfig);
 
-        // 添加主容器样式类
+        // Style class of the main container.
         this.containerEl.addClass('buttons-panel');
-        // 确保容器可以接收焦点
+        // Make the container focusable.
         this.containerEl.setAttribute('tabindex', '-1');
     }
 
     /**
-     * 设置事件监听器，监听面板刷新等自定义事件
+     * Registers the listeners for the custom panel events
      */
     private setupEventListeners(): void {
-        // 监听面板刷新事件（直接触发渲染，不使用防抖，避免异步时序问题）
+        // Refresh event: render directly rather than debounced, to avoid async ordering problems.
         this.handleRefreshEvent = () => {
             this.renderPanel();
         };
-        // 使用视图的 registerDomEvent 注册自定义 DOM 事件
+        // Register the custom DOM events through the view's registerDomEvent.
         this.registerDomEvent(activeDocument, 'buttons-panel-refresh', this.handleRefreshEvent);
 
-        // 监听来自导航栏的搜索事件
+        // Search events coming from the navigation bar.
         this.registerDomEvent(
             activeDocument,
             'buttons-panel-search',
@@ -96,16 +95,16 @@ export class ButtonsPanelView extends ItemView {
     }
 
     /**
-     * 获取视图类型字符串（用于 Obsidian 识别）
-     * @returns 视图类型字符串
+     * Returns the view type string Obsidian identifies this view by
+     * @returns The view type string
      */
     getViewType(): string {
         return 'buttons-panel-view';
     }
 
     /**
-     * 获取视图图标（左侧边栏显示）
-     * @returns 图标名称字符串
+     * Returns the view icon shown in the sidebar
+     * @returns The icon name
      */
     getIcon(): string {
         // return 'layout-grid';
@@ -113,88 +112,88 @@ export class ButtonsPanelView extends ItemView {
     }
 
     /**
-     * 获取视图显示名称（顶部标题）
-     * @returns 本地化后的视图名称
+     * Returns the display name of the view shown in its header
+     * @returns The localized view name
      */
     getDisplayText(): string {
         return t('buttons_panel');
     }
 
     /**
-     * 视图打开时自动调用，渲染按钮面板
+     * Called when the view opens; renders the buttons panel
      * @returns Promise<void>
      */
     async onOpen(): Promise<void> {
-        // 每次打开视图时从磁盘重新加载最新设置，
-        // 以便官方同步或其他设备更新的配置能够生效
+        // Reload the settings from disk on every open, so configuration synced by
+        // Obsidian Sync or changed on another device takes effect.
         try {
             await this.plugin.loadSettings();
             this.categories = this.plugin.settings.categories;
             this.panelConfig = this.plugin.settings.panelConfig;
         } catch (error) {
-            console.warn('加载最新按钮面板设置时出错，将使用内存中的配置：', error);
+            console.warn('Error while loading the latest buttons panel settings; falling back to the in-memory configuration:', error);
         }
 
-        // 同步 NavigationBarRenderer 的 panelConfig 引用，
-        // 避免因 loadSettings 后引用不一致导致首次菜单点击无效
+        // Sync the panelConfig reference of the NavigationBarRenderer, otherwise a
+        // stale reference after loadSettings would make the first menu click a no-op.
         this.navigationBarRenderer?.updatePanelConfig(this.panelConfig);
 
-        // React 挂载（仅负责 view-content 内部的面板内容）
+        // Mount React, which owns only the panel content inside view-content.
         this.reactRoot = new ReactRoot();
         const container = this.contentEl;
         container.empty();
-        // 为 Obsidian 的 view-content 添加专用样式类，便于单独控制内边距等布局
+        // Add a dedicated style class to the Obsidian view-content so its padding can be controlled separately.
         container.addClass('buttons-panel');
         this.reactRoot.mount(container, this.createAppElement());
 
-        // 在 Obsidian 的 view-header 上方渲染顶部操作栏（视图切换 / 样式切换 / 编辑模式 / 设置按钮）
+        // Render the top action bar above the Obsidian view-header (view switch, style switch, edit mode, settings).
         this.navigationBarRenderer?.createNavigationBar(this.containerEl);
 
-        // 仍然保留 refresh 事件监听，以后可以在 React 中桥接
+        // Keep the refresh event listener; it can be bridged into React later.
         this.setupEventListeners();
     }
 
     /**
-     * 视图关闭时自动调用，可用于资源清理
+     * Called when the view closes; releases its resources
      * @returns Promise<void>
      */
     async onClose(): Promise<void> {
-        // 卸载 React 应用并清理容器
+        // Unmount the React app and clear the container.
         if (this.reactRoot) {
             this.reactRoot.unmount();
             this.reactRoot = null;
         } else {
             this.containerEl.empty();
         }
-        // 事件监听器现在通过插件的事件注册系统自动清理
+        // The event listeners are cleaned up by the plugin's own registration system.
     }
 
     /**
-     * 更新分类数据并重新渲染
-     * @param categories 新的分类配置数组
+     * Replaces the category data and re-renders
+     * @param categories New category configuration
      */
     updateCategories(categories: StoredCategory[]): void {
         try {
-            // 确保 categories 是有效的数组
+            // Guard against a non-array argument.
             this.categories = Array.isArray(categories) ? categories : [];
             this.debouncedRender();
         } catch (error) {
-            console.error('更新分类数据时出错:', error);
-            // 如果更新失败，尝试重新挂载
+            console.error('Error while updating the category data:', error);
+            // If the update failed, try a full remount.
             if (this.reactRoot && this.contentEl) {
                 try {
                     this.reactRoot.unmount();
                     this.reactRoot = new ReactRoot();
                     this.reactRoot.mount(this.contentEl, this.createAppElement());
                 } catch (remountError) {
-                    console.error('重新挂载时出错:', remountError);
+                    console.error('Error while remounting:', remountError);
                 }
             }
         }
     }
 
     /**
-     * 从插件设置同步内存中的分类/面板配置
+     * Syncs the in-memory category and panel configuration from the plugin settings
      */
     private syncDataFromPlugin(): void {
         this.categories = this.plugin.settings.categories;
@@ -202,7 +201,7 @@ export class ButtonsPanelView extends ItemView {
     }
 
     /**
-     * 供 React 渲染用的分类列表 — THE materialization boundary of the v5
+     * Category list used for rendering — THE materialization boundary of the v5
      * model: the React tree consumes CategoryConfig view copies (buttons
      * joined from placements + the tool registry), while every write path
      * resolves the stored category by id through findStoredCategory. An
@@ -231,36 +230,36 @@ export class ButtonsPanelView extends ItemView {
     }
 
     /**
-     * 更新面板设置并重新渲染
-     * @param config 新的面板配置
+     * Replaces the panel settings and re-renders
+     * @param config New panel configuration
      */
     updatePanelConfig(config: PanelConfig): void {
         try {
             this.panelConfig = config;
-            // 同步更新顶部操作栏的配置，并重新渲染（保持与内容区状态一致）
+            // Update the top action bar config as well and re-render, keeping it in sync with the content area.
             if (this.navigationBarRenderer) {
                 this.navigationBarRenderer.updatePanelConfig(this.panelConfig);
                 this.navigationBarRenderer.createNavigationBar(this.containerEl);
             }
             this.debouncedRender();
         } catch (error) {
-            console.warn('更新面板设置时出错:', error);
+            console.warn('Error while updating the panel settings:', error);
         }
     }
 
     /**
-     * 渲染面板 - 使用 React 根组件
+     * Renders the panel through the React root component
      */
     public renderPanel(): void {
-        // React 模式下，renderPanel 主要用于触发根组件更新
+        // In React mode renderPanel mainly triggers an update of the root component.
         if (!this.reactRoot) {
-            // 如果 reactRoot 不存在，尝试重新初始化
+            // Without a reactRoot, try to initialize it again.
             if (this.contentEl) {
                 try {
                     this.reactRoot = new ReactRoot();
                     this.reactRoot.mount(this.contentEl, this.createAppElement());
                 } catch (error) {
-                    console.error('重新初始化 ReactRoot 时出错:', error);
+                    console.error('Error while reinitializing the ReactRoot:', error);
                 }
             }
             return;
@@ -269,15 +268,15 @@ export class ButtonsPanelView extends ItemView {
         try {
             this.reactRoot.update(this.createAppElement());
         } catch (error) {
-            console.error('更新 React 组件时出错:', error);
-            // 如果更新失败，尝试重新挂载
+            console.error('Error while updating the React component:', error);
+            // If the update failed, try a full remount.
             if (this.contentEl) {
                 try {
                     this.reactRoot.unmount();
                     this.reactRoot = new ReactRoot();
                     this.reactRoot.mount(this.contentEl, this.createAppElement());
                 } catch (remountError) {
-                    console.error('重新挂载时出错:', remountError);
+                    console.error('Error while remounting:', remountError);
                 }
             }
         }

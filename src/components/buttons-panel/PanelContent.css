@@ -13,7 +13,7 @@
     opacity: 0.5;
 }
 
-/* 按钮面板：grid 布局样式（按钮移动模式下使用） */
+/* Buttons panel: grid layout, used in button move mode */
 .buttons-panel .buttons-panel-grid {
     display: flex;
     flex-wrap: wrap;
@@ -22,16 +22,16 @@
     align-items: flex-start;
 }
 
-/* 按钮移动模式下，确保按钮紧密排列，没有额外空白 */
+/* In button move mode the buttons sit flush against each other, without extra gaps */
 .buttons-panel .buttons-panel-grid button {
     flex-shrink: 0;
-    /* 确保按钮尺寸一致，避免布局抖动 */
+    /* Keep the button size constant so the layout does not jump */
     box-sizing: border-box;
-    /* 确保按钮不会因为 transform 而超出容器 */
+    /* Keep a transformed button from overflowing its container */
     overflow: visible;
 }
 
-/* 按钮面板加号按钮宽高自适应当前按钮风格（content / grid 模式） */
+/* The panel's plus button adopts the size of the current button style (content / grid mode) */
 .buttons-panel .buttons-panel-content.icon-top .add-button,
 .buttons-panel .buttons-panel-grid.icon-top .add-button {
     width: 56px;

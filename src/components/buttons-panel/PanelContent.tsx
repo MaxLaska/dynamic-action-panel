@@ -20,21 +20,21 @@ import { TabsModeContent } from '@/components/buttons-panel/TabsModeContent';
 import { ListModeContent } from '@/components/buttons-panel/ListModeContent';
 import { FolderModeContent } from '@/components/buttons-panel/FolderModeContent';
 
-/** 列表视图时在 Obsidian view-content 上标记，供滚动条样式等使用（避免 CSS :has） */
+/** Marks the Obsidian view-content in list view, which the scrollbar styling relies on instead of CSS :has */
 const VIEW_CONTENT_LIST_CLASS = 'buttons-panel-view-list';
 
 interface PanelContentProps {
     categories: CategoryConfig[];
-    /** 顶部导航栏搜索关键字（用于本地过滤按钮） */
+    /** Search query from the top navigation bar, used to filter buttons locally */
     searchQuery?: string;
 }
 
 /**
  * PanelContent
- * 统一的内容区域入口：
- * - 根据 panelConfig.panelViewType 在内部切换 TabsModeContent / ListModeContent；
- * - 两个子视图都按分类展示按钮；
- * - 如果传入 searchQuery，则在本组件内做一次本地过滤。
+ * Single entry point for the panel content area:
+ * - switches between TabsModeContent, ListModeContent and FolderModeContent based on panelConfig.panelViewType;
+ * - every sub-view groups the buttons by category;
+ * - when searchQuery is given, the filtering happens here.
  */
 export const PanelContent: React.FC<PanelContentProps> = ({
     categories,
@@ -192,7 +192,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
         };
     }, [viewType]);
 
-    // 文件夹视图强制 icon_top，但设置不变
+    // Folder view always renders icon_top without changing the stored setting.
     const effectiveDisplayStyle = viewType === 'folder' ? 'icon_top' : displayStyle;
 
     const panelContent =

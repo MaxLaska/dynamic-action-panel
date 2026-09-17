@@ -1,11 +1,12 @@
-/** 长按激活拖拽前的等待时间（毫秒） */
+/** Long-press delay before a touch drag activates (milliseconds). */
 export const MOBILE_LONG_PRESS_DELAY_MS = 500;
 
-/** 判定为滚动手势的最小位移（像素） */
+/** Minimum movement that is treated as a scroll gesture (pixels). */
 export const SCROLL_CANCEL_DISTANCE_PX = 10;
 
 /**
- * 在未进入拖拽前，若位移更像滚动（纵向或横向为主），则取消长按并交还给原生滚动。
+ * Before the drag activates: if the movement looks more like a scroll (mostly vertical
+ * or mostly horizontal), cancel the long press and hand the gesture back to native scrolling.
  */
 export function shouldCancelActivationForScroll(
     delta: { x: number; y: number },

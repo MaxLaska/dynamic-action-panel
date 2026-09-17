@@ -9,7 +9,7 @@ import type { ButtonConfig, CategoryConfig } from '@/types';
 /**
  * useButtonMenu Hook
  *
- * 封装按钮右键菜单的业务逻辑，提供统一的菜单创建和事件处理。
+ * Builds the context menu of a button and handles its entries.
  */
 export function useButtonMenu(button: ButtonConfig, category: CategoryConfig) {
     const { plugin, app } = usePluginContext();
@@ -32,7 +32,7 @@ export function useButtonMenu(button: ButtonConfig, category: CategoryConfig) {
             });
 
             menu.addItem((item: MenuItem) => {
-                item.setTitle(t('copy') || '复制')
+                item.setTitle(t('copy') || 'Copy')
                     .setIcon('copy')
                     .onClick(() => {
                         void copyButton(button, category);
@@ -40,7 +40,7 @@ export function useButtonMenu(button: ButtonConfig, category: CategoryConfig) {
             });
 
             menu.addItem((item: MenuItem) => {
-                item.setTitle(t('delete') || '删除')
+                item.setTitle(t('delete') || 'Delete')
                     .setIcon('trash')
                     .onClick(() => {
                         deleteButton(button, category);

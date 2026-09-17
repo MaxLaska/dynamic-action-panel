@@ -9,7 +9,7 @@ import type { CategoryConfig } from '@/types';
 /**
  * useButtonCreation Hook
  *
- * 封装按钮创建的业务逻辑，提供统一的创建接口。
+ * Wraps button creation behind a single entry point.
  *
  * OCAP: in a dynamic grid category a new tool is created in the variant the
  * user is currently editing. That is why there is no "contextual" checkbox in
@@ -18,17 +18,17 @@ import type { CategoryConfig } from '@/types';
  * (see PanelContent), so the target is always the grid on screen — never the
  * first variant by accident.
  *
- * @returns 按钮创建函数
+ * @returns A function that opens the create-button modal
  */
 export function useButtonCreation() {
     const { plugin, app } = usePluginContext();
     const { selection } = useCategoryVariants();
 
     /**
-     * 创建新按钮（显示创建对话框）
-     * @param category 按钮所属的分类
-     * @param onCreated 创建成功后的回调
-     * @param targetSlot grid 分类中新工具的目标槽位（来自被点击的空格子）
+     * Creates a new button by opening the create modal
+     * @param category Category the button belongs to
+     * @param onCreated Called after a successful creation
+     * @param targetSlot Target slot of the new tool in a grid category (the empty cell that was clicked)
      */
     const createButton = useCallback(
         (category: CategoryConfig, onCreated?: () => void, targetSlot: number | null = null) => {

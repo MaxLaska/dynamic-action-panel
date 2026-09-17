@@ -1,6 +1,6 @@
 /**
- * Hooks 导出文件
- * 统一导出所有自定义 hooks，方便组件使用
+ * Hooks barrel file
+ * Re-exports every custom hook for the components to consume
  */
 
 export { useActionDispatcher } from './useActionDispatcher';

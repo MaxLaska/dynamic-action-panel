@@ -5,7 +5,7 @@ import type { ButtonConfig } from '@/types';
 /**
  * useButtonClickHandler Hook
  *
- * 封装按钮点击处理逻辑。
+ * Wraps the click handling of a panel button.
  */
 export function useButtonClickHandler(button: ButtonConfig) {
     const { executeButtonActions } = useButtonActions();

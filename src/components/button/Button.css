@@ -1,4 +1,4 @@
-/* 面板内主按钮：链到 body + 容器，压过主题对 button 的背景（替代 !important） */
+/* Main panel button: chained to body + container to outrun the theme's button background without !important */
 body .buttons-panel .buttons-panel-container button.buttons-panel-simple-button {
     background-color: transparent;
     border: none;
@@ -34,7 +34,7 @@ body .buttons-panel .buttons-panel-container button.buttons-panel-simple-button:
     color: var(--text-muted);
 }
 
-/* 按钮面板：定义按钮动画函数 */
+/* Buttons panel: button animation keyframes */
 @keyframes swing_image {
     0%,
     100% {
@@ -58,24 +58,24 @@ body .buttons-panel .buttons-panel-container button.buttons-panel-simple-button:
     }
 }
 
-/* 按钮面板：调用按钮动画函数 */
+/* Buttons panel: apply the button animation */
 .buttons-panel button.with-animation:hover {
     animation: swing_image 0.8s linear 0s 1 normal;
 }
 
-/* 按钮面板：浅色模式下按钮的悬浮阴影样式 */
+/* Buttons panel: button hover shadow in light mode */
 .theme-light .buttons-panel .buttons-panel-container button.icon-left:hover,
 .theme-light .buttons-panel .buttons-panel-container button.icon-top:hover {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
-/* 按钮面板：深色模式下按钮的悬浮阴影样式 */
+/* Buttons panel: button hover shadow in dark mode */
 .theme-dark .buttons-panel .buttons-panel-container button.icon-left:hover,
 .theme-dark .buttons-panel .buttons-panel-container button.icon-top:hover {
     box-shadow: 0 2px 6px rgba(255, 255, 255, 0.3);
 }
 
-/* 图标在左：面板内按钮 */
+/* icon_left layout: panel buttons */
 body .buttons-panel .buttons-panel-container button.buttons-panel-simple-button.icon-left {
     width: 96px;
     height: 40px;
@@ -104,7 +104,7 @@ body .buttons-panel .buttons-panel-container button.buttons-panel-simple-button.
     color: var(--text-muted);
 }
 
-/* 图标在上 */
+/* icon_top layout */
 body .buttons-panel .buttons-panel-container button.buttons-panel-simple-button.icon-top {
     flex-direction: column;
     background-color: transparent;

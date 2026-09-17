@@ -10,18 +10,18 @@ import type { CategoryConfig } from '@/types';
 /**
  * useCategoryOperations Hook
  * 
- * 封装分类操作（复制、删除等）的业务逻辑，提供统一的操作接口。
+ * Category operations such as copy and remove, behind a single interface.
  * 
- * @returns 分类操作函数对象
+ * @returns The category operation functions
  */
 export function useCategoryOperations() {
     const { plugin, app } = usePluginContext();
     const { refresh } = useRefresh();
 
     /**
-     * 复制分类
-     * @param category 要复制的分类
-     * @param categories 所有分类数组（用于计算 order）
+     * Copies a category
+     * @param category Category to copy
+     * @param categories All categories, used to compute the order of the copy
      */
     const copyCategory = useCallback(
         async (category: CategoryConfig, categories: CategoryConfig[]) => {
@@ -41,9 +41,9 @@ export function useCategoryOperations() {
     );
 
     /**
-     * 删除分类（显示确认对话框）
-     * @param category 要删除的分类
-     * @param onDelete 删除成功后的回调
+     * Removes a category after a confirmation dialog
+     * @param category Category to remove
+     * @param onDelete Called after a successful removal
      */
     const deleteCategory = useCallback(
         (category: CategoryConfig, onDelete?: () => void) => {

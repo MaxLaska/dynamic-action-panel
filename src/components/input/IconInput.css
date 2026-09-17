@@ -1,9 +1,9 @@
-/* 图标输入组件样式 */
+/* Icon input component styling */
 .buttons-panel .icon-input-container {
     position: relative;
 }
 
-/* SVG预览容器 */
+/* SVG preview container */
 .buttons-panel .icon-svg-preview {
     margin-right: 0px;
     margin-left: 0px;
@@ -14,13 +14,13 @@
     align-items: center;
 }
 
-/* SVG图标 */
+/* SVG icon */
 .buttons-panel .icon-svg-preview svg {
     height: 24px;
     width: 24px;
 }
 
-/* 图标上传按钮 */
+/* Icon upload button */
 .modal .buttons-panel .setting-item .setting-item-control button.icon-upload-btn {
     width: 32px;
     min-width: 32px;

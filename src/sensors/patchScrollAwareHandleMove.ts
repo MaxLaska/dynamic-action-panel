@@ -43,7 +43,7 @@ function patchSensorLifecycle(sensor: SensorLifecycle): void {
 }
 
 /**
- * 替换 dnd-kit 传感器已注册的 move 监听，注入滚动/长按区分逻辑。
+ * Replaces the move listener a dnd-kit sensor already registered, injecting the scroll versus long-press logic.
  */
 export function patchScrollAwareHandleMove(
     sensor: unknown,
@@ -73,6 +73,6 @@ export function patchScrollAwareHandleMove(
     internal.listeners.target.addEventListener(name, newHandler, options);
     entries[index] = [name, newHandler, options] as ListenerEntry;
 
-    // 保存传感器监听目标，供 hover-expand nudge 使用
+    // Remember the sensor listener target for the hover-expand nudge.
     window.__dndSensorTarget = internal.listeners.target;
 }

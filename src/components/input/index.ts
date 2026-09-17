@@ -1,5 +1,5 @@
 // index.ts
-// 可复用 UI 组件导出
+// Re-exports of the reusable input components.
 export { FileInput } from '@/components/input/FileInput';
 export { FolderInput } from '@/components/input/FolderInput';
 export { FileNameInput } from '@/components/input/FileNameInput';
@@ -10,7 +10,7 @@ export { IconInput } from '@/components/input/IconInput';
 export { NameInput } from '@/components/input/NameInput';
 export { ConditionEditor } from '@/components/input/ConditionEditor';
 
-// 组件类型定义导出
+// Re-exports of the component option types.
 export type { FileInputOptions } from '@/components/input/FileInput';
 export type { FolderInputOptions } from '@/components/input/FolderInput';
 export type { FileNameInputOptions } from '@/components/input/FileNameInput';
