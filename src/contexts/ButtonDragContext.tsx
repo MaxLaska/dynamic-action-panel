@@ -262,11 +262,31 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
      * slot", nothing else moves (see DECISIONS.md).
      */
     const dragStartItemsRef = useRef<ButtonDragItems | null>(null);
+    /**
+     * Settings the last drop was committed against.
+     *
+     * Clearing `activeButtonId` re-enables the rebuild effect below one or
+     * more renders BEFORE the saved settings reach this component, so the
+     * effect would rebuild the PRE-drop arrangement from still-stale props and
+     * flash the dropped tool back into its old slot for a frame. While the
+     * props are still these exact objects the drop result is the newer truth;
+     * any later settings object releases the guard, so a failed save or an
+     * external change can never leave the state frozen.
+     */
+    const committedPropsRef = useRef<{
+        categories: CategoryConfig[];
+        gridViews: ReadonlyMap<string, ResolvedGridView> | undefined;
+    } | null>(null);
     const categoryIdsRef = useRef(categoryIds);
     const categoryHoverRef = useRef<((categoryId: string) => void) | null>(null);
     const lastNotifiedHoverContainerRef = useRef<string | null>(null);
     const dragOverFrameRef = useRef<number | null>(null);
-    const pendingDragOverRef = useRef<{ activeId: string; overId: string } | null>(null);
+    const pendingDragOverRef = useRef<{
+        activeId: string;
+        overId: string;
+        /** The target names a cell/position this drag can actually land on. */
+        addressable: boolean;
+    } | null>(null);
     const lastAppliedDragOverRef = useRef<{ activeId: string; overId: string } | null>(null);
     const lastAppliedCategoryDragOverRef = useRef<{ activeId: string; overId: string } | null>(
         null
@@ -278,6 +298,15 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     const categoryTabHoverOverIdRef = useRef<string | null>(null);
     const categoryTabCommittedOverIdRef = useRef<string | null>(null);
     const categoryTabHoverTimerRef = useRef<number | null>(null);
+    /**
+     * 文件夹模式：拖出展开的文件夹外松手时取消拖拽 → 阻止 handleDragEnd 错误持久化
+     *
+     * That flow cancels mid-drag and dnd-kit still delivers a drag end, which
+     * consumes the flag. A keyboard cancel (Escape) delivers NO drag end, so
+     * the flag has to be cleared when the next drag starts — otherwise that
+     * drag's drop is silently discarded.
+     */
+    const dragForceCancelledRef = useRef(false);
 
     itemsRef.current = items;
     categoryIdsRef.current = categoryIds;
@@ -339,6 +368,17 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         if (activeButtonId) {
             dndDebug('items-rebuild skipped (drag active)', activeButtonId);
             return;
+        }
+        const committed = committedPropsRef.current;
+        if (committed) {
+            if (
+                committed.categories === categories &&
+                committed.gridViews === gridViews
+            ) {
+                dndDebug('items-rebuild skipped (drop newer than settings)');
+                return;
+            }
+            committedPropsRef.current = null;
         }
         const next = buildButtonDragItems(categories, gridViews);
         setItems((prev) => {
@@ -575,7 +615,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         pendingDragOverRef.current = null;
         if (!pending) return;
 
-        const { activeId, overId } = pending;
+        const { activeId, overId, addressable } = pending;
         const last = lastAppliedDragOverRef.current;
         if (last?.activeId === activeId && last?.overId === overId) {
             return;
@@ -595,6 +635,20 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             notifyCategoryHover(hoverOverContainer);
         }
 
+        dndDebug('dragOver', activeId, '->', overId, addressable ? 'apply' : 'hold');
+
+        // A target without an addressable cell carries no drop position, so
+        // the preview must not be recomputed: `applyDragOverToItems` reports
+        // "nothing to do" by returning the input, and the input is the
+        // drag-start baseline — committing it would put the dragged tool back
+        // into its source slot for as long as the pointer stays there. The
+        // preview keeps standing on the last cell the pointer really
+        // addressed; `lastAppliedDragOverRef` is deliberately left pointing at
+        // that cell so returning to it is a no-op.
+        if (!addressable) {
+            return;
+        }
+
         const next = applyDragOverToItems(
             base,
             activeId,
@@ -609,8 +663,8 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     }, [notifyCategoryHover]);
 
     const scheduleButtonDragOver = useCallback(
-        (activeId: string, overId: string) => {
-            pendingDragOverRef.current = { activeId, overId };
+        (activeId: string, overId: string, addressable: boolean) => {
+            pendingDragOverRef.current = { activeId, overId, addressable };
             if (dragOverFrameRef.current !== null) {
                 return;
             }
@@ -624,6 +678,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         (event: DragStartEvent) => {
             const activeId = String(event.active.id);
             dndDebug('dragStart', activeId);
+            dragForceCancelledRef.current = false;
             const categoryId = parseCategorySortableId(activeId);
             if (categoryId) {
                 lastAppliedCategoryDragOverRef.current = null;
@@ -641,6 +696,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 return;
             }
             resetButtonDragHoverState();
+            committedPropsRef.current = null;
             dragStartItemsRef.current = itemsRef.current;
             setActiveButtonId(activeId);
             setActiveCategoryId(null);
@@ -705,15 +761,34 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 return;
             }
             const overIdStr = String(over.id);
+            const base = dragStartItemsRef.current ?? itemsRef.current;
+            // The gap between two grid cells, the grid background, a
+            // title/tab zone: the pointer is over the grid but not over a
+            // cell, so this frame carries no new drop position. Everything
+            // visible has to hold — preview AND target ring — because the
+            // pointer crosses a gap on its way between any two cells, and a
+            // fallback there is exactly what made the source slot flicker.
+            const addressable =
+                resolveGridDropOutcome(
+                    base,
+                    activeId,
+                    overIdStr,
+                    containerLayoutsRef.current
+                ) !== 'no-cell';
+            // The hover notification still has to run (it opens the category
+            // under the pointer), so the target is scheduled either way.
+            scheduleButtonDragOver(activeId, overIdStr, addressable);
+            if (!addressable) {
+                return;
+            }
             setDropTargetSlot(
                 resolveGridDropTarget(
                     activeId,
                     overIdStr,
-                    dragStartItemsRef.current ?? itemsRef.current,
+                    base,
                     containerLayoutsRef.current
                 )
             );
-            scheduleButtonDragOver(activeId, overIdStr);
         },
         [
             buildBaselineItems,
@@ -723,9 +798,6 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             scheduleCategoryTabDropTarget,
         ]
     );
-
-    // 文件夹模式：拖出展开的文件夹外松手时取消拖拽 → 阻止 handleDragEnd 错误持久化
-    const dragForceCancelledRef = useRef(false);
 
     const handleDragEnd = useCallback(
         async (event: DragEndEvent) => {
@@ -823,23 +895,20 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             if (active && over && String(over.id) !== activeId) {
                 const overId = String(over.id);
 
+                const base = dragStartItemsRef.current ?? itemsRef.current;
+                const outcome = resolveGridDropOutcome(
+                    base,
+                    activeId,
+                    overId,
+                    containerLayoutsRef.current
+                );
+
                 // Released on a cell the grid rules refuse: a flow tool on an
                 // occupied slot. The preview may already show the tool on the
                 // last accepted cell it crossed — committing that would drop
                 // the tool where the user never aimed. The whole drag is
                 // therefore reverted and the refusal is explained.
-                // (A release over the grid's background, `no-cell`, is left
-                // alone: it is the normal case once the preview already fills
-                // the target cell, which removes that cell's droppable.)
-                const base = dragStartItemsRef.current ?? itemsRef.current;
-                if (
-                    resolveGridDropOutcome(
-                        base,
-                        activeId,
-                        overId,
-                        containerLayoutsRef.current
-                    ) === 'blocked'
-                ) {
+                if (outcome === 'blocked') {
                     const baseline = buildBaselineItems();
                     itemsRef.current = baseline;
                     setItems(baseline);
@@ -853,31 +922,46 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 // The final arrangement is computed from the drag-start
                 // baseline: the release target is the only thing that counts,
                 // cells crossed on the way must leave no trace.
-                const prev = itemsRef.current;
-                const next = applyDragOverToItems(
-                    base,
-                    activeId,
-                    overId,
-                    containerLayoutsRef.current
-                );
-                if (!itemsShallowEqual(next, prev)) {
-                    itemsRef.current = next;
-                    setItems(next);
+                //
+                // A `no-cell` release — the gap between two cells, the grid
+                // background — names no position at all, so the preview
+                // already IS the result. Recomputing it would read the
+                // baseline back and silently undo a drag that looked finished.
+                if (outcome === 'accept') {
+                    const prev = itemsRef.current;
+                    const next = applyDragOverToItems(
+                        base,
+                        activeId,
+                        overId,
+                        containerLayoutsRef.current
+                    );
+                    if (!itemsShallowEqual(next, prev)) {
+                        itemsRef.current = next;
+                        setItems(next);
+                    }
                 }
             }
 
             const finalItems = itemsRef.current;
             const baseline = buildBaselineItems();
+            const changed = !itemsShallowEqual(baseline, finalItems);
 
+            // The drop result outlives the props it was computed from until
+            // the saved settings arrive (see committedPropsRef).
+            committedPropsRef.current = changed
+                ? { categories, gridViews: gridViewsRef.current }
+                : null;
             setActiveButtonId(null);
             dragStartItemsRef.current = null;
             resetButtonDragHoverState();
 
-            if (!itemsShallowEqual(baseline, finalItems)) {
+            if (changed) {
                 try {
                     await persistItems(finalItems, plugin);
                 } catch (error) {
                     console.error('保存按钮排序时出错:', error);
+                    committedPropsRef.current = null;
+                    itemsRef.current = baseline;
                     setItems(baseline);
                 }
             }
@@ -900,6 +984,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         dndDebug('dragCancel');
         dragForceCancelledRef.current = true;
         cancelDragOverFrame();
+        committedPropsRef.current = null;
         dragStartItemsRef.current = null;
         setActiveButtonId(null);
         setActiveCategoryId(null);

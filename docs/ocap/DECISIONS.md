@@ -434,6 +434,29 @@ unchanged when the pointer is over a button.
 (constant cell border, chrome via colors only), so the persistent cells never
 shift between locked/edit/sort.
 
+## 2026-09-17 – A drag target without an addressable cell changes nothing
+
+**Decision:** While a grid drag is held, a target that names no cell — the
+gutter between two cells, the grid background, a title/tab zone
+(`resolveGridDropOutcome` → `no-cell`) — updates neither the preview nor the
+target ring, and a release on such a target commits exactly what the preview
+shows instead of recomputing. The drop result also stays authoritative until
+the saved settings reach the provider again.
+
+**Reason:** `applyDragOverToItems` reports "nothing to do" by returning its
+input, and during a drag that input is the drag-start baseline. Applying it
+put the dragged tool back on its source slot — live-measured as 2–3 refills
+per drag, 30–50 ms each, because the pointer crosses a 4 px gutter between any
+two cells — and a release in a gutter silently cancelled the whole drag.
+Clearing `activeButtonId` before the persisted settings arrive caused the same
+one-frame fallback right after the drop.
+
+**Consequence:** the source slot's visual state is a function of the drag
+alone, never of which destination is currently hovered. Releasing next to a
+cell now lands on the last cell the pointer addressed rather than reverting;
+only an explicitly refused target (`blocked`) and a release outside the button
+area still revert.
+
 ## Open decisions
 
 The following are still open:

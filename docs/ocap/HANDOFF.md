@@ -8,11 +8,11 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
   Buttons Panel 2.4.7.
-- Branch `master`, HEAD `8890e01` (`fix: stabilize variant grid drag and
-  drop`), lokal vor `origin/master` — nicht ohne Auftrag pushen.
+- Branch `master`, HEAD `fix: keep grid source stable during drag`, lokal vor
+  `origin/master` — nicht ohne Auftrag pushen.
 - Settings-Version: **3** (`CURRENT_SETTINGS_VERSION`), forward-only
   Migrationskette `0 → 1 → 2 → 3` in `src/settings/settingsMigrations.ts`.
-- Teststand: `npm test` **340/340** (Vitest, node env, `tests/`),
+- Teststand: `npm test` **352/352** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
   `node esbuild.config.mjs production` grün.
 
@@ -53,6 +53,22 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   `applySlotIdsToGridCategory` schreibt nur in die editierte Variant zurück.
   Previews/Drops werden von der Drag-Start-Baseline berechnet (keine
   Zwischentäusche über gekreuzte Zellen).
+- **Ein Ziel ohne adressierbare Zelle ändert nichts** (`resolveGridDropOutcome`
+  → `no-cell`: Lücke zwischen Zellen, Grid-Hintergrund, Title-/Tab-Zone):
+  Preview UND Ziel-Ring bleiben stehen, ein Release dort committet genau das
+  Sichtbare. Grund: `applyDragOverToItems` meldet „keine Änderung" als
+  Rückgabe der Eingabe — und die Eingabe ist die Baseline; sie zu übernehmen
+  ließ den gezogenen Button kurz im Startslot aufblitzen (der Zeiger kreuzt
+  zwischen je zwei Zellen 4 px Lücke). Nur `blocked` und ein Release außerhalb
+  des Button-Bereichs setzen noch auf die Baseline zurück.
+- **Das Drop-Ergebnis überlebt die Props, aus denen es berechnet wurde**
+  (`committedPropsRef`): `activeButtonId` wird vor Eintreffen der gespeicherten
+  Settings geleert, ein Rebuild aus den noch alten Props würde den Button für
+  einen Frame zurückspringen lassen. Jedes spätere Settings-Objekt löst die
+  Sperre — ein fehlgeschlagener Save kann den Zustand nicht einfrieren.
+- `dragForceCancelledRef` (Folder-Cancel) wird bei **jedem Drag-Start**
+  zurückgesetzt: ein Escape-Cancel liefert kein `dragEnd`, das die Flag
+  konsumiert, und verwarf sonst den Drop des nächsten Drags.
 - **Alle 16 Grid-Zellen sind permanente Droppables** (`GridSlotCell` rendert
   belegte und leere Zellen, keyed by Slot). Niemals zu per-Empty-Slot-
   Droppables zurückkehren — deren Mount/Unmount beim Variant-Wechsel war die
@@ -120,6 +136,10 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   leere gestrichelt); locked bleibt chrome-frei bei identischer Geometrie.
 - Drag-Vorschau, Overlay und Endzustand sind geometrisch identisch
   (zentriert, gleiche Größe, kein Sprung beim Drop).
+- Der Startslot bleibt während des gesamten Drags ruhig: kein Aufblitzen beim
+  Zielwechsel und keiner beim Drop (live per-Frame gemessen). Erscheint dort
+  ein anderes Tool, ist das die gewollte Swap-Vorschau; fährt der Zeiger auf
+  den Startslot zurück, zeigt er korrekt wieder „hier ändert sich nichts".
 - ⇄ wechselt zwischen den letzten beiden editierten Variants und zeigt den
   Zielnamen (`⇄ Source`); Historie bewusst 1 Schritt tief, session-lokal.
 - Priorität: erste passende Variant gewinnt; UI-Wording „Move up (wins
@@ -134,10 +154,14 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 2. **Toggle-Tools** (OFF/ON mit eigenen Actions/Appearance) — braucht einen
    Tool-Typ-Begriff auf `ButtonConfig`.
 3. Rich Tooltips und Kategorie-/Variant-Export/Import (reine Serialisierung).
-4. Kategorie-Block ist in der Liste von jeder Nicht-Button-Fläche ziehbar —
+4. **Flow-Kategorien haben dieselbe Falle wie zuvor das Grid:** ein Release auf
+   dem Container-Hintergrund derselben Flow-Kategorie rechnet gegen die
+   Baseline zurück und verwirft die Umsortierung (live reproduziert, nicht
+   Teil des Grid-Fixes). Normales Ziehen Button→Button funktioniert.
+5. Kategorie-Block ist in der Liste von jeder Nicht-Button-Fläche ziehbar —
    Press auf leere Zelle startet einen Kategorie-Drag (Upstream-Verhalten,
    bewusst so belassen); bei Zellen <35 px werden Labels hart geclippt.
-5. Packaging-/Release-Strategie + finale Manifest-ID; locked-mode Empty-State;
+6. Packaging-/Release-Strategie + finale Manifest-ID; locked-mode Empty-State;
    jsdom-Editor-Tests weiterhin offen.
 
 ## 7. Arbeitsregel für neue Sessions
