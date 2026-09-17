@@ -524,14 +524,7 @@ describe('projectCategoriesForContext', () => {
         expect(projection.hiddenCategoryIds.size).toBe(0);
     });
 
-    it('sort mode keeps everything (same reference) and marks hidden elements', () => {
-        const projection = projectCategoriesForContext(categories, markdownContext, 'sort');
-        expect(projection.categories).toBe(categories);
-        expect([...projection.hiddenButtonIds]).toEqual(['pdf-only']);
-        expect([...projection.hiddenCategoryIds]).toEqual(['pdf-cat']);
-    });
-
-    it('edit mode behaves like sort mode', () => {
+    it('edit mode keeps everything (same reference) and marks hidden elements', () => {
         const projection = projectCategoriesForContext(categories, markdownContext, 'edit');
         expect(projection.categories).toBe(categories);
         expect([...projection.hiddenButtonIds]).toEqual(['pdf-only']);
@@ -545,10 +538,10 @@ describe('projectCategoriesForContext', () => {
         ];
         const locked = projectCategoriesForContext(legacy, markdownContext, 'locked');
         expect(locked.categories).toBe(legacy);
-        const sort = projectCategoriesForContext(legacy, markdownContext, 'sort');
-        expect(sort.categories).toBe(legacy);
-        expect(sort.hiddenButtonIds.size).toBe(0);
-        expect(sort.hiddenCategoryIds.size).toBe(0);
+        const edit = projectCategoriesForContext(legacy, markdownContext, 'edit');
+        expect(edit.categories).toBe(legacy);
+        expect(edit.hiddenButtonIds.size).toBe(0);
+        expect(edit.hiddenCategoryIds.size).toBe(0);
     });
 });
 

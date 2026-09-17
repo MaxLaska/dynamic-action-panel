@@ -49,7 +49,7 @@ export class NavigationBarRenderer {
             <NavigationBar
                 panelViewType={this.panelConfig.panelViewType ?? 'list'}
                 displayStyle={this.panelConfig.displayStyle}
-                interactionMode={this.panelConfig.interactionMode ?? 'sort'}
+                interactionMode={this.panelConfig.interactionMode ?? 'edit'}
                 showTopNavBar={this.panelConfig.showTopNavBar}
                 onChangeView={(viewType) => {
                     this.panelConfig.panelViewType = viewType;

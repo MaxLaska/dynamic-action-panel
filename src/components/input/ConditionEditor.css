@@ -139,3 +139,14 @@
 .buttons-panel .ocap-condition-advanced-actions button {
     font-size: var(--font-ui-small);
 }
+
+/* One-line explanation under a rule whose field name is not self-explanatory
+   ("View type" was read as "node type" in a manual test). It takes a full row
+   of the wrapping rule flexbox, so it never squeezes the controls. */
+.buttons-panel .ocap-condition-rule-hint {
+    flex: 1 0 100%;
+    margin: 0 0 var(--size-2-1) var(--size-4-1);
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    line-height: 1.3;
+}

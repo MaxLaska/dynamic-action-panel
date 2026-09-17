@@ -17,7 +17,7 @@ import {
 } from '@/contexts/OCAPVisibilityContext';
 import { hasConditions } from '@/context/conditions';
 import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
-import { isGridCategory } from '@/utils/categoryGrid';
+import { categoryLayoutIcon } from '@/utils/categoryIcon';
 import { isDynamicCategory } from '@/utils/categoryVariants';
 import { t } from '@/utils/i18n';
 
@@ -219,26 +219,23 @@ export const TabsModeContent: React.FC<TabsModeContentProps> = ({
             selectActiveTab(category.id);
         };
 
+        const isDynamic = isDynamicCategory(category);
         const isContextual = hasConditions(category);
+        // See ListModeContent: a dynamic category never carries the legacy
+        // persistent/contextual badge — the icon already says it changes with
+        // context, and the badge would claim "pinned" at the same time.
         const tabInner = (
             <>
                 <span
-                    className="tab-icon"
+                    className={isDynamic ? 'tab-icon ocap-category-icon--dynamic' : 'tab-icon'}
+                    aria-label={isDynamic ? t('category_dynamic_tooltip') : undefined}
+                    title={isDynamic ? t('category_dynamic_tooltip') : undefined}
                     ref={(el) => {
-                        if (el) {
-                            setIcon(
-                                el,
-                                isDynamicCategory(category)
-                                    ? 'layers'
-                                    : isGridCategory(category)
-                                      ? 'layout-grid'
-                                      : 'list'
-                            );
-                        }
+                        if (el) setIcon(el, categoryLayoutIcon(category));
                     }}
                 />
                 <span className="tab-label">{category.name}</span>
-                {(isManagementMode || isContextual) && (
+                {!isDynamic && (isManagementMode || isContextual) && (
                     <ContextStatusBadge
                         status={isContextual ? 'contextual' : 'persistent'}
                         notMatching={contextHiddenCategoryIds.has(category.id)}

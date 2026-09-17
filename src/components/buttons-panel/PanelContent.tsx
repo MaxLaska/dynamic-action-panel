@@ -44,7 +44,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
     const viewType = panelConfig.panelViewType ?? 'list';
     const displayStyle = panelConfig.displayStyle ?? 'icon_top';
     const enableAnimation = panelConfig.enableAnimation ?? false;
-    const interactionMode = panelConfig.interactionMode ?? 'sort';
+    const interactionMode = panelConfig.interactionMode ?? 'edit';
     const enableEditMode = interactionMode === 'edit';
     const tabsWrap = panelConfig.tabsWrap ?? false;
     const listAutoCollapse = panelConfig.listAutoCollapse ?? false;
@@ -158,7 +158,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
 
     // Central context projection: in locked mode categories/buttons hidden by
     // their conditions are filtered out (a category also disappears when no
-    // visible button remains); in sort/edit mode everything stays rendered
+    // visible button remains); in edit mode everything stays rendered
     // and manageable, context-hidden elements are marked instead (see
     // OCAPVisibilityProvider below). Identities are preserved when nothing is
     // filtered so memoized subtrees stay stable.
@@ -174,7 +174,10 @@ export const PanelContent: React.FC<PanelContentProps> = ({
     );
     const filteredCategories = projection.categories;
 
-    const dragReorderEnabled = normalizedQuery.length === 0 && interactionMode === 'sort';
+    // One management mode: edit carries drag AND editing. Dragging is still
+    // suppressed while a search filters the list, because the visible order is
+    // then not the stored one and a drop would write back a filtered order.
+    const dragReorderEnabled = normalizedQuery.length === 0 && enableEditMode;
 
     const panelContentRef = React.useRef<HTMLDivElement>(null);
 

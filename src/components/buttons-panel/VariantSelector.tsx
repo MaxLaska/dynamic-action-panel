@@ -1,16 +1,18 @@
 import React from 'react';
 import { Menu, MenuItem, setIcon } from 'obsidian';
-import type { CategoryConfig, CategoryVariant } from '@/types';
+import type { CategoryConfig } from '@/types';
 import {
-    describeConditionForName,
     findVariant,
     getCategoryVariants,
     triggeredVariants,
     type VariantResolution,
 } from '@/utils/categoryVariants';
-import { isValidCondition } from '@/context/conditions';
+import { summarizeVariantTrigger } from '@/utils/conditionSummary';
 import { useVariantOperations } from '@/hooks/useVariantOperations';
 import { t, tWithParams } from '@/utils/i18n';
+
+/* The trigger line and the category modal's variant overview phrase a trigger
+   identically — both read it from summarizeVariantTrigger. */
 
 interface VariantSelectorProps {
     category: CategoryConfig;
@@ -21,24 +23,6 @@ interface VariantSelectorProps {
     /** Runtime resolution for the current Obsidian context. */
     runtime: VariantResolution;
     onSelect: (variantId: string) => void;
-}
-
-/** Short human-readable trigger summary of a variant. */
-function triggerSummary(variant: CategoryVariant): string {
-    if (variant.fallback === true) {
-        return t('variant_trigger_fallback');
-    }
-    const trigger = variant.trigger;
-    if (trigger === undefined || trigger === null) {
-        return t('variant_trigger_missing');
-    }
-    if (!isValidCondition(trigger)) {
-        return t('variant_trigger_invalid');
-    }
-    if ('all' in trigger && trigger.all.length === 0) {
-        return t('variant_trigger_always');
-    }
-    return describeConditionForName(trigger) ?? t('variant_trigger_complex');
 }
 
 /**
@@ -130,12 +114,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
               ? tWithParams('variant_active_fallback', { name: runtime.variant.name })
               : runtime.variant.name;
 
-    const selectedBroken =
-        selected !== null &&
-        selected.fallback !== true &&
-        (selected.trigger === undefined ||
-            selected.trigger === null ||
-            !isValidCondition(selected.trigger));
+    const selectedTrigger = selected === null ? null : summarizeVariantTrigger(selected);
 
     return (
         <div className="ocap-variant-bar">
@@ -228,16 +207,16 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                 )}
             </div>
             <div className="ocap-variant-status-row">
-                {selected && (
+                {selectedTrigger && (
                     <span
                         className={
-                            selectedBroken
+                            selectedTrigger.broken
                                 ? 'ocap-variant-trigger ocap-variant-trigger--broken'
                                 : 'ocap-variant-trigger'
                         }
                         title={t('variant_trigger_row_tooltip')}
                     >
-                        {t('variant_trigger_prefix')} {triggerSummary(selected)}
+                        {t('variant_trigger_prefix')} {selectedTrigger.summary}
                     </span>
                 )}
                 <span

@@ -22,6 +22,7 @@ import type { OCAPContextSnapshot } from '@/context/OCAPContext';
 export const MAX_CONDITION_DEPTH = 32;
 
 const PATH_OPS = ['equals', 'startsWith', 'contains'] as const;
+const FILE_NAME_OPS = ['equals', 'startsWith', 'contains', 'endsWith'] as const;
 const FOLDER_OPS = ['equals', 'startsWith'] as const;
 const PROPERTY_OPS = ['exists', 'equals'] as const;
 
@@ -45,6 +46,11 @@ function isValidRule(node: Record<string, unknown>): boolean {
             return (
                 typeof node['value'] === 'string' &&
                 PATH_OPS.includes(node['op'] as (typeof PATH_OPS)[number])
+            );
+        case 'fileName':
+            return (
+                typeof node['value'] === 'string' &&
+                FILE_NAME_OPS.includes(node['op'] as (typeof FILE_NAME_OPS)[number])
             );
         case 'folder':
             return (
@@ -165,6 +171,30 @@ function evaluateRule(rule: ConditionRule, context: OCAPContextSnapshot): boolea
                     return path.startsWith(value);
                 case 'contains':
                     return path.includes(value);
+            }
+            return false;
+        }
+        case 'fileName': {
+            if (context.fileName === null) {
+                return false;
+            }
+            // Case-insensitive like every other string rule here; an empty
+            // needle would make `startsWith`/`contains` match every file, so
+            // an unfilled rule matches nothing instead.
+            const name = context.fileName.trim().toLowerCase();
+            const value = rule.value.trim().toLowerCase();
+            if (value.length === 0) {
+                return false;
+            }
+            switch (rule.op) {
+                case 'equals':
+                    return name === value;
+                case 'startsWith':
+                    return name.startsWith(value);
+                case 'contains':
+                    return name.includes(value);
+                case 'endsWith':
+                    return name.endsWith(value);
             }
             return false;
         }

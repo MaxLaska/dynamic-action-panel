@@ -33,8 +33,13 @@ import type { ButtonCondition } from '@/types/conditions';
  *      into one full variant and turns the base-only state into the fallback,
  *      so the v2 runtime semantics are preserved exactly (with deliberate
  *      redundancy instead of shared state). Flow categories are untouched.
+ * - 4: two interaction modes instead of three. 'sort' (drag only) and 'edit'
+ *      (menus only) were one job split across two modes; they are merged into
+ *      'edit', which now carries drag AND editing, and the panel toggles
+ *      between 'locked' and 'edit'. Stored `panelConfig.interactionMode` of
+ *      'sort' migrates to 'edit'; nothing else changes.
  */
-export const CURRENT_SETTINGS_VERSION = 3;
+export const CURRENT_SETTINGS_VERSION = 4;
 
 /**
  * ButtonConfig 按钮配置对象类型。
@@ -187,8 +192,19 @@ export interface CategoryConfig {
     layout?: 'flow' | 'grid';
 }
 
-/** 交互模式：locked(锁定布局)、sort(排序模式)、edit(编辑模式) */
-export type InteractionMode = 'locked' | 'sort' | 'edit';
+/**
+ * Interaction mode of the whole panel — exactly two states, toggled by the
+ * lock button in the navigation bar.
+ *
+ * - 'locked': normal use. No drag and drop, no edit controls, no context
+ *   menus; context rules are applied (hidden elements are really hidden).
+ * - 'edit': one management mode. Drag and drop, right-click menus, add/create
+ *   controls and the variant selector are all active, and elements hidden by
+ *   their context rules stay visible and manageable.
+ *
+ * The former separate 'sort' mode was merged into 'edit' (settings version 4).
+ */
+export type InteractionMode = 'locked' | 'edit';
 
 /**
  * PanelConfig 面板设置类型。
@@ -203,7 +219,7 @@ export interface PanelConfig {
     enableAnimation?: boolean;
     /** 悬浮按钮时是否显示完整名称提示 */
     showButtonTooltip?: boolean;
-    /** 交互模式：locked(锁定布局) / sort(排序) / edit(编辑) */
+    /** Interaction mode: 'locked' (normal use) or 'edit' (manage everything). */
     interactionMode?: InteractionMode;
     /** 是否显示顶部导航栏 */
     showTopNavBar?: boolean;

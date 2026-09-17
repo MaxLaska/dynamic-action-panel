@@ -196,7 +196,7 @@ describe('management modes keep the full configuration', () => {
         variant('pdf', PDF_ONLY, [button('pdf-1', 0, 1)]),
     ]);
 
-    for (const mode of ['sort', 'edit'] as const) {
+    for (const mode of ['edit'] as const) {
         it(`${mode} mode renders the first variant when nothing is selected`, () => {
             const projection = projectCategoriesForContext([category], context(), mode);
 
@@ -284,7 +284,7 @@ describe('legacy flow categories are untouched by the grid model', () => {
     });
 
     it('still marks per-button conditions in management modes', () => {
-        const projection = projectCategoriesForContext([legacy], context(), 'sort');
+        const projection = projectCategoriesForContext([legacy], context(), 'edit');
         expect([...projection.hiddenButtonIds]).toEqual(['b']);
     });
 

@@ -47,14 +47,20 @@ export interface ConditionEditorOptions {
 }
 
 const GROUP_KINDS: ConditionGroupKind[] = ['all', 'any', 'not'];
+// Ordered by how directly a user can answer "what do I want to match?" —
+// the name of the note first, the technical Obsidian view type last.
 const RULE_KINDS: ConditionRuleKind[] = [
-    'viewType',
-    'path',
+    'fileName',
     'folder',
+    'path',
     'extension',
     'property',
     'tag',
+    'viewType',
 ];
+
+/** The rule a fresh condition starts with; the most self-explanatory one. */
+const DEFAULT_RULE_KIND: ConditionRuleKind = 'fileName';
 
 const GROUP_KIND_LABEL_KEYS: Record<ConditionGroupKind, string> = {
     all: 'conditions_group_all',
@@ -64,6 +70,7 @@ const GROUP_KIND_LABEL_KEYS: Record<ConditionGroupKind, string> = {
 
 const RULE_KIND_LABEL_KEYS: Record<ConditionRuleKind, string> = {
     viewType: 'conditions_rule_view_type',
+    fileName: 'conditions_rule_file_name',
     path: 'conditions_rule_path',
     folder: 'conditions_rule_folder',
     extension: 'conditions_rule_extension',
@@ -75,6 +82,7 @@ const OP_LABEL_KEYS: Record<string, string> = {
     equals: 'conditions_op_equals',
     startsWith: 'conditions_op_starts_with',
     contains: 'conditions_op_contains',
+    endsWith: 'conditions_op_ends_with',
     exists: 'conditions_op_exists',
 };
 
@@ -213,7 +221,7 @@ export class ConditionEditor {
         });
         addButton.type = 'button';
         addButton.addEventListener('click', () => {
-            this.updateRoot({ all: [createDefaultRule('viewType')] }, true);
+            this.updateRoot({ all: [createDefaultRule(DEFAULT_RULE_KIND)] }, true);
         });
     }
 
@@ -259,7 +267,7 @@ export class ConditionEditor {
         if (kind !== 'not') {
             this.createIconButton(actionsEl, 'plus', t('conditions_add_rule'), () => {
                 this.updateRoot(
-                    addChildAtPath(this.root!, path, createDefaultRule('viewType')),
+                    addChildAtPath(this.root!, path, createDefaultRule(DEFAULT_RULE_KIND)),
                     true
                 );
             }).addClass('ocap-condition-add-rule');
@@ -274,7 +282,7 @@ export class ConditionEditor {
                 () => {
                     this.updateRoot(
                         addChildAtPath(this.root!, path, {
-                            all: [createDefaultRule('viewType')],
+                            all: [createDefaultRule(DEFAULT_RULE_KIND)],
                         }),
                         true
                     );
@@ -371,6 +379,29 @@ export class ConditionEditor {
                     patchRule({ value }, false);
                 });
                 input.setAttribute('list', this.datalistId);
+                // "View type" was read as "node type" in a manual test — the
+                // examples have to be on screen, not only in the datalist.
+                this.createRuleHint(ruleEl, t('conditions_view_type_hint'));
+                break;
+            }
+            case 'fileName': {
+                this.createOpSelect(
+                    ruleEl,
+                    ['equals', 'startsWith', 'contains', 'endsWith'],
+                    rule.op,
+                    (op) => {
+                        patchRule({ op }, false);
+                    }
+                );
+                this.createValueInput(
+                    ruleEl,
+                    rule.value,
+                    t('conditions_file_name_placeholder'),
+                    (value) => {
+                        patchRule({ value }, false);
+                    }
+                );
+                this.createRuleHint(ruleEl, t('conditions_file_name_hint'));
                 break;
             }
             case 'path': {
@@ -501,6 +532,15 @@ export class ConditionEditor {
             onChange(input.value);
         });
         return input;
+    }
+
+    /**
+     * One-line explanation under a rule row. Rules whose field name is not
+     * self-explanatory carry one; it wraps onto its own line so it never
+     * squeezes the controls in a narrow modal.
+     */
+    private createRuleHint(parent: HTMLElement, text: string): HTMLElement {
+        return parent.createDiv({ cls: 'ocap-condition-rule-hint', text });
     }
 
     private createIconButton(

@@ -9,6 +9,8 @@ interface NavIconButtonProps {
     label: string;
     className?: string;
     isActive?: boolean;
+    /** Current state of a toggle button, exposed as `data-state`. */
+    state?: string;
     onClick: () => void;
 }
 
@@ -22,6 +24,7 @@ function NavIconButton({
     label,
     className = '',
     isActive,
+    state,
     onClick,
 }: NavIconButtonProps) {
     const buttonRef = React.useRef<HTMLDivElement | null>(null);
@@ -46,6 +49,7 @@ function NavIconButton({
             ref={buttonRef}
             className={classes}
             aria-label={label}
+            data-state={state}
             onClick={onClick}
         />
     );
@@ -122,7 +126,7 @@ export interface NavigationBarProps {
     panelViewType: PanelViewType;
     /** 按钮样式：icon_left 或 icon_top */
     displayStyle: 'icon_left' | 'icon_top';
-    /** 当前交互模式：locked / sort / edit */
+    /** Current interaction mode: 'locked' or 'edit'. */
     interactionMode: InteractionMode;
     /** 是否显示导航栏（由外层控制） */
     showTopNavBar?: boolean;
@@ -211,11 +215,16 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
     };
     const viewIcon = viewIconMap[panelViewType] ?? 'list';
     const styleIcon = displayStyle === 'icon_top' ? 'layout-panel-top' : 'layout-panel-left';
-    // 交互模式图标：locked→lock, sort→arrow-up-down, edit→pencil
-    const interactionIcon =
-        interactionMode === 'locked' ? 'lock' :
-        interactionMode === 'edit'   ? 'pencil' :
-        'arrow-up-down';
+
+    // Lock toggle. The icon shows the CURRENT STATE, never the action a click
+    // would perform: a closed lock means "the panel is locked right now".
+    // Clicking flips to the other state; the tooltip names the state first and
+    // the click action second.
+    const isLocked = interactionMode === 'locked';
+    const interactionIcon = isLocked ? 'lock' : 'lock-open';
+    const interactionTooltip = isLocked
+        ? t('interaction_locked_tooltip')
+        : t('interaction_edit_tooltip');
 
     // ---- 视图模式下拉选项 ----
     const viewTypes: PanelViewType[] = ['list', 'tabs', 'folder'];
@@ -253,35 +262,9 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
               },
           ];
 
-    // ---- 交互模式下拉选项 ----
-    const interactionOptions: MenuOption[] = [
-        {
-            icon: 'lock',
-            title: t('interaction_locked'),
-            checked: interactionMode === 'locked',
-            onClick: () => onChangeInteractionMode('locked'),
-        },
-        {
-            icon: 'arrow-up-down',
-            title: t('interaction_sort'),
-            checked: interactionMode === 'sort',
-            onClick: () => onChangeInteractionMode('sort'),
-        },
-        {
-            icon: 'pencil',
-            title: t('interaction_edit'),
-            checked: interactionMode === 'edit',
-            onClick: () => onChangeInteractionMode('edit'),
-        },
-    ];
-
     // ---- 当前选项的悬浮提示文字 ----
     const viewLabel = viewLabelMap[panelViewType] ?? t('list_view');
     const styleLabel = isFolder ? t('icon_top') : displayStyle === 'icon_left' ? t('icon_left') : t('icon_top');
-    const interactionLabel =
-        interactionMode === 'locked' ? t('interaction_locked') :
-        interactionMode === 'edit'   ? t('interaction_edit') :
-        t('interaction_sort');
 
     // ---- 搜索输入区占位文字 ----
     const searchPlaceholder = t('search_placeholder') || '输入并开始搜索…';
@@ -308,11 +291,13 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
                     className="style-btn"
                     options={styleOptions}
                 />
-                <DropdownButton
+                <NavIconButton
                     icon={interactionIcon}
-                    label={interactionLabel}
+                    label={interactionTooltip}
+                    state={isLocked ? 'locked' : 'edit'}
                     className="edit-mode-btn"
-                    options={interactionOptions}
+                    isActive={!isLocked}
+                    onClick={() => onChangeInteractionMode(isLocked ? 'edit' : 'locked')}
                 />
                 <NavIconButton
                     icon="settings"

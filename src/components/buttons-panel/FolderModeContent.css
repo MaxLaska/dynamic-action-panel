@@ -255,3 +255,16 @@ body .buttons-panel .buttons-panel-folder-detail button.folder-detail-lock.is-ac
 }
 
 
+
+/* Folder tile of a dynamic category: the branch glyph sits inline before the
+   name (the tile has no separate icon row). */
+.buttons-panel .folder-tile-dynamic-icon {
+    display: inline-flex;
+    vertical-align: -2px;
+    margin-right: 3px;
+}
+
+.buttons-panel .folder-tile-dynamic-icon .svg-icon {
+    width: 11px;
+    height: 11px;
+}

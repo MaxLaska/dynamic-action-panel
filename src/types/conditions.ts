@@ -10,6 +10,9 @@
 /** String matching operators for path rules. */
 export type PathConditionOp = 'equals' | 'startsWith' | 'contains';
 
+/** String matching operators for file name rules. */
+export type FileNameConditionOp = 'equals' | 'startsWith' | 'contains' | 'endsWith';
+
 /** Matching operators for folder rules (segment-aware, see evaluator). */
 export type FolderConditionOp = 'equals' | 'startsWith';
 
@@ -40,6 +43,21 @@ export interface PathConditionRule {
 export interface FolderConditionRule {
     rule: 'folder';
     op: FolderConditionOp;
+    value: string;
+}
+
+/**
+ * Atomic rule: the active file's NAME matches the given value.
+ *
+ * The name includes the extension ('Note.md'), which is what the user sees in
+ * the tab and in the file explorer — deliberately the only name rule, so there
+ * is no "which of the two names is this?" question. Matching the stem alone is
+ * expressed as `startsWith`, and 'ends with .md' covers the extension case
+ * (the dedicated `extension` rule stays for that too).
+ */
+export interface FileNameConditionRule {
+    rule: 'fileName';
+    op: FileNameConditionOp;
     value: string;
 }
 
@@ -75,6 +93,7 @@ export interface TagConditionRule {
 /** Union of all atomic rules, discriminated by `rule`. */
 export type ConditionRule =
     | ViewTypeConditionRule
+    | FileNameConditionRule
     | PathConditionRule
     | FolderConditionRule
     | ExtensionConditionRule

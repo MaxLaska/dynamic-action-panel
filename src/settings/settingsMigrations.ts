@@ -85,18 +85,40 @@ function sanitizeCategories(value: unknown): CategoryConfig[] {
 }
 
 /**
+ * Coerce a stored interaction mode to the two modes that exist since version 4.
+ *
+ * 'sort' is the retired third mode and becomes 'edit' (it was a management
+ * mode, so locking the panel instead would silently take abilities away).
+ * Anything else unknown falls back to the default, never to a crash — this
+ * runs on migrated, current AND future data, so a hand-edited or newer file
+ * can never put the panel into a mode the UI cannot render.
+ */
+function normalizeInteractionMode(value: unknown): 'locked' | 'edit' {
+    if (value === 'locked') return 'locked';
+    if (value === 'edit' || value === 'sort') return 'edit';
+    return DEFAULT_SETTINGS.panelConfig.interactionMode ?? 'edit';
+}
+
+/**
  * Normalize a raw settings object against the current defaults without losing
  * data: unknown top-level keys are preserved, nested config objects are
  * deep-merged over the defaults (fixes the upstream shallow-merge gap where
  * new nested defaults were lost for old data).
  */
 function normalizeSettings(raw: Record<string, unknown>): Record<string, unknown> {
+    const panelConfig = {
+        ...DEFAULT_SETTINGS.panelConfig,
+        ...(isRecord(raw['panelConfig']) ? raw['panelConfig'] : {}),
+    };
     return {
         ...raw,
         categories: sanitizeCategories(raw['categories']),
         panelConfig: {
-            ...DEFAULT_SETTINGS.panelConfig,
-            ...(isRecord(raw['panelConfig']) ? raw['panelConfig'] : {}),
+            ...panelConfig,
+            // In-memory safety net for data this build did not migrate
+            // (already current, or from a future version that is never
+            // rewritten): the panel must always have a renderable mode.
+            interactionMode: normalizeInteractionMode(panelConfig.interactionMode),
         },
         pathConfig: {
             ...DEFAULT_SETTINGS.pathConfig,
@@ -331,10 +353,33 @@ function migrateV2toV3(data: Record<string, unknown>): Record<string, unknown> {
     };
 }
 
+// --- Version 4 (two interaction modes) ----------------------------------------
+
+/**
+ * 3 -> 4: 'sort' and 'edit' merge into one 'edit' mode.
+ *
+ * Version 3 had three modes: locked, sort (drag only) and edit (menus only).
+ * Version 4 keeps locked and edit, with edit carrying drag AND editing, so a
+ * stored 'sort' maps to 'edit' — the user keeps drag and drop and gains the
+ * edit controls; nothing they configured is lost. Only this one field changes.
+ */
+function migrateV3toV4(data: Record<string, unknown>): Record<string, unknown> {
+    const panelConfig = isRecord(data['panelConfig']) ? data['panelConfig'] : {};
+    return {
+        ...data,
+        panelConfig: {
+            ...panelConfig,
+            interactionMode: normalizeInteractionMode(panelConfig['interactionMode']),
+        },
+        settingsVersion: 4,
+    };
+}
+
 const MIGRATION_STEPS: readonly MigrationStep[] = [
     { from: 0, apply: migrateV0toV1 },
     { from: 1, apply: migrateV1toV2 },
     { from: 2, apply: migrateV2toV3 },
+    { from: 3, apply: migrateV3toV4 },
 ];
 
 /**

@@ -56,6 +56,8 @@ export function createDefaultRule(kind: ConditionRuleKind): ConditionRule {
     switch (kind) {
         case 'viewType':
             return { rule: 'viewType', value: 'markdown' };
+        case 'fileName':
+            return { rule: 'fileName', op: 'startsWith', value: '' };
         case 'path':
             return { rule: 'path', op: 'startsWith', value: '' };
         case 'folder':

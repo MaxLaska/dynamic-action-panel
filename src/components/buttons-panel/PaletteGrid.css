@@ -3,9 +3,9 @@
    cell is always in the DOM — that is what keeps positions stable when a
    button is hidden by its context rule — only the chrome differs by mode. */
 
-/* The container class differs by view mode (`buttons-panel-grid` in sort mode,
-   `buttons-panel-content` elsewhere) and both declare `display: flex`. The
-   `body` prefix raises specificity so the palette wins regardless of which
+/* The container class differs by mode (`buttons-panel-grid` while dragging is
+   enabled, `buttons-panel-content` elsewhere) and both declare `display: flex`.
+   The `body` prefix raises specificity so the palette wins regardless of which
    class is present and of CSS concatenation order. */
 body .buttons-panel .ocap-palette-grid {
     /* One source of truth for the slot box: the height a cell reserves for its
@@ -34,7 +34,7 @@ body .buttons-panel .ocap-palette-grid.icon-left {
 
 /* Every cell carries a constant 1px border in EVERY mode (transparent when
    the mode shows no chrome), so the grid geometry never shifts between
-   locked, edit and sort mode — only colors change. */
+   locked and edit mode — only colors change. */
 .buttons-panel .ocap-grid-slot {
     display: flex;
     align-items: stretch;
@@ -85,14 +85,16 @@ body .buttons-panel .ocap-grid-slot--empty {
     min-height: var(--ocap-grid-slot-min-height, 56px);
 }
 
-/* --- Management-mode grid chrome ---------------------------------------
+/* --- Edit-mode grid chrome ---------------------------------------------
    The 4x4 field must read as 16 real cells: every cell gets a visible
    border and a faint ground, empty cells are hollow (dashed, no fill),
-   occupied cells are solid. Sort mode is the drag surface and shows the
-   field at full strength; edit mode uses the same geometry, slightly
-   calmer. Locked mode keeps the transparent base border (no chrome). */
+   occupied cells are solid, and an empty cell lights up under the pointer
+   because it is a drop target. There is one management mode now (edit is
+   also the drag surface), so this is one block — the former `--sort`
+   variants were merged in. Locked mode keeps the transparent base border
+   and no chrome at all, at identical geometry. */
 .buttons-panel .ocap-palette-grid--managed .ocap-grid-slot--filled {
-    border-color: var(--background-modifier-border);
+    border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
     background-color: var(--background-secondary);
 }
 
@@ -100,19 +102,10 @@ body .buttons-panel .ocap-grid-slot--empty {
     border-style: dashed;
     border-color: var(--background-modifier-border);
     background-color: transparent;
-    opacity: 0.7;
-}
-
-/* Sort mode: the drop field. Cells are unmistakable; empty cells invite. */
-.buttons-panel .ocap-palette-grid--sort .ocap-grid-slot--filled {
-    border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
-}
-
-.buttons-panel .ocap-palette-grid--sort .ocap-grid-slot--empty {
     opacity: 0.9;
 }
 
-.buttons-panel .ocap-palette-grid--sort .ocap-grid-slot--empty:hover {
+.buttons-panel .ocap-palette-grid--managed .ocap-grid-slot--empty:hover {
     background-color: var(--background-modifier-hover);
     opacity: 1;
 }
@@ -237,7 +230,11 @@ body .buttons-panel .ocap-grid-slot--empty {
     font-style: italic;
 }
 
-/* Variant priority overview in the category modal. */
+/* Variant overview in the category modal: every variant of the category on
+   one scannable line — priority, name, trigger in words — plus the controls
+   to edit and reorder it. Column widths are fixed so the rows line up like a
+   table without being one (a real table does not wrap well in a narrow
+   Obsidian modal). */
 .buttons-panel .ocap-variants-list {
     margin: -6px 0 12px;
     display: flex;
@@ -249,21 +246,83 @@ body .buttons-panel .ocap-grid-slot--empty {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    align-items: baseline;
+    align-items: center;
+    padding: 2px 0;
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
 }
 
+.buttons-panel .ocap-variants-row--header {
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.buttons-panel .ocap-variants-row--header .ocap-variants-name {
+    color: var(--text-faint);
+    font-weight: normal;
+}
+
+.buttons-panel .ocap-variants-priority {
+    flex: 0 0 3.5em;
+    text-align: center;
+}
+
 .buttons-panel .ocap-variants-name {
+    flex: 0 1 8em;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: var(--text-normal);
     font-weight: var(--font-semibold, 600);
 }
 
 .buttons-panel .ocap-variants-trigger {
+    flex: 1 1 10em;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 100%;
+}
+
+/* A trigger that can never select its variant must not read like a rule. */
+.buttons-panel .ocap-variants-trigger--broken {
+    color: var(--text-error);
+}
+
+.buttons-panel .ocap-variants-trigger--fallback {
+    font-style: italic;
+}
+
+.buttons-panel .ocap-variants-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 2px;
+}
+
+.buttons-panel button.ocap-variants-action {
+    padding: 2px;
+    height: auto;
+    min-height: 0;
+    background-color: transparent;
+    box-shadow: none;
+}
+
+.buttons-panel button.ocap-variants-action .svg-icon {
+    width: 14px;
+    height: 14px;
+}
+
+.buttons-panel button.ocap-variants-action:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.buttons-panel .ocap-variants-count {
+    flex: 0 0 auto;
+    color: var(--text-faint);
 }
 
 .buttons-panel .ocap-variants-empty {
@@ -298,7 +357,7 @@ body .buttons-panel .ocap-palette-grid .ocap-grid-slot--drop-target {
     opacity: 1;
 }
 
-/* Grid buttons advertise that they can be picked up (sort mode only). */
+/* Grid buttons advertise that they can be picked up (edit mode only). */
 .buttons-panel .ocap-palette-grid--managed .ocap-grid-slot--filled .sortable-button-item {
     cursor: grab;
 }
@@ -397,4 +456,13 @@ body .buttons-panel .ocap-palette-grid .ocap-grid-slot--drop-target {
 /* The button is the badge's positioning context. */
 body .buttons-panel button.buttons-panel-simple-button {
     position: relative;
+}
+
+/* --- Dynamic category marker -------------------------------------------
+   The icon of a category whose content follows the context. It is the ONLY
+   dynamic marker: such a category never also carries the legacy
+   persistent/contextual badge, which would claim "pinned" at the same time.
+   Accent color so it reads as "this one reacts", not as decoration. */
+.buttons-panel .ocap-category-icon--dynamic {
+    color: var(--text-accent);
 }

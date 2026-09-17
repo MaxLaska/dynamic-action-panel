@@ -17,7 +17,7 @@ import {
 } from '@/contexts/OCAPVisibilityContext';
 import { hasConditions } from '@/context/conditions';
 import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
-import { isGridCategory } from '@/utils/categoryGrid';
+import { categoryLayoutIcon } from '@/utils/categoryIcon';
 import { isDynamicCategory } from '@/utils/categoryVariants';
 import { t } from '@/utils/i18n';
 
@@ -199,27 +199,27 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
         const titleClassName = 'buttons-panel-category-title is-collapsible';
         const bindTitleRef = getTitleRef(category.id);
 
+        const isDynamic = isDynamicCategory(category);
         const isContextual = hasConditions(category);
-        const showStatusBadge = isManagementMode || isContextual;
+        // A dynamic category says "I change with context" through its icon
+        // alone. The legacy persistent/contextual badge would claim the
+        // opposite at the same time (pin = "always here"), and its source —
+        // CategoryConfig.conditions — is not what makes a dynamic category
+        // dynamic: its variant triggers are.
+        const showStatusBadge = !isDynamic && (isManagementMode || isContextual);
 
         const titleContent = (
             <>
                 <span
-                    className="category-icon-left"
+                    className={
+                        isDynamic
+                            ? 'category-icon-left ocap-category-icon--dynamic'
+                            : 'category-icon-left'
+                    }
+                    aria-label={isDynamic ? t('category_dynamic_tooltip') : undefined}
+                    title={isDynamic ? t('category_dynamic_tooltip') : undefined}
                     ref={(el) => {
-                        if (el) {
-                            // Layout icon: a dynamic category reads as layers
-                            // (its content follows the context), a static grid
-                            // keeps the grid glyph, flow categories a list.
-                            setIcon(
-                                el,
-                                isDynamicCategory(category)
-                                    ? 'layers'
-                                    : isGridCategory(category)
-                                      ? 'layout-grid'
-                                      : 'list'
-                            );
-                        }
+                        if (el) setIcon(el, categoryLayoutIcon(category));
                     }}
                 />
                 {category.name}

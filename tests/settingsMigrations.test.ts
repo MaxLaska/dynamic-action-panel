@@ -219,7 +219,7 @@ describe('palette grid fields are carried through', () => {
         const result = migrateSettings(stored);
 
         expect(result.status).toBe('migrated');
-        expect(result.settings.settingsVersion).toBe(3);
+        expect(result.settings.settingsVersion).toBe(CURRENT_SETTINGS_VERSION);
         expect(result.settings.categories[0]!.layout).toBe('grid');
         expect(result.settings.categories[0]!.buttons.map((b) => b.slot)).toEqual([0, 7]);
         // Nothing contextual in this grid, so no variant is invented.
@@ -243,9 +243,9 @@ function variantGrid(variant: {
 // Version 3: dynamic category variants, reached from v1 data through the
 // retired v2 layer model. A v1 grid category with per-button conditions ends
 // as a DYNAMIC category whose variants reproduce the old effective grids.
-describe('chain v1 → v3 (through the retired layer model)', () => {
+describe('chain v1 → v4 (through the retired layer model)', () => {
     it('is the current settings version', () => {
-        expect(CURRENT_SETTINGS_VERSION).toBe(3);
+        expect(CURRENT_SETTINGS_VERSION).toBe(4);
     });
 
     function gridData(buttons: unknown[], extra: Record<string, unknown> = {}) {
@@ -354,9 +354,9 @@ describe('chain v1 → v3 (through the retired layer model)', () => {
         expect(category.variants).toBeUndefined();
     });
 
-    it('migrates unversioned upstream data straight through to version 3', () => {
+    it('migrates unversioned upstream data straight through to the current version', () => {
         const result = migrateSettings(makeLegacyData());
-        expect(result.settings.settingsVersion).toBe(3);
+        expect(result.settings.settingsVersion).toBe(CURRENT_SETTINGS_VERSION);
         expect(result.status).toBe('migrated');
         expect(result.fromVersion).toBe(0);
     });
@@ -630,9 +630,9 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
         );
     });
 
-    it('does not rewrite data that is already at version 3', () => {
+    it('does not rewrite data that is already at the current version', () => {
         const stored = {
-            settingsVersion: 3,
+            settingsVersion: CURRENT_SETTINGS_VERSION,
             categories: [
                 {
                     id: 'dyn',
@@ -674,6 +674,81 @@ describe('version 3 – v2 layer palettes become variant categories', () => {
         expect(category.variants).toBeUndefined();
         expect((category as unknown as Record<string, unknown>)['contextProfiles']).toBe(
             undefined
+        );
+    });
+});
+
+describe('version 4 – sort mode merges into edit mode', () => {
+    /** A v3 document that differs only in its stored interaction mode. */
+    const v3Data = (interactionMode: unknown) => ({
+        settingsVersion: 3,
+        categories: [
+            { id: 'c', name: 'C', order: 0, buttons: [{ id: 'b', name: 'B', actions: [], order: 0 }] },
+        ],
+        panelConfig: { interactionMode, displayStyle: 'icon_left' },
+        pathConfig: {},
+    });
+
+    it('turns a stored sort mode into edit mode', () => {
+        const result = migrateSettings(v3Data('sort'));
+        expect(result.status).toBe('migrated');
+        expect(result.settings.settingsVersion).toBe(CURRENT_SETTINGS_VERSION);
+        // Sort was a MANAGEMENT mode: locking the panel instead would silently
+        // take drag and drop away from the user.
+        expect(result.settings.panelConfig.interactionMode).toBe('edit');
+    });
+
+    it('leaves locked and edit exactly as they were', () => {
+        expect(migrateSettings(v3Data('locked')).settings.panelConfig.interactionMode).toBe(
+            'locked'
+        );
+        expect(migrateSettings(v3Data('edit')).settings.panelConfig.interactionMode).toBe(
+            'edit'
+        );
+    });
+
+    it('falls back to the default for an absent or unknown mode', () => {
+        expect(migrateSettings(v3Data(undefined)).settings.panelConfig.interactionMode).toBe(
+            DEFAULT_SETTINGS.panelConfig.interactionMode
+        );
+        expect(migrateSettings(v3Data('nonsense')).settings.panelConfig.interactionMode).toBe(
+            DEFAULT_SETTINGS.panelConfig.interactionMode
+        );
+    });
+
+    it('changes nothing else in the document', () => {
+        const stored = v3Data('sort');
+        const result = migrateSettings(stored);
+        expect(result.settings.categories).toEqual(stored.categories);
+        expect(result.settings.panelConfig.displayStyle).toBe('icon_left');
+    });
+
+    it('normalizes a retired mode in data it must not rewrite', () => {
+        // Already-current and future documents are never migrated, but the
+        // panel still has to render: the coercion happens in memory.
+        const current = migrateSettings({
+            ...v3Data('sort'),
+            settingsVersion: CURRENT_SETTINGS_VERSION,
+        });
+        expect(current.status).toBe('current');
+        expect(current.changed).toBe(false);
+        expect(current.settings.panelConfig.interactionMode).toBe('edit');
+
+        const future = migrateSettings({
+            ...v3Data('sort'),
+            settingsVersion: CURRENT_SETTINGS_VERSION + 5,
+        });
+        expect(future.status).toBe('future');
+        expect(future.settings.settingsVersion).toBe(CURRENT_SETTINGS_VERSION + 5);
+        expect(future.settings.panelConfig.interactionMode).toBe('edit');
+    });
+
+    it('is idempotent over its own output', () => {
+        const once = migrateSettings(v3Data('sort')).settings;
+        const twice = migrateSettings(JSON.parse(JSON.stringify(once)));
+        expect(twice.status ?? 'current').toBeDefined();
+        expect(JSON.parse(JSON.stringify(twice.settings))).toEqual(
+            JSON.parse(JSON.stringify(once))
         );
     });
 });

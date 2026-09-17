@@ -157,14 +157,14 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
 
     if (isGrid && gridSlots) {
         // Empty cells stay in the DOM in every mode so positions never shift;
-        // only their chrome is mode-dependent.
+        // only their chrome is mode-dependent. There is one management mode
+        // (edit), so one chrome class: `--managed`.
         const showSlotOutlines = sortableEnabled || enableEditMode;
 
         const gridClassName = [
             contentClass,
             'ocap-palette-grid',
             showSlotOutlines && 'ocap-palette-grid--managed',
-            sortableEnabled && 'ocap-palette-grid--sort',
         ]
             .filter(Boolean)
             .join(' ');

@@ -8,11 +8,11 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
   Buttons Panel 2.4.7.
-- Branch `master`, HEAD `fix: keep grid geometry stable during drag`, lokal vor
+- Branch `master`, HEAD `feat: simplify trigger and edit mode UX`, lokal vor
   `origin/master` — nicht ohne Auftrag pushen.
-- Settings-Version: **3** (`CURRENT_SETTINGS_VERSION`), forward-only
-  Migrationskette `0 → 1 → 2 → 3` in `src/settings/settingsMigrations.ts`.
-- Teststand: `npm test` **356/356** (Vitest, node env, `tests/`),
+- Settings-Version: **4** (`CURRENT_SETTINGS_VERSION`), forward-only
+  Migrationskette `0 → 1 → 2 → 3 → 4` in `src/settings/settingsMigrations.ts`.
+- Teststand: `npm test` **378/378** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
   `node esbuild.config.mjs production` grün.
 
@@ -38,12 +38,21 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Kategorien behalten das per-Button-Modell. `CategoryConfig.conditions`
   bleibt reine Kategorie-Sichtbarkeit.
 - Dynamisch → statisch/flow wird bewusst nicht angeboten (Datenverlustpfad).
+- **Zwei Interaktionsmodi, nicht drei:** `locked` (normale Nutzung, kein DnD,
+  keine Edit-Controls) und `edit` (DnD + Kontextmenüs + Add/Create + Variant-
+  Selector). Der frühere `sort`-Modus ist in `edit` aufgegangen; gespeichertes
+  `sort` migriert auf `edit` (Settings-Version 4) und wird beim Laden auch in
+  nicht migrierbaren Daten in-memory normalisiert.
+- **Der Lock-Toggle zeigt den ZUSTAND, nicht die Aktion:** geschlossenes
+  Schloss = gerade locked, offenes = gerade edit; Tooltip nennt erst den
+  Zustand, dann den Klick (`Locked — click to edit`). Global fürs ganze Panel,
+  kein per-Category-Lock.
 
 ## 3. Architektur & Invarianten
 
 - **Ein zentraler Renderpfad:** `projectCategoriesForContext`
   (`src/context/panelProjection.ts`) entscheidet allein, was gerendert wird —
-  locked: Runtime-Auflösung; sort/edit: die vom Nutzer editierte Variant.
+  locked: Runtime-Auflösung; edit: die vom Nutzer editierte Variant.
   Liefert `gridViews` (aufgelöstes Grid pro Kategorie) an Rendering UND DnD.
 - **Kontext:** `OCAPContextService` hält einen immutablen Snapshot
   (`useSyncExternalStore`); Quelle ist der zuletzt aktive Content-Leaf —
@@ -80,8 +89,10 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - **4 logische Spalten sind invariant** — `repeat(var(--ocap-grid-columns,4),
   minmax(0,1fr))`; kein Wrap bei schmaler Sidebar (verifiziert bis 150 px).
 - **Grid-Geometrie ist modus- und variant-invariant:** jede Zelle trägt in
-  jedem Modus einen konstanten 1px-Rahmen (transparent in locked); Chrome
-  nur über Farben (`--managed`, `--sort` Container-Klassen).
+  jedem Modus einen konstanten 1px-Rahmen (transparent in locked); Chrome nur
+  über Farben (eine Container-Klasse `--managed`). Locked ↔ edit ändert weder
+  Slot-Rects noch Row-Sizing noch die Zentrierung der Buttons — Edit-Chrome
+  (Variant-Bar, Add-Controls) liegt darüber. Live gemessen: worstΔ 0 px.
 - **Slot-Geometrie ist inhaltsunabhängig und während eines Drags stabil:** die
   Zeilenhöhe kommt aus einem definiten Track (`grid-auto-rows:
   var(--ocap-grid-row-height)` = Slot-Token + 2px Zellrahmen), nie aus dem
@@ -95,6 +106,16 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   dnd-kit-Lifecycle (flag-gated, kostenlos wenn aus).
 - Settings-Objekte sind immutable-per-edit (Änderung = neue Objektidentität);
   React-Memos vergleichen Identität.
+- **Trigger sind lesbar ohne Editor:** `summarizeCondition` /
+  `summarizeVariantTrigger` (`src/utils/conditionSummary.ts`) sind die EINE
+  Quelle für Trigger-Text (Variant-Bar und Variant-Übersicht im Category-Modal
+  nutzen beide sie). Kompakt statt vollständig: >3 Kinder kollabieren zu
+  `+n more`, harte Länge 120 Zeichen.
+- **Eine dynamische Kategorie signalisiert sich nur über ihr Icon**
+  (`git-branch`, akzentfarben, Tooltip `Dynamic category — content changes
+  with context`, `src/utils/categoryIcon.ts`) — nie zusätzlich über das
+  Legacy-`ContextStatusBadge` (pin/filter), das gleichzeitig „pinned" behaupten
+  würde. Flow-Kategorien behalten ihr Badge. Gilt in List, Tabs und Folder.
 - **Produktiv-Vault (`H:\Dropbox\01_Uni\A1_Nexus`) niemals für Tests
   verwenden.** Live-Tests nur in isolierter Obsidian-Instanz (scratch
   `--user-data-dir` + `--disable-backgrounding-occluded-windows`, Snapshot
@@ -109,7 +130,11 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - `src/context/panelProjection.ts` — zentrale Projektion Settings + Kontext +
   Modus → gerenderte Kategorien, Marker-Sets, `gridViews`.
 - `src/context/conditions.ts` — Condition-Interpreter (fail-open) +
-  Sichtbarkeitshelfer.
+  Sichtbarkeitshelfer. Regeln: `fileName` (equals/startsWith/contains/
+  endsWith, voller Name inkl. Endung, leerer Wert matcht nichts), `folder`,
+  `path`, `extension`, `property`, `tag`, `viewType`.
+- `src/utils/conditionSummary.ts` — pure Trigger-/Condition-Zusammenfassung.
+- `src/utils/categoryIcon.ts` — Icon pro Kategorie-Art (dynamic/static/flow).
 - `src/context/OCAPContextService.ts` — reaktiver Kontext-Snapshot-Store.
 - `src/contexts/ButtonDragContext.tsx` — DndContext-Provider: Sensoren,
   Drag-State (`items`), Baseline-Previews, Persistierung, Debug-Tracing.
@@ -132,7 +157,12 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Styling inkl. Geometrie-Invarianz.
 - `src/settings/settingsMigrations.ts` — versionierte Migrationskette.
 - `src/components/modal/VariantModal.ts` + `CategoryEditModal.ts` — Variant-
-  Anlage/-Bearbeitung, Prioritätsübersicht.
+  Anlage/-Bearbeitung; das Category-Modal hält die editierbare Variant-/
+  Trigger-Übersicht (nutzt dieselbe `VariantModal` und dieselben puren
+  Variant-Ops wie der Variant-Selector).
+- `src/components/input/ConditionEditor.ts` — visueller Condition-Builder
+  (Regelreihenfolge, Hints, Advanced-JSON).
+- `src/components/shared/NavigationBar.tsx` — u. a. der globale Lock-Toggle.
 
 ## 5. Manueller UX-Stand
 
@@ -141,8 +171,9 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Der intermittierende DnD-Ausfall nach Variant-Wechsel ist durch die
   permanenten Zell-Droppables behoben (live: >200 automatisierte Drags über
   Switch-/Flip-/Mode-Sequenzen, 0 Ausfälle, 0 Konsolenfehler).
-- Das 4×4-Raster ist in Sort/Edit deutlich sichtbar (belegte Zellen solide,
-  leere gestrichelt); locked bleibt chrome-frei bei identischer Geometrie.
+- Das 4×4-Raster ist im Edit-Modus deutlich sichtbar (belegte Zellen solide,
+  leere gestrichelt, Hover auf leeren Zellen); locked bleibt chrome-frei bei
+  identischer Geometrie.
 - Drag-Vorschau, Overlay und Endzustand sind geometrisch identisch
   (zentriert, gleiche Größe, kein Sprung beim Drop).
 - Der Startslot bleibt während des gesamten Drags ruhig: kein Aufblitzen beim
@@ -155,6 +186,13 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   earlier)" / „Move down (wins later)" + Hinweis im Trigger-Tooltip.
 - `Editing:` vs. `Active now:` bleibt immer beides sichtbar; ohne explizite
   Wahl wird die runtime-aktive Variant vorausgewählt.
+- Das Category-Modal zeigt **alle Variants auf einen Blick** (Spalten
+  Priority / Variant / Trigger, Fallback als `—`), jede Zeile mit Pencil
+  (öffnet dieselbe `VariantModal`) und ↑/↓ — kein Durchklicken einzelner
+  Variants mehr, nur um die Konfiguration zu verstehen.
+- Der Condition-Editor startet mit `File name` (verständlichste Regel) und
+  erklärt `File name` und `View type` mit einer Hint-Zeile — `View type` wurde
+  im Nutzertest als „Node Type" missverstanden.
 
 ## 6. Offene Punkte / nächste Baustellen
 
@@ -172,6 +210,8 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
    bewusst so belassen); bei Zellen <35 px werden Labels hart geclippt.
 6. Packaging-/Release-Strategie + finale Manifest-ID; locked-mode Empty-State;
    jsdom-Editor-Tests weiterhin offen.
+7. Bewusst nicht umgesetzt (kommt später): per-Category-Lock, „Pin active
+   dynamic variant", Toggle-Tools, Slot-Hotkeys, Icon-Picker, Import/Export.
 
 ## 7. Arbeitsregel für neue Sessions
 

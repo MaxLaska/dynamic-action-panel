@@ -7,7 +7,7 @@ import { t, tWithParams } from '@/utils/i18n';
 interface GridSlotCellProps {
     categoryId: string;
     slot: number;
-    /** Registers the slot as a drop target (sort mode only). */
+    /** Registers the slot as a drop target (edit mode only). */
     droppableEnabled: boolean;
     /** The pointer currently targets this slot during a drag. */
     isDropTarget: boolean;

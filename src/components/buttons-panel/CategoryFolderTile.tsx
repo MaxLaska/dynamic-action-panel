@@ -1,4 +1,5 @@
 import React from 'react';
+import { setIcon } from 'obsidian';
 import type { ButtonConfig, CategoryConfig } from '@/types';
 import { safeSetSVG } from '@/utils/dom';
 import {
@@ -7,6 +8,9 @@ import {
 } from '@/contexts/OCAPVisibilityContext';
 import { hasConditions } from '@/context/conditions';
 import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
+import { DYNAMIC_CATEGORY_ICON } from '@/utils/categoryIcon';
+import { isDynamicCategory } from '@/utils/categoryVariants';
+import { t } from '@/utils/i18n';
 
 interface CategoryFolderTileProps {
     category: CategoryConfig;
@@ -50,6 +54,10 @@ export const CategoryFolderTile: React.FC<CategoryFolderTileProps> = ({
     const isManagementMode = useInteractionMode() !== 'locked';
     const contextHiddenCategoryIds = useContextHiddenCategoryIds();
     const isContextual = hasConditions(category);
+    // A dynamic category is marked by the branch icon only — never also by the
+    // legacy persistent/contextual badge, which would say the opposite (see
+    // ListModeContent).
+    const isDynamic = isDynamicCategory(category);
 
     const classNames = ['buttons-panel-folder-tile', className].filter(Boolean).join(' ');
 
@@ -70,8 +78,18 @@ export const CategoryFolderTile: React.FC<CategoryFolderTileProps> = ({
                 </div>
             </div>
             <span className="folder-tile-label">
+                {isDynamic && (
+                    <span
+                        className="ocap-category-icon--dynamic folder-tile-dynamic-icon"
+                        aria-label={t('category_dynamic_tooltip')}
+                        title={t('category_dynamic_tooltip')}
+                        ref={(el) => {
+                            if (el) setIcon(el, DYNAMIC_CATEGORY_ICON);
+                        }}
+                    />
+                )}
                 {category.name}
-                {(isManagementMode || isContextual) && (
+                {!isDynamic && (isManagementMode || isContextual) && (
                     <ContextStatusBadge
                         status={isContextual ? 'contextual' : 'persistent'}
                         notMatching={contextHiddenCategoryIds.has(category.id)}

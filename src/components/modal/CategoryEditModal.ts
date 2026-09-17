@@ -1,4 +1,4 @@
-import { App, Modal, Setting, Notice, TextComponent } from 'obsidian';
+import { App, Modal, Setting, Notice, TextComponent, setIcon } from 'obsidian';
 import { ButtonsPanelPlugin } from '@/types/plugin';
 import { CategoryConfig } from '@/types';
 import { t, tWithParams } from '@/utils/i18n';
@@ -6,11 +6,16 @@ import { ConditionEditor } from '@/components/input';
 import { GRID_SLOT_COUNT, getCategoryLayout, type CategoryLayout } from '@/utils/categoryGrid';
 import {
     applyCategoryLayout,
-    describeConditionForName,
+    findFallbackVariant,
+    findVariant,
     getCategoryVariants,
     isDynamicCategory,
+    moveVariant,
+    triggeredVariants,
+    updateVariant,
 } from '@/utils/categoryVariants';
-import { isValidCondition } from '@/context/conditions';
+import { summarizeVariantTrigger } from '@/utils/conditionSummary';
+import { VariantModal } from '@/components/modal/VariantModal';
 
 /**
  * CategoryEditModal 分类编辑模态框类。
@@ -39,6 +44,8 @@ export class CategoryEditModal extends Modal {
     private selectedLayout: CategoryLayout;
     // Explanation line below the layout dropdown
     private layoutHintEl: HTMLElement | null = null;
+    // Container of the variant overview; redrawn in place after every edit
+    private variantsSectionEl: HTMLElement | null = null;
 
     /**
      * 构造函数，初始化模态框。
@@ -84,67 +91,178 @@ export class CategoryEditModal extends Modal {
     }
 
     /**
-     * Read-only overview of a dynamic category's variants, in priority order.
-     * Creating, editing, reordering and deleting them happens on the
-     * category's own variant selector (one place, right next to the grid they
-     * affect); this section exists so the priority order is visible while the
-     * category itself is being configured.
+     * Overview of a dynamic category's variants, in priority order: one
+     * scannable row per variant with its name, its trigger in words and its
+     * position, plus the controls to edit and reorder it.
+     *
+     * The point is that configuring a dynamic category never requires picking
+     * every variant in turn just to find out what it reacts to. Editing reuses
+     * the same VariantModal and the same pure variant operations as the
+     * variant selector next to the grid — this is a second entry point, not a
+     * second implementation.
      */
     private renderVariantsOverview(contentEl: HTMLElement): void {
-        const category = this.plugin.settings.categories.find(
-            (c) => c.id === this.categoryId
+        this.variantsSectionEl = contentEl.createDiv('ocap-variants-section');
+        this.renderVariantRows();
+    }
+
+    /** The stored category, or null if it was deleted while the modal is open. */
+    private storedCategory(): CategoryConfig | null {
+        return (
+            this.plugin.settings.categories.find((c) => c.id === this.categoryId) ?? null
         );
+    }
+
+    /**
+     * Apply a pure variant operation to the STORED category and redraw the
+     * rows. The name/layout/conditions the modal is editing live in its own
+     * fields and are read fresh on save, so writing variants through here
+     * cannot collide with them.
+     */
+    private updateStoredCategory(update: (category: CategoryConfig) => CategoryConfig): void {
+        const categories = this.plugin.settings.categories;
+        const index = categories.findIndex((c) => c.id === this.categoryId);
+        if (index === -1) {
+            new Notice(t('category_not_found'));
+            return;
+        }
+        categories[index] = update(categories[index]!);
+        void this.plugin.saveSettings();
+        this.renderVariantRows();
+    }
+
+    private renderVariantRows(): void {
+        const section = this.variantsSectionEl;
+        if (!section) return;
+        section.empty();
+
+        const category = this.storedCategory();
         if (!category || !isDynamicCategory(category)) {
             return;
         }
 
-        const section = new Setting(contentEl)
+        const heading = new Setting(section)
             .setName(t('variants_section'))
             .setDesc(t('variants_section_desc'));
-        section.settingEl.addClass('ocap-variants-heading');
+        heading.settingEl.addClass('ocap-variants-heading');
 
         const variants = getCategoryVariants(category);
-        const list = contentEl.createDiv('ocap-variants-list');
+        const list = section.createDiv('ocap-variants-list');
         if (variants.length === 0) {
-            list.createDiv({
-                cls: 'ocap-variants-empty',
-                text: t('variant_none_yet'),
-            });
+            list.createDiv({ cls: 'ocap-variants-empty', text: t('variant_none_yet') });
             return;
         }
 
+        // Column headers, so the three columns are readable as a table even
+        // though they are flex rows (Obsidian modals are narrow and a real
+        // table would not wrap gracefully).
+        const header = list.createDiv('ocap-variants-row ocap-variants-row--header');
+        header.createSpan({
+            cls: 'ocap-variants-priority',
+            text: t('variants_header_priority'),
+        });
+        header.createSpan({ cls: 'ocap-variants-name', text: t('variants_header_variant') });
+        header.createSpan({
+            cls: 'ocap-variants-trigger',
+            text: t('variants_header_trigger'),
+        });
+        header.createSpan({ cls: 'ocap-variants-actions' });
+
+        // Reordering only applies to triggered variants: the fallback is always
+        // evaluated last regardless of its position.
+        const ordered = triggeredVariants(category);
         let priority = 0;
+
         for (const variant of variants) {
-            const row = list.createDiv('ocap-variants-row');
             const isFallback = variant.fallback === true;
+            const summary = summarizeVariantTrigger(variant);
+            const row = list.createDiv('ocap-variants-row');
+
             row.createSpan({
                 cls: 'ocap-variants-priority',
-                text: isFallback
-                    ? t('variant_fallback_badge')
-                    : tWithParams('variant_priority', { index: ++priority }),
+                text: isFallback ? '—' : String(++priority),
             });
             row.createSpan({ cls: 'ocap-variants-name', text: variant.name });
-            const trigger = variant.trigger;
-            row.createSpan({
+            const triggerEl = row.createSpan({
                 cls: 'ocap-variants-trigger',
-                text: isFallback
-                    ? t('variant_trigger_fallback')
-                    : trigger === undefined || trigger === null
-                      ? t('variant_trigger_missing')
-                      : !isValidCondition(trigger)
-                        ? t('variant_trigger_invalid')
-                        : 'all' in trigger && trigger.all.length === 0
-                          ? t('variant_trigger_always')
-                          : (describeConditionForName(trigger) ??
-                            JSON.stringify(trigger)),
+                text: summary.summary,
             });
+            triggerEl.setAttribute('title', summary.summary);
+            if (summary.broken) {
+                triggerEl.addClass('ocap-variants-trigger--broken');
+            }
+            if (isFallback) {
+                triggerEl.addClass('ocap-variants-trigger--fallback');
+            }
+
+            const actions = row.createDiv('ocap-variants-actions');
+            this.createRowButton(actions, 'pencil', t('variants_overview_edit'), () =>
+                this.openVariantEditor(variant.id)
+            );
+
+            const index = ordered.findIndex((v) => v.id === variant.id);
+            this.createRowButton(
+                actions,
+                'arrow-up',
+                t('variants_overview_move_up'),
+                () => this.updateStoredCategory((stored) => moveVariant(stored, variant.id, -1)),
+                isFallback || index <= 0
+            );
+            this.createRowButton(
+                actions,
+                'arrow-down',
+                t('variants_overview_move_down'),
+                () => this.updateStoredCategory((stored) => moveVariant(stored, variant.id, 1)),
+                isFallback || index === -1 || index >= ordered.length - 1
+            );
+
             row.createSpan({
                 cls: 'ocap-variants-count',
-                text: tWithParams('variant_tools_count', {
-                    count: variant.buttons.length,
-                }),
+                text: tWithParams('variant_tools_count', { count: variant.buttons.length }),
             });
         }
+    }
+
+    private createRowButton(
+        parent: HTMLElement,
+        icon: string,
+        label: string,
+        onClick: () => void,
+        disabled = false
+    ): HTMLButtonElement {
+        const button = parent.createEl('button', {
+            cls: 'clickable-icon ocap-variants-action',
+        });
+        button.type = 'button';
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+        setIcon(button, icon);
+        button.disabled = disabled;
+        button.addEventListener('click', onClick);
+        return button;
+    }
+
+    /** Same modal the variant selector opens — name, fallback flag, trigger. */
+    private openVariantEditor(variantId: string): void {
+        const category = this.storedCategory();
+        const variant = category ? findVariant(category, variantId) : null;
+        if (!category || !variant) {
+            new Notice(t('category_not_found'));
+            return;
+        }
+        const fallback = findFallbackVariant(category);
+        new VariantModal(this.app, {
+            title: t('variant_edit_title'),
+            name: variant.name,
+            trigger: variant.trigger,
+            fallback: variant.fallback === true,
+            fallbackTaken: fallback !== null && fallback.id !== variantId,
+            onSubmit: ({ name, trigger, fallback: isFallback }) => {
+                this.updateStoredCategory((stored) =>
+                    updateVariant(stored, variantId, { name, trigger, fallback: isFallback })
+                );
+            },
+        }).open();
     }
 
     private updateLayoutHint(): void {
