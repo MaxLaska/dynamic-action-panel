@@ -84,6 +84,11 @@ export class ScriptAction implements IButtonAction {
         return !!(this.scriptName && this.scriptName.trim());
     }
 
+    /** Single-field action: untouched and invalid are the same state. */
+    isEmpty() {
+        return !this.validate();
+    }
+
     setError(message: string): void {
         this.scriptInput?.setError(message);
     }

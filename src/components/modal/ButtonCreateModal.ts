@@ -41,6 +41,12 @@ export class ButtonCreateModal extends Modal {
      * "contextual" switch — the variant selector above the grid decides.
      */
     private readonly targetVariantId: string | null;
+    /**
+     * Grid categories: the slot the user pointed at when opening this modal
+     * (the `+` of an empty cell). The position is part of the gesture, so the
+     * tool lands exactly there; null falls back to the lowest free slot.
+     */
+    private readonly targetSlot: number | null;
 
     /**
      * 构造函数，初始化模态框和临时按钮对象。
@@ -49,13 +55,15 @@ export class ButtonCreateModal extends Modal {
      * @param parentCategory 按钮所属分类
      * @param onSave 保存成功回调
      * @param targetVariantId 目标 variant（仅 dynamic grid 分类）
+     * @param targetSlot 目标槽位（仅 grid 分类）
      */
-	constructor(app: App, plugin: ButtonsPanelPlugin, parentCategory: CategoryConfig, onSave?: () => void, targetVariantId: string | null = null) {
+	constructor(app: App, plugin: ButtonsPanelPlugin, parentCategory: CategoryConfig, onSave?: () => void, targetVariantId: string | null = null, targetSlot: number | null = null) {
         super(app);
         this.plugin = plugin;
         this.parentCategory = parentCategory;
         this.onSave = onSave;
         this.targetVariantId = targetVariantId;
+        this.targetSlot = targetSlot;
         this.tempButton = {
             id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
             name: '',
@@ -254,12 +262,11 @@ export class ButtonCreateModal extends Modal {
             this.nameInput?.clearError();
         }
 
-        // 验证动作序列
-        if (!this.actionSequence.validateAll()) {
-            this.actionSequence.setAllErrors(t('please_complete_required_fields'));
+        // Actions: untouched rows are dropped, half-filled ones block. A tool
+        // without any action is a legitimate state (see collectConfiguredActions).
+        const actionResult = this.actionSequence.collectConfiguredActions();
+        if (!actionResult.ok) {
             hasError = true;
-        } else {
-            this.actionSequence.clearAllErrors();
         }
 
         // 验证 OCAP 条件输入（JSON + 结构校验）
@@ -270,13 +277,13 @@ export class ButtonCreateModal extends Modal {
         }
 
         // 如果有错误，显示通知并返回
-        if (hasError) {
+        if (hasError || !actionResult.ok) {
             new Notice(t('please_complete_required_fields'));
             return;
         }
 
         // 保存按钮（ActionSequence 序列化结果转为 ButtonAction[]）
-        this.tempButton.actions = this.actionSequence.toJSON() as ButtonAction[];
+        this.tempButton.actions = actionResult.actions as ButtonAction[];
         this.tempButton.conditions = conditionsResult ? conditionsResult.conditions : undefined;
 
         // Always write into the STORED category: the object this modal was
@@ -285,7 +292,12 @@ export class ButtonCreateModal extends Modal {
             findStoredCategory(this.plugin, this.parentCategory.id) ?? this.parentCategory;
 
         if (isGridCategory(stored)) {
-            const next = addButtonToGrid(stored, this.targetVariantId, this.tempButton);
+            const next = addButtonToGrid(
+                stored,
+                this.targetVariantId,
+                this.tempButton,
+                this.targetSlot
+            );
             if (!next) {
                 new Notice(t('variant_grid_full'));
                 return;

@@ -260,12 +260,11 @@ export class ButtonEditModal extends Modal {
             this.nameInput?.clearError();
         }
 
-        // 验证动作序列
-        if (!this.actionSequence.validateAll()) {
-            this.actionSequence.setAllErrors(t('please_complete_required_fields'));
+        // Actions: untouched rows are dropped, half-filled ones block. An
+        // existing tool may also have its last action removed again.
+        const actionResult = this.actionSequence.collectConfiguredActions();
+        if (!actionResult.ok) {
             hasError = true;
-        } else {
-            this.actionSequence.clearAllErrors();
         }
 
         // 验证 OCAP 条件输入（JSON + 结构校验）
@@ -276,13 +275,13 @@ export class ButtonEditModal extends Modal {
         }
 
         // 如果有错误，显示通知并返回
-        if (hasError) {
+        if (hasError || !actionResult.ok) {
             new Notice(t('please_complete_required_fields'));
             return;
         }
 
         // 更新临时按钮的动作（ActionSequence 序列化结果转为 ButtonAction[]）
-        this.tempButton.actions = this.actionSequence.toJSON() as ButtonAction[];
+        this.tempButton.actions = actionResult.actions as ButtonAction[];
         // Explicitly assign (possibly undefined) so clearing the textarea
         // removes previously saved conditions through the spread below.
         this.tempButton.conditions = conditionsResult ? conditionsResult.conditions : undefined;

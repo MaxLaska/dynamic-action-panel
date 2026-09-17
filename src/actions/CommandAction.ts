@@ -57,6 +57,11 @@ export class CommandAction implements IButtonAction {
         return !!(this.commandId && this.commandId.trim());
     }
 
+    /** Single-field action: untouched and invalid are the same state. */
+    isEmpty() {
+        return !this.validate();
+    }
+
     setError(message: string): void {
         this.commandInput?.setError(message);
     }

@@ -110,6 +110,60 @@ body .buttons-panel .ocap-grid-slot--empty {
     opacity: 1;
 }
 
+/* --- Creating a tool in the cell itself ---------------------------------
+   The `+` of an empty cell in edit mode. It fills its cell with RELATIVE
+   sizes only: the row track is definite, so nothing here can change the grid
+   geometry (pinned in tests/paletteGridGeometry.test.ts, which is why these
+   rules must never key on an occupancy/target state class). Quiet until the
+   pointer is near, so a mostly empty grid is not a wall of plus signs. */
+.buttons-panel button.ocap-slot-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: none;
+    border-radius: inherit;
+    background-color: transparent;
+    box-shadow: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    opacity: 0.45;
+    transition: opacity 80ms ease-in-out, color 80ms ease-in-out;
+}
+
+.buttons-panel button.ocap-slot-add:hover,
+.buttons-panel button.ocap-slot-add:focus-visible {
+    opacity: 1;
+    color: var(--text-accent);
+    background-color: transparent;
+}
+
+.buttons-panel .ocap-slot-add-icon {
+    display: inline-flex;
+    align-items: center;
+}
+
+.buttons-panel .ocap-slot-add-icon .svg-icon {
+    width: 16px;
+    height: 16px;
+}
+
+/* A vault file from Obsidian's file explorer is hovering this empty cell.
+   Same 1px border as every other cell state — only the colour differs. */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot--file-target {
+    border: 1px solid var(--interactive-accent);
+    border-style: solid;
+    background-color: var(--background-modifier-hover);
+    opacity: 1;
+}
+
+body .buttons-panel .ocap-grid-slot--file-target button.ocap-slot-add {
+    opacity: 1;
+    color: var(--text-accent);
+}
+
 /* --- Dynamic category variants ------------------------------------------ */
 
 /* Variant bar above the grid of a dynamic category (management modes only):

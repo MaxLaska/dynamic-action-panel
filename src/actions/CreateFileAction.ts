@@ -117,6 +117,19 @@ export class CreateFileAction implements IButtonAction {
         );
     }
 
+    /**
+     * Untouched only when NONE of the three fields carries anything. A row
+     * with a folder but no file name is half-filled, not unconfigured: it must
+     * keep blocking the save rather than being dropped silently.
+     */
+    isEmpty() {
+        return !(
+            this.folderPath.trim() ||
+            this.fileName.trim() ||
+            this.templateName.trim()
+        );
+    }
+
     setError(message: string): void {
         // 如果验证失败，对文件夹路径和文件名输入框都设置错误状态
         if (!this.folderPath || !this.folderPath.trim()) {

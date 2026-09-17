@@ -28,6 +28,7 @@ import {
     findFirstFreeSlot,
     getCategoryLayout,
     isGridCategory,
+    isValidSlotIndex,
     placeButtonsOnGrid,
     type CategoryLayout,
 } from '@/utils/categoryGrid';
@@ -489,14 +490,23 @@ function gridTargetButtons(
 }
 
 /**
- * Append a button to a variant (or to the static grid when `variantId` is
- * null), giving it the lowest free slot. Returns null when the grid is full —
- * the caller must tell the user instead of dropping the tool.
+ * Add a button to a variant (or to the static grid when `variantId` is null).
+ *
+ * `targetSlot` is the slot the user pointed at — the `+` of an empty cell, or
+ * the cell a vault file was dropped on. The position is then already part of
+ * the gesture and must be honoured. It is only ignored when that slot turned
+ * out to be taken after all, in which case the lowest free slot keeps the tool
+ * rather than losing it; without a target slot the lowest free one is the
+ * default as before.
+ *
+ * Returns null when the grid is full — the caller must tell the user instead
+ * of dropping the tool.
  */
 export function addButtonToGrid(
     category: CategoryConfig,
     variantId: string | null,
-    button: ButtonConfig
+    button: ButtonConfig,
+    targetSlot: number | null = null
 ): CategoryConfig | null {
     // A dynamic category stores every tool inside a variant; without an
     // explicit target the first variant is the only sensible home. A dynamic
@@ -509,9 +519,10 @@ export function addButtonToGrid(
         variantId = first.id;
     }
     const existing = gridTargetButtons(category, variantId);
-    const slot = findFirstFreeSlot(
-        placeButtonsOnGrid(existing).slots.map((b) => b?.id ?? null)
-    );
+    const occupancy = placeButtonsOnGrid(existing).slots.map((b) => b?.id ?? null);
+    const requested =
+        isValidSlotIndex(targetSlot) && occupancy[targetSlot] === null ? targetSlot : null;
+    const slot = requested ?? findFirstFreeSlot(occupancy);
     if (slot === null) {
         return null;
     }

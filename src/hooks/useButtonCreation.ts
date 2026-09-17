@@ -15,7 +15,9 @@ import type { CategoryConfig } from '@/types';
  * OCAP: in a dynamic grid category a new tool is created in the variant the
  * user is currently editing. That is why there is no "contextual" checkbox in
  * the button modal: the variant selector above the grid already answers the
- * question.
+ * question. `selection` is the NORMALIZED selection the panel renders from
+ * (see PanelContent), so the target is always the grid on screen — never the
+ * first variant by accident.
  *
  * @returns 按钮创建函数
  */
@@ -28,9 +30,10 @@ export function useButtonCreation() {
      * 创建新按钮（显示创建对话框）
      * @param category 按钮所属的分类
      * @param onCreated 创建成功后的回调
+     * @param targetSlot grid 分类中新工具的目标槽位（来自被点击的空格子）
      */
     const createButton = useCallback(
-        (category: CategoryConfig, onCreated?: () => void) => {
+        (category: CategoryConfig, onCreated?: () => void, targetSlot: number | null = null) => {
             const stored = findStoredCategory(plugin, category.id) ?? category;
             const variantId = isDynamicCategory(stored)
                 ? (selection[stored.id]?.current ?? null)
@@ -47,7 +50,8 @@ export function useButtonCreation() {
                         onCreated();
                     }
                 },
-                variantId
+                variantId,
+                targetSlot
             ).open();
         },
         [plugin, app, refresh, selection]

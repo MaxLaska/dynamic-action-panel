@@ -1,5 +1,7 @@
 import { useCallback } from 'react';
+import { Notice } from 'obsidian';
 import { useActionDispatcher } from './useActionDispatcher';
+import { t } from '@/utils/i18n';
 import type { ButtonConfig } from '@/types';
 
 /**
@@ -19,7 +21,12 @@ export function useButtonActions() {
      */
     const executeButtonActions = useCallback(
         async (button: ButtonConfig) => {
+            // A tool may legitimately exist before its action does (name,
+            // icon and slot first — see ActionSequence.collectConfiguredActions).
+            // Running it then has to SAY so: silence would read as a broken
+            // button, and inventing a fallback action would be worse.
             if (!button.actions || button.actions.length === 0) {
+                new Notice(t('button_no_action'));
                 return;
             }
 

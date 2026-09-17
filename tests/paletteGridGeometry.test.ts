@@ -72,6 +72,7 @@ describe('palette grid geometry', () => {
             /\.ocap-grid-slot--filled/,
             /\.ocap-grid-slot--empty/,
             /\.ocap-grid-slot--drop-target/,
+            /\.ocap-grid-slot--file-target/,
             /\.button-drag-grid-placeholder/,
         ];
         const sizing =

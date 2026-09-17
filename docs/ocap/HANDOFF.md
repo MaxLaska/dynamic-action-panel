@@ -8,11 +8,13 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
   Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
   Buttons Panel 2.4.7.
-- Branch `master`, HEAD `feat: simplify trigger and edit mode UX`, lokal vor
+- Branch `master`, HEAD `feat: create tools directly in a grid slot`, lokal vor
   `origin/master` — nicht ohne Auftrag pushen.
 - Settings-Version: **4** (`CURRENT_SETTINGS_VERSION`), forward-only
   Migrationskette `0 → 1 → 2 → 3 → 4` in `src/settings/settingsMigrations.ts`.
-- Teststand: `npm test` **378/378** (Vitest, node env, `tests/`),
+  Ein Tool ohne Action ist **kein** Schemawechsel — `actions: []` war immer
+  darstellbar, nur die Save-Validierung hat es verhindert.
+- Teststand: `npm test` **401/401** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
   `node esbuild.config.mjs production` grün.
 
@@ -47,6 +49,18 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Schloss = gerade locked, offenes = gerade edit; Tooltip nennt erst den
   Zustand, dann den Klick (`Locked — click to edit`). Global fürs ganze Panel,
   kein per-Category-Lock.
+- **Ein Tool darf vor seiner Action existieren.** Name/Icon/Slot zuerst und
+  die Action später ist ein legitimer Zustand; OCAP schreibt keine
+  Konfigurationsreihenfolge vor. Beim Speichern werden **unberührte**
+  Action-Zeilen verworfen, eine **halb** ausgefüllte blockiert weiterhin (sie
+  stillschweigend zu verwerfen hieße, Eingaben wegzuwerfen). Ein Klick auf ein
+  actionloses Tool sagt das (`No action assigned.`) statt zu schweigen.
+- **Die Position ist Teil der Geste, nicht ein Formularfeld.** Ein Tool
+  entsteht in der Zelle, auf die der Nutzer zeigt — über das `+` einer leeren
+  Zelle oder über eine Vault-Datei, die aus Obsidians File Explorer auf sie
+  gezogen wird. Deshalb gibt es unter einem Grid **keinen globalen
+  `Add button`-Eintrag** mehr (Flow-Kategorien behalten ihn, dort gibt es keine
+  Slots). Ein volles 4×4-Grid bietet folgerichtig gar keinen Einstieg.
 
 ## 3. Architektur & Invarianten
 
@@ -102,6 +116,25 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   alle darunterliegenden Slots (live gemessen: 1,33 px). Keine Regel, die an
   Belegung/Ziel/Preview hängt, darf eine feste Größe setzen (gepinnt in
   `tests/paletteGridGeometry.test.ts`).
+- **Datei-Drop und Button-DnD sind zwei getrennte Mechanismen und können sich
+  nicht stören:** OCAPs Button-DnD ist pointer-basiert (dnd-kit) und erzeugt
+  nie HTML5-Drag-Events; der Drop aus dem File Explorer ist ein nativer
+  HTML5-Drag und läuft ausschließlich über `dragenter/dragover/drop` auf der
+  Zelle. Eine belegte Zelle akzeptiert den `dragover` gar nicht erst — ein
+  Datei-Drop kann nichts überschreiben.
+- **Der Drag aus dem File Explorer wird über `app.dragManager.draggable`
+  gelesen** (Obsidians eigene Drag-Buchführung, die einzige Quelle, die
+  während `dragover` überhaupt lesbar ist — der HTML5-Standard verbietet dort
+  das Lesen von DataTransfer-*Inhalten*). Fallback beim Drop ist `text/plain`;
+  der File Explorer schreibt dort real `obsidian://open?vault=…&file=…`
+  (live gemessen), andere Quellen Linktext. **Nicht** die Browser-`File`-API:
+  ein Vault-Drag trägt TFiles, `dataTransfer.files` ist dabei leer.
+- **Ein gedroppter File wird auf die BESTEHENDEN Actions abgebildet**, nie auf
+  einen neuen Mechanismus: `.js` innerhalb des konfigurierten Script-Ordners →
+  `script` mit dem ordnerrelativen Namen, den `ScriptService` erwartet
+  (`<scriptFolderPath>/<scriptName>`); `.js` außerhalb → `file` plus Hinweis,
+  weil `Run script` es gar nicht adressieren kann; alles andere → `file` mit
+  dem exakten Vault-Pfad.
 - Drag-Debugging: `window.__OCAP_DND_DEBUG = true` traced den kompletten
   dnd-kit-Lifecycle (flag-gated, kostenlos wenn aus).
 - Settings-Objekte sind immutable-per-edit (Änderung = neue Objektidentität);
@@ -145,7 +178,18 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - `src/components/buttons-panel/CategoryButtonGrid.tsx` — rendert das 4×4-Grid
   einer Kategorie inkl. Variant-Selector-Einbindung und SortableContext.
 - `src/components/buttons-panel/GridSlotCell.tsx` — die universelle Zelle:
-  permanentes Droppable, gefüllt oder leer, keyed by Slot.
+  permanentes Droppable, gefüllt oder leer, keyed by Slot; im Edit Mode
+  zusätzlich das `+` und das native Datei-Drop-Ziel einer leeren Zelle.
+- `src/utils/vaultFileButton.ts` — **pure** Abbildung Vault-Datei → Tool
+  (Name, Icon-Id, `file`/`script`-Action, `resolveScriptName`). Obsidian-frei
+  und direkt testbar.
+- `src/utils/obsidianFileDrag.ts` — Lesen des Obsidian-Drags
+  (`app.dragManager.draggable`, `parseDraggedLinkText` als Fallback).
+- `src/hooks/useSlotFileDrop.ts` — persistiert das Drop-Ergebnis in genau dem
+  Slot und genau der editierten Variant.
+- `src/actions/ActionSequence.ts` — `collectConfiguredActions()` ist die EINE
+  Regel „was wird gespeichert": unberührte Zeilen fallen weg, halb gefüllte
+  blockieren. `IButtonAction.isEmpty()` unterscheidet beides.
 - `src/components/buttons-panel/VariantSelector.tsx` — `Editing:`-Dropdown,
   ⇄-Flip, Duplicate/Neu/⋮-Menü, `Trigger:`/`Active now:`-Statuszeile.
 - `src/contexts/CategoryVariantContext.tsx` — Session-lokale Variant-Auswahl
@@ -190,6 +234,34 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Priority / Variant / Trigger, Fallback als `—`), jede Zeile mit Pencil
   (öffnet dieselbe `VariantModal`) und ↑/↓ — kein Durchklicken einzelner
   Variants mehr, nur um die Konfiguration zu verstehen.
+- **Slot-lokale Erstellung live verifiziert** (isolierte Obsidian 1.13.7,
+  scratch `--user-data-dir`, Snapshot von `ocap-smoke`, CDP-getrieben,
+  Error-Monitore aktiv: **0 Fehler** über den ganzen Lauf): Edit Mode zeigt
+  genau in den freien Zellen ein `+` (12/12 bzw. 16/16), locked 0; ein echter
+  Mausklick auf ein konkretes `+` öffnet das Create-Modal **ohne** einen
+  Kategorie-Drag auszulösen; Save mit Name + Icon und leerer Action landet in
+  exakt diesem Slot mit `actions: []`; ein Klick darauf zeigt
+  `No action assigned.`; ein volles 4×4-Grid hat 0 `+` und akzeptiert auch
+  keinen Datei-Drop. Grid-Geometrie edit↔locked: **worstΔ 0 px** (relativ zur
+  Grid-Box gemessen; die absolute Position verschiebt sich in locked legitim,
+  weil andere Kategorien dort ausgeblendet werden).
+- **Datei-Drop live verifiziert** mit echtem `dragstart` auf der
+  File-Explorer-Zeile (Obsidians eigener Handler füllt `dragManager`, nichts
+  gefälscht): `other/Becker_Westerholt.pdf` → `file`-Tool mit exaktem Pfad,
+  Klick öffnet das PDF in einem `pdf`-Leaf; `scripts/test.js` → `script`-Tool
+  mit `scriptName: "test.js"`, Klick führt den Script-Entry genau einmal aus
+  („Script lief"). Hover hebt genau eine Zelle hervor und lässt beim Verlassen
+  wieder los. Drop auf eine **belegte** Zelle: `dragover` wird nicht akzeptiert,
+  Daten unverändert. Fallback geprüft, indem `dragManager.draggable` gezielt
+  geleert wurde — die `obsidian://`-URI aus `text/plain` reicht allein.
+- **Dynamic Variants treffen:** mit ausgewählter Variant `Z` landeten `+`-Save
+  (Slot 3) und PDF-Drop (Slot 14) **nur** in `Z`; die vier anderen Variants
+  blieben byte-gleich. Das Modal nennt das Ziel („Belongs to").
+- **Bestehendes DnD unverändert:** 12/12 echte Move-/Swap-Drags korrekt
+  (auch auf leere Zellen, wo der Zeiger über dem `+` liegt), Hin- und
+  Rückdrags stellen den Ausgangszustand wieder her. Geprüft in List-, Tabs-
+  und Folder-View; in allen dreien ist der globale `Add button` unter einem
+  Grid verschwunden und bei Flow-Kategorien erhalten.
 - Der Condition-Editor startet mit `File name` (verständlichste Regel) und
   erklärt `File name` und `View type` mit einer Hint-Zeile — `View type` wurde
   im Nutzertest als „Node Type" missverstanden.
@@ -207,11 +279,25 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
    Teil des Grid-Fixes). Normales Ziehen Button→Button funktioniert.
 5. Kategorie-Block ist in der Liste von jeder Nicht-Button-Fläche ziehbar —
    Press auf leere Zelle startet einen Kategorie-Drag (Upstream-Verhalten,
-   bewusst so belassen); bei Zellen <35 px werden Labels hart geclippt.
+   bewusst so belassen); bei Zellen <35 px werden Labels hart geclippt. Das
+   `+` schluckt seinen eigenen Press (`pointerdown`/`mousedown`/`touchstart`),
+   sonst würde ein Klick darauf die Kategorie ziehen statt das Modal zu öffnen.
 6. Packaging-/Release-Strategie + finale Manifest-ID; locked-mode Empty-State;
    jsdom-Editor-Tests weiterhin offen.
-7. Bewusst nicht umgesetzt (kommt später): per-Category-Lock, „Pin active
-   dynamic variant", Toggle-Tools, Slot-Hotkeys, Icon-Picker, Import/Export.
+7. Restpunkte des Slot-Create-Pass:
+   - Ein per Drop erzeugtes Tool bekommt ein generisches Icon
+     (`file` / `file-text` / `file-code`, über Obsidians `getIcon` als SVG
+     gespeichert — dieselbe Form, die der Icon-Picker schreibt). Eine echte
+     Icon-Automatik gibt es bewusst noch nicht.
+   - Ein Drop bringt nur **eine** Datei ins Ziel (eine Zelle = ein Tool);
+     Multi-Select-Drags legen nicht mehrere Slots an.
+   - Ein Drop auf eine **belegte** Zelle tut nichts (kein Replace-Dialog).
+   - `.js` außerhalb des Script-Ordners wird zu `Open file` plus Hinweis;
+     `Run script` kann es nicht adressieren (Pfade relativ zum Ordner, kein
+     `../`).
+8. Bewusst nicht umgesetzt (kommt später): per-Category-Lock, „Pin active
+   dynamic variant", Toggle-Tools, Slot-Hotkeys, Icon-Picker, Import/Export,
+   ZotFlow-Annotationen auf Slots.
 
 ## 7. Arbeitsregel für neue Sessions
 

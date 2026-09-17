@@ -58,6 +58,11 @@ export class FileAction implements IButtonAction {
         return !!(this.filePath && this.filePath.trim());
     }
 
+    /** Single-field action: untouched and invalid are the same state. */
+    isEmpty() {
+        return !this.validate();
+    }
+
     setError(message: string): void {
         this.fileInput?.setError(message);
     }

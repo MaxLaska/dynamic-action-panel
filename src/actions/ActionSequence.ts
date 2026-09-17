@@ -211,20 +211,40 @@ export class ActionSequence {
         this.addAction(defaultAction);
     }
 
-    /**
-     * 校验所有动作表单。
-     */
-    validateAll() {
-        return this.actions.every((action) => action.validate());
+    /** An action row the user never filled in. */
+    private static isUnconfigured(action: IButtonAction): boolean {
+        return action.isEmpty ? action.isEmpty() : !action.validate();
     }
 
     /**
-     * 批量设置所有动作的错误提示。
+     * The actions to persist, or a failure that has already marked the
+     * offending rows.
+     *
+     * Untouched rows are DROPPED instead of blocking the save: OCAP does not
+     * prescribe the order in which a tool is configured, so a name, an icon
+     * and a slot are enough — the action may follow later (a tool without one
+     * reports that when it is run). A row that carries content but does not
+     * validate still blocks, because dropping it would silently discard what
+     * the user typed.
+     *
+     * The create modal starts with one empty default row, so "no action" is
+     * simply what that row collapses to.
      */
-    setAllErrors(message: string): void {
-        this.actions.forEach((action) => {
-            action.setError?.(message);
-        });
+    collectConfiguredActions():
+        | { ok: true; actions: unknown[] }
+        | { ok: false } {
+        const configured = this.actions.filter(
+            (action) => !ActionSequence.isUnconfigured(action)
+        );
+        const invalid = configured.filter((action) => !action.validate());
+        if (invalid.length > 0) {
+            invalid.forEach((action) =>
+                action.setError?.(t('please_complete_required_fields'))
+            );
+            return { ok: false };
+        }
+        this.clearAllErrors();
+        return { ok: true, actions: configured.map((action) => action.toJSON()) };
     }
 
     /**

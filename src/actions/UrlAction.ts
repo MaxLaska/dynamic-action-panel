@@ -54,6 +54,11 @@ export class UrlAction implements IButtonAction {
         return !!(this.url && this.url.trim());
     }
 
+    /** Single-field action: untouched and invalid are the same state. */
+    isEmpty() {
+        return !this.validate();
+    }
+
     /**
      * 序列化为 JSON 数据。
      */

@@ -297,5 +297,8 @@
     "variants_overview_move_down": "Move down (wins later)",
     "variants_header_variant": "Variant",
     "variants_header_trigger": "Trigger",
-    "variants_header_priority": "Priority"
+    "variants_header_priority": "Priority",
+    "button_no_action": "No action assigned.",
+    "grid_slot_add_tooltip": "Add a tool here (row {row}, column {column})",
+    "script_outside_script_folder": "Tool created — it opens the script file. Run script only finds scripts inside the configured script folder."
 }

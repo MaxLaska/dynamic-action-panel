@@ -25,6 +25,8 @@ import {
     resolveDynamicCategoryVariant,
 } from '@/utils/categoryVariants';
 import { useOCAPContext } from '@/hooks/useOCAPContext';
+import { useButtonCreation } from '@/hooks/useButtonCreation';
+import { useSlotFileDrop } from '@/hooks/useSlotFileDrop';
 import type { ContextStatus } from '@/components/shared/ContextStatusBadge';
 
 /**
@@ -90,6 +92,13 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     const { manageable, selection, selectVariant } = useCategoryVariants();
     const resolution = useGridViewResolution(category);
     const ocapContext = useOCAPContext();
+
+    // Creating a tool is a property of the CELL, not of the category: the slot
+    // the user points at already says where the tool goes, so neither entry
+    // point has to ask for a position afterwards. Both resolve their target
+    // variant from the same (normalized) selection the grid renders from.
+    const { createButton } = useButtonCreation();
+    const { canAcceptFileDrag, dropFileOnSlot } = useSlotFileDrop();
     const selectionEntry = isDynamic ? (selection[category.id] ?? null) : null;
     const runtimeResolution = React.useMemo(
         () =>
@@ -169,6 +178,12 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
             .filter(Boolean)
             .join(' ');
 
+        // Creation affordances belong to empty cells in edit mode only, and
+        // they vanish while a button drag is in flight (the live preview is
+        // then what the cell has to show). A full 4x4 grid therefore offers no
+        // `+` at all — there is no way to aim a 17th tool at it.
+        const creationEnabled = enableEditMode && !isDragging;
+
         // Every cell is the same keyed component whether filled or empty, so
         // the 16 droppable cell nodes survive variant switches (see
         // GridSlotCell). The target cell keeps its ring even when the live
@@ -181,6 +196,20 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                 droppableEnabled={sortableEnabled}
                 isDropTarget={dropTargetSlot === slot}
                 showOutline={showSlotOutlines}
+                onCreate={
+                    creationEnabled
+                        ? () => createButton(category, undefined, slot)
+                        : undefined
+                }
+                fileDrop={
+                    creationEnabled
+                        ? {
+                              canAccept: canAcceptFileDrag,
+                              onDrop: (dataTransfer) =>
+                                  dropFileOnSlot(category, slot, dataTransfer),
+                          }
+                        : undefined
+                }
             >
                 {button ? renderButton(button, slot, 'none') : null}
             </GridSlotCell>
@@ -230,9 +259,11 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                     body
                 )}
                 {overflowSection}
-                {enableEditMode && !isDragging && (
-                    <div className="ocap-palette-grid-actions">{children}</div>
-                )}
+                {/* No global "Add button" entry under a grid: the position is
+                    part of the gesture now, and a button created without one
+                    would have to guess a slot. `children` (the callers' add
+                    entry) is therefore deliberately not rendered here — flow
+                    categories below still use it. */}
             </>
         );
     }

@@ -297,5 +297,8 @@
     "variants_overview_move_down": "Ниже (срабатывает позже)",
     "variants_header_variant": "Вариант",
     "variants_header_trigger": "Триггер",
-    "variants_header_priority": "Приоритет"
+    "variants_header_priority": "Приоритет",
+    "button_no_action": "Действие не назначено.",
+    "grid_slot_add_tooltip": "Добавить инструмент здесь (строка {row}, столбец {column})",
+    "script_outside_script_folder": "Инструмент создан — он открывает файл скрипта. «Запустить скрипт» находит только скрипты внутри настроенной папки скриптов."
 }

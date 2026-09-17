@@ -29,6 +29,21 @@ export class TFile extends TAbstractFile {
 
 export class Modal {}
 
+/**
+ * Suggestion popups only need to EXIST for the action classes to import; the
+ * tests construct and validate actions, they never render a form.
+ */
+export class AbstractInputSuggest<T> {
+    constructor(..._args: unknown[]) {}
+    getSuggestions(_query: string): T[] {
+        return [];
+    }
+    renderSuggestion(_value: T, _el: unknown): void {}
+    selectSuggestion(_value: T): void {}
+    setValue(_value: string): void {}
+    close(): void {}
+}
+
 export class Menu {}
 
 export class MenuItem {}
