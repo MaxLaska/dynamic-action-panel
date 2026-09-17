@@ -1,5 +1,5 @@
 /**
- * ConditionEditor - reusable visual editor for OCAP visibility conditions.
+ * ConditionEditor - reusable visual editor for visibility conditions.
  *
  * Primary UX is a visual builder operating directly on the declarative
  * condition model (src/types/conditions.ts) via the pure tree helpers in

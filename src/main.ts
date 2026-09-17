@@ -16,7 +16,7 @@ import {
 } from '@/types';
 import type { ButtonsPanelPlugin as ButtonsPanelPluginType } from '@/types';
 import { migrateSettings } from '@/settings/settingsMigrations';
-import { OCAPContextService } from '@/context/OCAPContextService';
+import { WorkspaceContextService } from '@/context/WorkspaceContextService';
 import { t, tWithParams } from '@/utils/i18n';
 import { pickAndImportTemplate } from '@/export/templateIo';
 
@@ -34,8 +34,8 @@ export default class ButtonsPanelPlugin extends Plugin {
     settingTab!: ButtonsPanelSettingTab;
     /** Action dispatcher instance */
 	actionDispatcher!: ButtonsPanelPluginType['actionDispatcher'];
-    /** OCAP context service (reactive workspace context snapshot store) */
-    contextService!: OCAPContextService;
+    /** Workspace context service (reactive workspace context snapshot store) */
+    contextService!: WorkspaceContextService;
     /** Last active content leaf (never the buttons panel) */
     lastActiveContentLeaf: WorkspaceLeaf | null = null;
     /** Expanded state per category (runtime state, not persisted) */
@@ -53,9 +53,9 @@ export default class ButtonsPanelPlugin extends Plugin {
             this
         );
 
-        // OCAP context service: subscribes to workspace/metadata events and
+        // Workspace context service: subscribes to workspace/metadata events and
         // provides the reactive context snapshot used for button conditions.
-        this.contextService = new OCAPContextService(this.app, [BUTTONS_PANEL_VIEW_TYPE]);
+        this.contextService = new WorkspaceContextService(this.app, [BUTTONS_PANEL_VIEW_TYPE]);
         this.contextService.start();
 
         // Register the buttons panel view.
@@ -141,7 +141,7 @@ export default class ButtonsPanelPlugin extends Plugin {
 
         if (result.status === 'future') {
             console.warn(
-                `[OCAP] Stored settings use a newer schema version (${result.fromVersion}) ` +
+                `[Dynamic Action Panel] Stored settings use a newer schema version (${result.fromVersion}) ` +
                     'than this plugin build supports; loading best-effort without rewriting them.'
             );
         } else if (result.changed) {

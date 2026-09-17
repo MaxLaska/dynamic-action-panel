@@ -16,7 +16,7 @@ export interface IButtonAction {
     /**
      * True when the user has not entered anything at all in this action row.
      *
-     * OCAP distinguishes "not configured yet" from "configured wrongly": an
+     * The plugin distinguishes "not configured yet" from "configured wrongly": an
      * untouched row is dropped on save, so a tool may exist with a name, an
      * icon and a slot but no action (running it then just says so), whereas a
      * half-filled row still blocks the save instead of silently discarding

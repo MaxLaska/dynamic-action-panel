@@ -1,5 +1,5 @@
 // id.ts
-// The single id generator for every persisted OCAP identity (tools/buttons,
+// The single id generator for every persisted identity (tools/buttons,
 // categories, variants). Ids are opaque strings; nothing may parse them.
 //
 // Format: `[prefix-]<time base36>-<counter base36>-<entropy>`. The monotonic

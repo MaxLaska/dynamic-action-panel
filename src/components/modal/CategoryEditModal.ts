@@ -27,7 +27,7 @@ import {
 /**
  * Modal for editing a category.
  * Renames the category, submitting on Enter and rejecting an empty name.
- * OCAP: additionally edits the category's visibility conditions with the
+ * additionally edits the category's visibility conditions with the
  * shared visual ConditionEditor.
  */
 export class CategoryEditModal extends Modal {
@@ -45,9 +45,9 @@ export class CategoryEditModal extends Modal {
     newName: string;
     // Reference to the text control of the Obsidian Setting
     private nameInput: TextComponent | null = null;
-    // OCAP visibility conditions editor (visual builder + advanced JSON)
+    // visibility conditions editor (visual builder + advanced JSON)
     private conditionsInput: ConditionEditor | null = null;
-    // OCAP palette: selected button layout (flow / resizable grid)
+    // Palette: selected button layout (flow / resizable grid)
     private selectedLayout: CategoryLayout;
     // Explanation line below the layout dropdown
     private layoutHintEl: HTMLElement | null = null;
@@ -309,13 +309,13 @@ export class CategoryEditModal extends Modal {
             });
         });
 
-        // OCAP grid: button layout of this category
+        // Grid: button layout of this category
         this.renderLayoutSetting(contentEl);
 
-        // OCAP dynamic category: priority overview of the variants
+        // Dynamic category: priority overview of the variants
         this.renderVariantsOverview(contentEl);
 
-        // OCAP: visual visibility-conditions editor (validated on save)
+        // visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(contentEl, this.oldConditions, {
             description: t('conditions_category_desc'),
         });
@@ -350,7 +350,7 @@ export class CategoryEditModal extends Modal {
         // Clear the error state.
         this.nameInput?.inputEl.classList.remove('input-error');
 
-        // Validate the OCAP conditions input (visual editor or JSON).
+        // Validate the visibility conditions input (visual editor or JSON).
         const conditionsResult = this.conditionsInput?.getResult();
         if (conditionsResult && !conditionsResult.ok) {
             new Notice(conditionsResult.error);

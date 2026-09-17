@@ -5,7 +5,7 @@
 // - EXPORT IS READ-ONLY. A category can be shipped without the settings
 //   changing by a single byte;
 // - IMPORT CREATES. Every identity in a document is a package-local reference
-//   that is replaced by a fresh OCAP id, so importing can never overwrite,
+//   that is replaced by a fresh id, so importing can never overwrite,
 //   merge into or silently share with what the vault already has — and the
 //   same file can be imported twice without a collision.
 //

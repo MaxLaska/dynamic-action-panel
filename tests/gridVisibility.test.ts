@@ -12,12 +12,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ButtonConfig, CategoryConfig, CategoryVariant } from '@/types/settings';
 import type { ButtonCondition } from '@/types/conditions';
-import type { OCAPContextSnapshot } from '@/context/OCAPContext';
+import type { WorkspaceContextSnapshot } from '@/context/workspaceContext';
 import { hasConditions } from '@/context/conditions';
 import { projectCategoriesForContext } from '@/context/panelProjection';
 import { placeButtonsOnGrid, readGridDimensions } from '@/utils/categoryGrid';
 
-function context(overrides: Partial<OCAPContextSnapshot> = {}): OCAPContextSnapshot {
+function context(overrides: Partial<WorkspaceContextSnapshot> = {}): WorkspaceContextSnapshot {
     return {
         viewType: 'markdown',
         filePath: 'notes/a.md',
@@ -27,7 +27,7 @@ function context(overrides: Partial<OCAPContextSnapshot> = {}): OCAPContextSnaps
         properties: {},
         tags: [],
         ...overrides,
-    } as OCAPContextSnapshot;
+    } as WorkspaceContextSnapshot;
 }
 
 function button(id: string, order: number, slot: number): ButtonConfig {

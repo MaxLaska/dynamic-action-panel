@@ -16,7 +16,7 @@ import type { ButtonConfig, CategoryConfig } from '@/types';
  *
  * Button operations such as copy and remove, behind a single interface.
  *
- * OCAP v5: a copy creates a NEW tool definition plus a new placement in the
+ * Settings v5: a copy creates a NEW tool definition plus a new placement in the
  * grid/variant (or flow list) the source occupies — never implicit sharing.
  * A delete removes the placement and garbage-collects the definition when
  * nothing references it anymore and it is not a library tool (exactly the

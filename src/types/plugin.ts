@@ -2,7 +2,7 @@
 // Interface extension that describes the structure of the plugin main class.
 import type { Plugin, SettingTab, WorkspaceLeaf } from 'obsidian';
 import { ButtonsPanelPluginSettings } from '@/types';
-import type { OCAPContextService } from '@/context/OCAPContextService';
+import type { WorkspaceContextService } from '@/context/WorkspaceContextService';
 
 /**
  * ButtonsPanelPlugin describes the plugin main class.
@@ -20,8 +20,8 @@ export interface ButtonsPanelPlugin extends Plugin {
     /** Action dispatcher instance (minimal surface; the concrete shape is up to the implementation) */
     actionDispatcher: unknown;
 
-    /** OCAP context service (reactive workspace context snapshot store) */
-    contextService: OCAPContextService;
+    /** Workspace context service (reactive workspace context snapshot store) */
+    contextService: WorkspaceContextService;
 
     /** Saves the settings asynchronously */
     saveSettings(): Promise<void>;

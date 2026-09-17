@@ -1,5 +1,5 @@
 // categoryVariants.ts
-// Pure model of the OCAP dynamic category variants.
+// Pure model of the dynamic category variants.
 //
 // Product model (see docs/ocap/DECISIONS.md):
 // - a grid category is either STATIC or DYNAMIC;
@@ -21,7 +21,7 @@
 
 import type { ButtonConfig, CategoryConfig, CategoryVariant } from '@/types/settings';
 import type { ButtonCondition } from '@/types/conditions';
-import type { OCAPContextSnapshot } from '@/context/OCAPContext';
+import type { WorkspaceContextSnapshot } from '@/context/workspaceContext';
 import { evaluateCondition, isValidCondition } from '@/context/conditions';
 import {
     LEGACY_GRID_DIMENSIONS,
@@ -174,14 +174,14 @@ export function triggeredVariants<V extends VariantFields>(category: {
  * - an absent trigger never matches — "always active" is expressed explicitly
  *   as `{ all: [] }`, never implied by missing data;
  * - a structurally invalid trigger does NOT match. This is the one place where
- *   OCAP deliberately does not fail open: a corrupt always-matching variant
+ *   Resolution deliberately does not fail open: a corrupt always-matching variant
  *   would shadow every variant below it, whereas a skipped variant only loses
  *   itself in locked mode and stays fully selectable and repairable in the
  *   management modes (where it is marked as broken).
  */
 export function variantTriggerMatches(
     variant: Pick<CategoryVariant, 'trigger' | 'fallback'>,
-    context: OCAPContextSnapshot
+    context: WorkspaceContextSnapshot
 ): boolean {
     if (variant.fallback === true) {
         return false;
@@ -216,7 +216,7 @@ export interface VariantResolution<V extends VariantFields = CategoryVariant> {
  */
 export function resolveDynamicCategoryVariant<V extends VariantFields>(
     category: { variants?: V[] },
-    context: OCAPContextSnapshot
+    context: WorkspaceContextSnapshot
 ): VariantResolution<V> {
     for (const variant of triggeredVariants(category)) {
         if (variantTriggerMatches(variant, context)) {
@@ -317,7 +317,7 @@ export function resolveGridViewForVariant(
 /** Grid view for the current context (locked mode). */
 export function resolveGridViewForContext(
     category: CategoryConfig,
-    context: OCAPContextSnapshot
+    context: WorkspaceContextSnapshot
 ): ResolvedGridView {
     if (!isDynamicCategory(category)) {
         return viewOfButtons(

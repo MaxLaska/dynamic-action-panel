@@ -8,7 +8,7 @@ import { useButtonMenu } from '@/hooks';
 import {
     useContextHiddenButtonIds,
     useInteractionMode,
-} from '@/contexts/OCAPVisibilityContext';
+} from '@/contexts/PanelVisibilityContext';
 import { hasConditions } from '@/context/conditions';
 import {
     ContextStatusBadge,
@@ -71,12 +71,12 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
     // Context menu handler.
     const handleContextMenu = useButtonMenu(button, category);
 
-    // OCAP: in sort/edit mode a button hidden by its conditions stays
+    // in sort/edit mode a button hidden by its conditions stays
     // rendered and manageable but gets a visual marker class.
     const contextHiddenIds = useContextHiddenButtonIds();
     const isContextHidden = contextHiddenIds.has(button.id);
 
-    // OCAP: persistent vs. contextual marker. Management modes state both
+    // persistent vs. contextual marker. Management modes state both
     // explicitly so the configuration is transparent; locked mode is the
     // consumption surface and only hints at contextual buttons, so a panel
     // of static tools stays visually quiet.

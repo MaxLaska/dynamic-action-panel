@@ -16,7 +16,7 @@
 // DnD provider agree on the same picture.
 
 import type { CategoryConfig, InteractionMode } from '@/types/settings';
-import type { OCAPContextSnapshot } from '@/context/OCAPContext';
+import type { WorkspaceContextSnapshot } from '@/context/workspaceContext';
 import {
     isButtonVisibleInContext,
     isCategoryVisibleInContext,
@@ -83,7 +83,7 @@ function sameButtons(
  */
 export function filterCategoriesByContext(
     categories: CategoryConfig[],
-    context: OCAPContextSnapshot,
+    context: WorkspaceContextSnapshot,
     gridViews?: Map<string, ResolvedGridView>
 ): CategoryConfig[] {
     let anyChanged = false;
@@ -141,7 +141,7 @@ export function filterCategoriesByContext(
  */
 export function collectContextHiddenButtonIds(
     categories: CategoryConfig[],
-    context: OCAPContextSnapshot
+    context: WorkspaceContextSnapshot
 ): Set<string> {
     const hidden = new Set<string>();
     for (const category of categories) {
@@ -162,7 +162,7 @@ export function collectContextHiddenButtonIds(
  */
 export function collectContextHiddenCategoryIds(
     categories: CategoryConfig[],
-    context: OCAPContextSnapshot
+    context: WorkspaceContextSnapshot
 ): Set<string> {
     const hidden = new Set<string>();
     for (const category of categories) {
@@ -175,7 +175,7 @@ export function collectContextHiddenCategoryIds(
 
 export function projectCategoriesForContext(
     categories: CategoryConfig[],
-    context: OCAPContextSnapshot,
+    context: WorkspaceContextSnapshot,
     interactionMode: InteractionMode,
     options?: PanelProjectionOptions
 ): PanelContextProjection {

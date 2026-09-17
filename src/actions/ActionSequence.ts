@@ -220,7 +220,7 @@ export class ActionSequence {
      * The actions to persist, or a failure that has already marked the
      * offending rows.
      *
-     * Untouched rows are DROPPED instead of blocking the save: OCAP does not
+     * Untouched rows are DROPPED instead of blocking the save: the plugin does not
      * prescribe the order in which a tool is configured, so a name, an icon
      * and a slot are enough — the action may follow later (a tool without one
      * reports that when it is run). A row that carries content but does not

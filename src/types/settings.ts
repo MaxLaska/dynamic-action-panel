@@ -79,10 +79,10 @@ export interface ButtonConfig {
     /** Delay between actions in sequential mode (milliseconds) */
     delayBetweenActions?: number;
     /**
-     * Optional declarative visibility condition (OCAP Context Engine).
+     * Optional declarative visibility condition (context engine).
      * Absent/undefined = the button behaves exactly like a static upstream
      * button and is always visible. Conditions are applied against the
-     * current OCAPContext snapshot in locked interaction mode only; in
+     * current workspace context snapshot in locked interaction mode only; in
      * sort/edit mode the button stays manageable (visually marked).
      *
      * **Flow categories only.** Inside a `layout: 'grid'` category this field
@@ -239,7 +239,7 @@ export type GridCellKey = string;
  * `color` is a portable value, never a CSS class name (a class only exists
  * inside the current UI build and would not survive an export or a restyle):
  * either a literal `#rgb` / `#rgba` / `#rrggbb` / `#rrggbbaa` hex color, or a
- * namespaced OCAP palette entry (`ocap:<name>`, e.g. `ocap:accent`). The two
+ * namespaced palette entry (`ocap:<name>`, e.g. `ocap:accent`). The two
  * forms are told apart by their own prefixes, so a later palette can be
  * introduced without another structural migration — and so a stray UI class
  * name can be REJECTED rather than merely discouraged.
@@ -272,7 +272,7 @@ export interface GridCellStyleFields {
 }
 
 /**
- * One complete variant of a dynamic grid category (OCAP category variants).
+ * One complete variant of a dynamic grid category (dynamic category variants).
  *
  * A variant is a FULL, independent configuration of the grid: its own
  * dimensions (`rows`/`columns`) and its own buttons with their own slots,
@@ -356,7 +356,7 @@ export interface CategoryConfig extends GridDimensionFields, GridCellStyleFields
      */
     variants?: CategoryVariant[];
     /**
-     * Optional declarative **palette visibility** condition (OCAP Context
+     * Optional declarative **palette visibility** condition (context
      * Engine), same model as ButtonConfig.conditions. Absent/undefined =
      * always visible. In locked mode a category is rendered only when this
      * condition holds AND at least one button is effectively visible; in

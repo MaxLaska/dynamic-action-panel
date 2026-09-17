@@ -4,7 +4,7 @@
 //
 // Rules (see docs/ocap/template-format.md):
 // - IMPORT CREATES, IT NEVER MERGES. Every category, variant and tool gets a
-//   FRESH OCAP id and every reference inside the package is rewritten to it.
+//   FRESH id and every reference inside the package is rewritten to it.
 //   Ids in a document are package-local references, never identities, so two
 //   imports of the same file produce two independent sets and an import can
 //   never overwrite an existing object just because an id happens to match;
@@ -49,7 +49,7 @@ import type {
 export type TemplateIdKind = 'cat' | 'var' | 'tool';
 
 export interface TemplateImportOptions {
-    /** Fresh OCAP id factory (production: `(kind) => freshId(kind)`). */
+    /** Fresh id factory (production: `(kind) => freshId(kind)`). */
     newId: (kind: TemplateIdKind) => string;
     /**
      * Word used to mark an imported category whose name is already taken,
@@ -79,7 +79,7 @@ const DEFAULT_IMPORTED_SUFFIX = 'imported';
 /**
  * A name that is not in use yet.
  *
- * Duplicate category names are technically harmless in OCAP (ids are the
+ * Duplicate category names are technically harmless here (ids are the
  * identity, and "Copy category" already produces two categories with the same
  * name), so this is purely about the user being able to tell the imported
  * panel from the one they already had: `Research` -> `Research (imported)` ->

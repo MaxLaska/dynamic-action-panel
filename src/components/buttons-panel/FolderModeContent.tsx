@@ -13,7 +13,7 @@ import { createCategoryMenuHandler } from '@/utils/categoryMenuUtils';
 import { commitStoredCategory, findStoredCategory } from '@/utils/categoryStore';
 import { categorySortableId } from '@/utils/categoryDragItems';
 import { useConfigContext } from '@/contexts/ConfigContext';
-import { useContextHiddenCategoryIds } from '@/contexts/OCAPVisibilityContext';
+import { useContextHiddenCategoryIds } from '@/contexts/PanelVisibilityContext';
 import { t } from '@/utils/i18n';
 
 interface FolderModeContentProps {
@@ -37,7 +37,7 @@ export const FolderModeContent: React.FC<FolderModeContentProps> = ({
     const categoryDrag = useCategoryDragOptional();
     const { createCategory } = useCategoryCreation();
     const { createButton } = useButtonCreation();
-    // OCAP: in sort/edit mode a category whose own condition does not hold
+    // in sort/edit mode a category whose own condition does not hold
     // stays rendered and manageable but its tile gets a visual marker class.
     const contextHiddenCategoryIds = useContextHiddenCategoryIds();
 

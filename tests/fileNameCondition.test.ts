@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateCondition, isValidCondition } from '@/context/conditions';
 import { convertRuleKind, createDefaultRule } from '@/context/conditionTree';
-import { EMPTY_OCAP_CONTEXT, type OCAPContextSnapshot } from '@/context/OCAPContext';
+import { EMPTY_WORKSPACE_CONTEXT, type WorkspaceContextSnapshot } from '@/context/workspaceContext';
 import type { FileNameConditionOp } from '@/types/conditions';
 
 /**
@@ -10,9 +10,9 @@ import type { FileNameConditionOp } from '@/types/conditions';
  * the only name rule: "starts with" already covers matching the stem, so there
  * is no second "base name" rule to choose between.
  */
-function context(fileName: string | null): OCAPContextSnapshot {
+function context(fileName: string | null): WorkspaceContextSnapshot {
     return {
-        ...EMPTY_OCAP_CONTEXT,
+        ...EMPTY_WORKSPACE_CONTEXT,
         viewType: 'markdown',
         filePath: fileName === null ? null : `notes/${fileName}`,
         fileName,

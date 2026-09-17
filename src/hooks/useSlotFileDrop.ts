@@ -64,7 +64,7 @@ export function useSlotFileDrop() {
             const button: ButtonConfig = {
                 ...createDefaultButtonConfig(),
                 name: draft.name,
-                // OCAP stores icons as SVG markup (the icon picker resolves
+                // The plugin stores icons as SVG markup (the icon picker resolves
                 // Obsidian icon ids the same way); an unknown id simply leaves
                 // the tool without an icon instead of writing a broken one.
                 icon: getIcon(draft.iconId)?.outerHTML ?? '',

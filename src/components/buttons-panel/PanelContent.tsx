@@ -2,12 +2,12 @@ import React from 'react';
 import type { CategoryConfig } from '@/types';
 import { useConfigContext } from '@/contexts/ConfigContext';
 import { ButtonDragProvider } from '@/contexts/ButtonDragContext';
-import { useOCAPContext } from '@/hooks/useOCAPContext';
+import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
 import {
     projectCategoriesForContext,
     type VariantSelectionMap,
 } from '@/context/panelProjection';
-import { OCAPVisibilityProvider } from '@/contexts/OCAPVisibilityContext';
+import { PanelVisibilityProvider } from '@/contexts/PanelVisibilityContext';
 import {
     CategoryVariantProvider,
     selectedVariantOf,
@@ -51,7 +51,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
 
     const normalizedQuery = searchQuery?.trim().toLowerCase() ?? '';
 
-    const ocapContext = useOCAPContext();
+    const workspaceContext = useWorkspaceContext();
 
     const searchFilteredCategories = React.useMemo(() => {
         const sorted = [...categories].sort((a, b) => a.order - b.order);
@@ -138,13 +138,13 @@ export const PanelContent: React.FC<PanelContentProps> = ({
         const next: Record<string, VariantSelectionEntry> = {};
         for (const category of searchFilteredCategories) {
             if (!isDynamicCategory(category)) continue;
-            const entry = selectedVariantOf(category, variantSelection, ocapContext);
+            const entry = selectedVariantOf(category, variantSelection, workspaceContext);
             if (entry) {
                 next[category.id] = entry;
             }
         }
         return next;
-    }, [searchFilteredCategories, variantSelection, ocapContext]);
+    }, [searchFilteredCategories, variantSelection, workspaceContext]);
     normalizedSelectionRef.current = normalizedSelection;
 
     /** Flat map (categoryId -> variantId) for the projection and DnD. */
@@ -160,17 +160,17 @@ export const PanelContent: React.FC<PanelContentProps> = ({
     // their conditions are filtered out (a category also disappears when no
     // visible button remains); in edit mode everything stays rendered
     // and manageable, context-hidden elements are marked instead (see
-    // OCAPVisibilityProvider below). Identities are preserved when nothing is
+    // PanelVisibilityProvider below). Identities are preserved when nothing is
     // filtered so memoized subtrees stay stable.
     const projection = React.useMemo(
         () =>
             projectCategoriesForContext(
                 searchFilteredCategories,
-                ocapContext,
+                workspaceContext,
                 interactionMode,
                 { selectedVariants: selectedVariantIds }
             ),
-        [searchFilteredCategories, ocapContext, interactionMode, selectedVariantIds]
+        [searchFilteredCategories, workspaceContext, interactionMode, selectedVariantIds]
     );
     const filteredCategories = projection.categories;
 
@@ -226,7 +226,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
 
     return (
         <div ref={panelContentRef} className="buttons-panel-panel-content">
-            <OCAPVisibilityProvider
+            <PanelVisibilityProvider
                 hiddenButtonIds={projection.hiddenButtonIds}
                 hiddenCategoryIds={projection.hiddenCategoryIds}
                 interactionMode={interactionMode}
@@ -261,7 +261,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 {panelContent}
             </ButtonDragProvider>
             </CategoryVariantProvider>
-            </OCAPVisibilityProvider>
+            </PanelVisibilityProvider>
         </div>
     );
 };

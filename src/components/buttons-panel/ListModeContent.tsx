@@ -14,7 +14,7 @@ import { createCategoryMenuHandler } from '@/utils/categoryMenuUtils';
 import {
     useContextHiddenCategoryIds,
     useInteractionMode,
-} from '@/contexts/OCAPVisibilityContext';
+} from '@/contexts/PanelVisibilityContext';
 import { hasConditions } from '@/context/conditions';
 import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
 import { categoryLayoutIcon } from '@/utils/categoryIcon';
@@ -43,7 +43,7 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
     const categoryDrag = useCategoryDragOptional();
     const { createCategory } = useCategoryCreation();
     const { createButton } = useButtonCreation();
-    // OCAP: in sort/edit mode a category whose own condition does not hold
+    // in sort/edit mode a category whose own condition does not hold
     // stays rendered and manageable but gets a visual marker class.
     const contextHiddenCategoryIds = useContextHiddenCategoryIds();
     const interactionMode = useInteractionMode();

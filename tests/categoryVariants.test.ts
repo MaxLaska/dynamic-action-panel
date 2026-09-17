@@ -16,7 +16,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ButtonConfig, CategoryConfig, CategoryVariant } from '@/types/settings';
 import type { ButtonCondition } from '@/types/conditions';
-import type { OCAPContextSnapshot } from '@/context/OCAPContext';
+import type { WorkspaceContextSnapshot } from '@/context/workspaceContext';
 import {
     allCategoryButtons,
     composeFullVariant,
@@ -39,7 +39,7 @@ import {
     variantTriggerMatches,
 } from '@/utils/categoryVariants';
 
-function context(overrides: Partial<OCAPContextSnapshot> = {}): OCAPContextSnapshot {
+function context(overrides: Partial<WorkspaceContextSnapshot> = {}): WorkspaceContextSnapshot {
     return {
         viewType: 'markdown',
         filePath: 'notes/a.md',
@@ -49,7 +49,7 @@ function context(overrides: Partial<OCAPContextSnapshot> = {}): OCAPContextSnaps
         properties: {},
         tags: [],
         ...overrides,
-    } as OCAPContextSnapshot;
+    } as WorkspaceContextSnapshot;
 }
 
 const SOURCE: ButtonCondition = { rule: 'property', op: 'equals', key: 'type', value: 'Source' };

@@ -95,7 +95,7 @@ const SlotAddButton: React.FC<{ label: string; onClick: () => void }> = ({
  * CREATED: its `+` opens the tool modal already bound to this slot, and a
  * vault file dragged out of Obsidian's file explorer onto it becomes a tool
  * directly. Both use native HTML5 drag/click events and therefore cannot
- * interfere with OCAP's pointer-based (dnd-kit) button drag.
+ * interfere with the plugin's pointer-based (dnd-kit) button drag.
  */
 export const GridSlotCell: React.FC<GridSlotCellProps> = ({
     categoryId,

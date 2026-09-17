@@ -2,27 +2,27 @@ import { describe, expect, it } from 'vitest';
 import {
     buildContextSnapshot,
     contextSnapshotsEqual,
-    EMPTY_OCAP_CONTEXT,
+    EMPTY_WORKSPACE_CONTEXT,
     extractTagsFromCache,
-} from '@/context/OCAPContext';
+} from '@/context/workspaceContext';
 
 describe('buildContextSnapshot', () => {
     it('builds the empty context for null input', () => {
         const snapshot = buildContextSnapshot({ viewType: null, filePath: null });
-        expect(snapshot).toEqual(EMPTY_OCAP_CONTEXT);
+        expect(snapshot).toEqual(EMPTY_WORKSPACE_CONTEXT);
     });
 
     it('derives file name, base name, extension and folder from the path', () => {
         const snapshot = buildContextSnapshot({
             viewType: 'markdown',
-            filePath: 'Projects/OCAP/Notes.md',
+            filePath: 'Projects/Research/Notes.md',
         });
         expect(snapshot.viewType).toBe('markdown');
-        expect(snapshot.filePath).toBe('Projects/OCAP/Notes.md');
+        expect(snapshot.filePath).toBe('Projects/Research/Notes.md');
         expect(snapshot.fileName).toBe('Notes.md');
         expect(snapshot.fileBaseName).toBe('Notes');
         expect(snapshot.fileExtension).toBe('md');
-        expect(snapshot.folderPath).toBe('Projects/OCAP');
+        expect(snapshot.folderPath).toBe('Projects/Research');
     });
 
     it('uses an empty folder path for files in the vault root', () => {
@@ -140,7 +140,7 @@ describe('contextSnapshotsEqual', () => {
     it('treats the empty context as equal to a rebuilt empty context', () => {
         expect(
             contextSnapshotsEqual(
-                EMPTY_OCAP_CONTEXT,
+                EMPTY_WORKSPACE_CONTEXT,
                 buildContextSnapshot({ viewType: null, filePath: null })
             )
         ).toBe(true);

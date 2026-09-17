@@ -1,5 +1,5 @@
 // categoryGrid.ts
-// Pure slot logic for the OCAP palette grid.
+// Pure slot logic for the palette grid.
 //
 // Product model (see docs/ocap/DECISIONS.md):
 // - a grid category has `rows` x `columns` slots with stable identities
@@ -529,7 +529,7 @@ export function buttonsInOrder(buttons: readonly ButtonConfig[]): ButtonConfig[]
 const GRID_CELL_KEY_PATTERN = /^r(\d+)c(\d+)$/;
 
 /**
- * Named entries of OCAP's own (future) palette, namespaced: `ocap:<name>`.
+ * Named entries of the plugin's own (future) palette, namespaced: `ocap:<name>`.
  *
  * The prefix is what makes the "no CSS classes as persisted truth" rule
  * ENFORCEABLE rather than merely stated — without it a bare name like

@@ -1,5 +1,5 @@
 // settingsMigrations.ts
-// Deterministic settings migration pipeline for OCAP.
+// Deterministic settings migration pipeline.
 //
 // Loading strategy (see docs/ocap/DECISIONS.md):
 // - data without a settingsVersion field is version 0 (upstream Buttons Panel
@@ -651,7 +651,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
         if (!step) {
             // A gap in the chain is a programming error; fail safe by
             // normalizing at the current version instead of corrupting data.
-            console.error(`[OCAP] Missing settings migration step from version ${version}`);
+            console.error(`[Dynamic Action Panel] Missing settings migration step from version ${version}`);
             data = { ...normalizeSettings(data), settingsVersion: CURRENT_SETTINGS_VERSION };
             break;
         }

@@ -20,7 +20,7 @@
 // Deliberately NOT the browser File API: a file-explorer drag carries vault
 // files, not OS file handles, and `dataTransfer.files` is empty for it.
 //
-// This is separate from OCAP's internal button DnD, which is pointer-based
+// This is separate from the plugin's internal button DnD, which is pointer-based
 // (dnd-kit) and never produces HTML5 drag events. The two cannot collide.
 
 import type { App } from 'obsidian';
@@ -193,7 +193,7 @@ export function resolveDroppedVaultFiles(
  * only the drag manager and the list of available types are readable.
  *
  * An OS file drag (`Files` in the type list) is explicitly NOT accepted: those
- * are not vault files and OCAP has nothing to point a tool at.
+ * are not vault files and there is nothing to point a tool at.
  */
 export function canAcceptVaultFileDrag(
     app: App,

@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest';
 import type { ClientRect } from '@dnd-kit/core';
 import type { ButtonConfig, CategoryConfig, CategoryVariant } from '@/types/settings';
 import type { ButtonCondition } from '@/types/conditions';
-import type { OCAPContextSnapshot } from '@/context/OCAPContext';
+import type { WorkspaceContextSnapshot } from '@/context/workspaceContext';
 import {
     applyDragOverToItems,
     buildButtonDragItems,
@@ -39,7 +39,7 @@ import {
     type VariantSelectionState,
 } from '@/contexts/CategoryVariantContext';
 
-function context(overrides: Partial<OCAPContextSnapshot> = {}): OCAPContextSnapshot {
+function context(overrides: Partial<WorkspaceContextSnapshot> = {}): WorkspaceContextSnapshot {
     return {
         viewType: 'markdown',
         filePath: 'notes/a.md',
@@ -49,7 +49,7 @@ function context(overrides: Partial<OCAPContextSnapshot> = {}): OCAPContextSnaps
         properties: {},
         tags: [],
         ...overrides,
-    } as OCAPContextSnapshot;
+    } as WorkspaceContextSnapshot;
 }
 
 const IN_NOTES: ButtonCondition = { rule: 'folder', op: 'startsWith', value: 'notes' };

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { TFile } from 'obsidian';
 import type { App } from 'obsidian';
-import { OCAPContextService } from '@/context/OCAPContextService';
-import { EMPTY_OCAP_CONTEXT } from '@/context/OCAPContext';
+import { WorkspaceContextService } from '@/context/WorkspaceContextService';
+import { EMPTY_WORKSPACE_CONTEXT } from '@/context/workspaceContext';
 
 // ---------------------------------------------------------------------------
 // Minimal fake of the Obsidian event/workspace surface used by the service.
@@ -101,18 +101,18 @@ function makeFakeApp() {
 
 const PANEL_VIEW_TYPE = 'buttons-panel-view';
 
-function makeService(app: App): OCAPContextService {
-    return new OCAPContextService(app, [PANEL_VIEW_TYPE]);
+function makeService(app: App): WorkspaceContextService {
+    return new WorkspaceContextService(app, [PANEL_VIEW_TYPE]);
 }
 
 // ---------------------------------------------------------------------------
 
-describe('OCAPContextService', () => {
+describe('WorkspaceContextService', () => {
     it('starts with the empty context when no leaf is active', () => {
         const { app } = makeFakeApp();
         const service = makeService(app);
         service.start();
-        expect(service.getSnapshot()).toEqual(EMPTY_OCAP_CONTEXT);
+        expect(service.getSnapshot()).toEqual(EMPTY_WORKSPACE_CONTEXT);
         service.stop();
     });
 

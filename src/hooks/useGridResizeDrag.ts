@@ -58,7 +58,7 @@ interface DragState {
  * context: this gesture owns its pointer from down to up, needs no collision
  * detection, no droppables and no overlay — everything dnd-kit exists for.
  * Capturing also guarantees the drag survives the pointer leaving the handle
- * (which it does immediately) and that OCAP's button drag never sees the
+ * (which it does immediately) and that the plugin's button drag never sees the
  * press.
  *
  * Nothing here writes settings. The drag produces a PREVIEW; `onCommit` runs

@@ -11,13 +11,13 @@ import {
     filterCategoriesByContext,
     projectCategoriesForContext,
 } from '@/context/panelProjection';
-import { buildContextSnapshot, EMPTY_OCAP_CONTEXT } from '@/context/OCAPContext';
+import { buildContextSnapshot, EMPTY_WORKSPACE_CONTEXT } from '@/context/workspaceContext';
 import type { ButtonCondition } from '@/types/conditions';
 import type { ButtonConfig, CategoryConfig } from '@/types/settings';
 
 const markdownContext = buildContextSnapshot({
     viewType: 'markdown',
-    filePath: 'Projects/OCAP/Notes.md',
+    filePath: 'Projects/Research/Notes.md',
     cache: {
         frontmatter: {
             status: 'In Progress',
@@ -26,7 +26,7 @@ const markdownContext = buildContextSnapshot({
             empty: null,
             aliases: ['alias-a', 'alias-b'],
         },
-        tags: [{ tag: '#project/ocap' }, { tag: '#Review' }],
+        tags: [{ tag: '#project/research' }, { tag: '#Review' }],
     },
 });
 
@@ -129,14 +129,14 @@ describe('evaluateCondition – atomic rules', () => {
 
     it('viewType is false for the empty context', () => {
         expect(
-            evaluateCondition({ rule: 'viewType', value: 'markdown' }, EMPTY_OCAP_CONTEXT)
+            evaluateCondition({ rule: 'viewType', value: 'markdown' }, EMPTY_WORKSPACE_CONTEXT)
         ).toBe(false);
     });
 
     it('path equals / startsWith / contains (case-insensitive, slash-tolerant)', () => {
         expect(
             evaluateCondition(
-                { rule: 'path', op: 'equals', value: 'projects/ocap/notes.md' },
+                { rule: 'path', op: 'equals', value: 'projects/research/notes.md' },
                 markdownContext
             )
         ).toBe(true);
@@ -147,7 +147,7 @@ describe('evaluateCondition – atomic rules', () => {
             )
         ).toBe(true);
         expect(
-            evaluateCondition({ rule: 'path', op: 'contains', value: 'OCAP' }, markdownContext)
+            evaluateCondition({ rule: 'path', op: 'contains', value: 'Research' }, markdownContext)
         ).toBe(true);
         expect(
             evaluateCondition({ rule: 'path', op: 'startsWith', value: 'Papers' }, markdownContext)
@@ -156,14 +156,14 @@ describe('evaluateCondition – atomic rules', () => {
 
     it('path rules are false without a file', () => {
         expect(
-            evaluateCondition({ rule: 'path', op: 'contains', value: '' }, EMPTY_OCAP_CONTEXT)
+            evaluateCondition({ rule: 'path', op: 'contains', value: '' }, EMPTY_WORKSPACE_CONTEXT)
         ).toBe(false);
     });
 
     it('folder equals and segment-aware startsWith', () => {
         expect(
             evaluateCondition(
-                { rule: 'folder', op: 'equals', value: 'Projects/OCAP' },
+                { rule: 'folder', op: 'equals', value: 'Projects/Research' },
                 markdownContext
             )
         ).toBe(true);
@@ -185,7 +185,7 @@ describe('evaluateCondition – atomic rules', () => {
 
     it('folder rules are false without a file', () => {
         expect(
-            evaluateCondition({ rule: 'folder', op: 'startsWith', value: '' }, EMPTY_OCAP_CONTEXT)
+            evaluateCondition({ rule: 'folder', op: 'startsWith', value: '' }, EMPTY_WORKSPACE_CONTEXT)
         ).toBe(false);
     });
 
@@ -208,7 +208,7 @@ describe('evaluateCondition – atomic rules', () => {
             evaluateCondition({ rule: 'property', key: 'missing', op: 'exists' }, markdownContext)
         ).toBe(false);
         expect(
-            evaluateCondition({ rule: 'property', key: 'status', op: 'exists' }, EMPTY_OCAP_CONTEXT)
+            evaluateCondition({ rule: 'property', key: 'status', op: 'exists' }, EMPTY_WORKSPACE_CONTEXT)
         ).toBe(false);
     });
 
@@ -277,7 +277,7 @@ describe('evaluateCondition – atomic rules', () => {
         expect(evaluateCondition({ rule: 'tag', value: 'review' }, markdownContext)).toBe(true);
         expect(evaluateCondition({ rule: 'tag', value: '#Review' }, markdownContext)).toBe(true);
         expect(evaluateCondition({ rule: 'tag', value: 'project' }, markdownContext)).toBe(true);
-        expect(evaluateCondition({ rule: 'tag', value: 'project/ocap' }, markdownContext)).toBe(
+        expect(evaluateCondition({ rule: 'tag', value: 'project/research' }, markdownContext)).toBe(
             true
         );
         expect(evaluateCondition({ rule: 'tag', value: 'project/other' }, markdownContext)).toBe(
@@ -285,7 +285,7 @@ describe('evaluateCondition – atomic rules', () => {
         );
         // Prefix must be segment-aware: 'proj' is not 'project'.
         expect(evaluateCondition({ rule: 'tag', value: 'proj' }, markdownContext)).toBe(false);
-        expect(evaluateCondition({ rule: 'tag', value: 'review' }, EMPTY_OCAP_CONTEXT)).toBe(
+        expect(evaluateCondition({ rule: 'tag', value: 'review' }, EMPTY_WORKSPACE_CONTEXT)).toBe(
             false
         );
         expect(evaluateCondition({ rule: 'tag', value: '  ' }, markdownContext)).toBe(false);
@@ -342,7 +342,7 @@ describe('evaluateCondition – groups', () => {
 describe('isButtonVisibleInContext', () => {
     it('buttons without conditions are always visible (static behavior)', () => {
         expect(isButtonVisibleInContext(makeButton('b'), markdownContext)).toBe(true);
-        expect(isButtonVisibleInContext(makeButton('b'), EMPTY_OCAP_CONTEXT)).toBe(true);
+        expect(isButtonVisibleInContext(makeButton('b'), EMPTY_WORKSPACE_CONTEXT)).toBe(true);
     });
 
     it('applies valid conditions', () => {
@@ -386,7 +386,7 @@ describe('filterCategoriesByContext', () => {
         const allStatic: CategoryConfig[] = [
             { id: 'c', name: 'C', order: 0, buttons: [staticButton] },
         ];
-        expect(filterCategoriesByContext(allStatic, EMPTY_OCAP_CONTEXT)).toBe(allStatic);
+        expect(filterCategoriesByContext(allStatic, EMPTY_WORKSPACE_CONTEXT)).toBe(allStatic);
 
         // With conditions matching, category objects stay identical too.
         const result = filterCategoriesByContext(categories, markdownContext);
@@ -453,7 +453,7 @@ describe('filterCategoriesByContext', () => {
             makeCategory('b', [makeButton('other')]),
         ];
         expect(filterCategoriesByContext(cats, markdownContext)).toBe(cats);
-        expect(filterCategoriesByContext(cats, EMPTY_OCAP_CONTEXT)).toBe(cats);
+        expect(filterCategoriesByContext(cats, EMPTY_WORKSPACE_CONTEXT)).toBe(cats);
     });
 
     it('fails open for invalid category condition data', () => {
@@ -468,7 +468,7 @@ describe('filterCategoriesByContext', () => {
 describe('isCategoryVisibleInContext', () => {
     it('categories without conditions are always visible', () => {
         expect(isCategoryVisibleInContext(makeCategory('c', []), markdownContext)).toBe(true);
-        expect(isCategoryVisibleInContext(makeCategory('c', []), EMPTY_OCAP_CONTEXT)).toBe(
+        expect(isCategoryVisibleInContext(makeCategory('c', []), EMPTY_WORKSPACE_CONTEXT)).toBe(
             true
         );
     });

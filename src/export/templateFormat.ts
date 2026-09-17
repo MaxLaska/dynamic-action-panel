@@ -1,5 +1,5 @@
 // export/templateFormat.ts
-// THE definition of OCAP's portable panel/category template format.
+// THE definition of the portable panel/category template format.
 //
 // Why a format of its own instead of exporting `data.json`:
 // - `data.json` is the INTERNAL persistence shape. It carries vault-local
@@ -13,7 +13,7 @@
 //
 // Contract of the format:
 // - ids inside a document are PACKAGE-LOCAL REFERENCES, not identities. The
-//   importer mints fresh OCAP ids for everything and rewrites the references
+//   importer mints fresh ids for everything and rewrites the references
 //   (see templateImport.ts), so importing the same file twice yields two
 //   independent sets and an import can never overwrite existing objects;
 // - external targets (file paths, script names, command ids) are transported
@@ -26,7 +26,7 @@ import type { ButtonAction } from '@/types/action';
 import type { ButtonCondition } from '@/types/conditions';
 import type { GridCellStyles } from '@/types/settings';
 
-/** Format identifier every OCAP template document carries. */
+/** Format identifier every template document carries. */
 export const OCAP_TEMPLATE_FORMAT = 'ocap-template';
 
 /**
@@ -42,7 +42,7 @@ export const OCAP_TEMPLATE_FILE_EXTENSION = '.ocap.json';
 
 /** One placed tool inside a template grid/flow list. */
 export interface TemplatePlacement {
-    /** Reference into the document's own `tools` map — NOT an OCAP tool id. */
+    /** Reference into the document's own `tools` map — NOT a tool id of this vault. */
     toolId: string;
     /** Row-major slot inside the owning grid; absent on flow placements. */
     slot?: number;
@@ -102,7 +102,7 @@ export interface TemplateMeta {
     exportedAt?: string;
 }
 
-/** A complete OCAP template document. */
+/** A complete template document. */
 export interface TemplateDocument {
     format: typeof OCAP_TEMPLATE_FORMAT;
     formatVersion: number;

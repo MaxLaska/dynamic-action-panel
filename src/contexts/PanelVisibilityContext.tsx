@@ -1,4 +1,4 @@
-// OCAPVisibilityContext.tsx
+// PanelVisibilityContext.tsx
 // Distributes the sets of context-hidden button and category ids to the
 // rendering components.
 //
@@ -13,7 +13,7 @@ import type { InteractionMode } from '@/types/settings';
 
 const EMPTY_HIDDEN_IDS: ReadonlySet<string> = EMPTY_ID_SET;
 
-interface OCAPVisibilityValue {
+interface PanelVisibilityValue {
     hiddenButtonIds: ReadonlySet<string>;
     hiddenCategoryIds: ReadonlySet<string>;
     /**
@@ -25,47 +25,47 @@ interface OCAPVisibilityValue {
     interactionMode: InteractionMode;
 }
 
-const EMPTY_VISIBILITY: OCAPVisibilityValue = {
+const EMPTY_VISIBILITY: PanelVisibilityValue = {
     hiddenButtonIds: EMPTY_HIDDEN_IDS,
     hiddenCategoryIds: EMPTY_HIDDEN_IDS,
     interactionMode: 'locked',
 };
 
-const OCAPVisibilityContext = createContext<OCAPVisibilityValue>(EMPTY_VISIBILITY);
+const PanelVisibilityContext = createContext<PanelVisibilityValue>(EMPTY_VISIBILITY);
 
-interface OCAPVisibilityProviderProps {
+interface PanelVisibilityProviderProps {
     hiddenButtonIds: ReadonlySet<string>;
     hiddenCategoryIds: ReadonlySet<string>;
     interactionMode: InteractionMode;
 }
 
-export const OCAPVisibilityProvider: React.FC<
-    React.PropsWithChildren<OCAPVisibilityProviderProps>
+export const PanelVisibilityProvider: React.FC<
+    React.PropsWithChildren<PanelVisibilityProviderProps>
 > = ({ hiddenButtonIds, hiddenCategoryIds, interactionMode, children }) => {
     const value = React.useMemo(
         () => ({ hiddenButtonIds, hiddenCategoryIds, interactionMode }),
         [hiddenButtonIds, hiddenCategoryIds, interactionMode]
     );
     return (
-        <OCAPVisibilityContext.Provider value={value}>
+        <PanelVisibilityContext.Provider value={value}>
             {children}
-        </OCAPVisibilityContext.Provider>
+        </PanelVisibilityContext.Provider>
     );
 };
 
 /** Ids of buttons currently hidden by their conditions (empty set when none). */
 export function useContextHiddenButtonIds(): ReadonlySet<string> {
-    return useContext(OCAPVisibilityContext).hiddenButtonIds;
+    return useContext(PanelVisibilityContext).hiddenButtonIds;
 }
 
 /** Ids of categories whose own condition currently does not hold. */
 export function useContextHiddenCategoryIds(): ReadonlySet<string> {
-    return useContext(OCAPVisibilityContext).hiddenCategoryIds;
+    return useContext(PanelVisibilityContext).hiddenCategoryIds;
 }
 
 /** Current interaction mode ('locked' when no provider is mounted). */
 export function useInteractionMode(): InteractionMode {
-    return useContext(OCAPVisibilityContext).interactionMode;
+    return useContext(PanelVisibilityContext).interactionMode;
 }
 
 export { EMPTY_HIDDEN_IDS };

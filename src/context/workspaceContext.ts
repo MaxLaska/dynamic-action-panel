@@ -1,14 +1,14 @@
-// OCAPContext.ts
-// Immutable context snapshot for the OCAP Context Engine, plus the pure
+// workspaceContext.ts
+// Immutable context snapshot for the context engine, plus the pure
 // builder/equality logic. This module has no Obsidian runtime dependency and
-// is fully unit-testable; event wiring lives in OCAPContextService.ts.
+// is fully unit-testable; event wiring lives in WorkspaceContextService.ts.
 
 /**
- * Immutable snapshot of the workspace context relevant for OCAP conditions.
+ * Immutable snapshot of the workspace context relevant for visibility conditions.
  * All fields describe the last active CONTENT leaf (the buttons panel itself
  * and other non-content leaves never become the context).
  */
-export interface OCAPContextSnapshot {
+export interface WorkspaceContextSnapshot {
     /** View type of the active content leaf (e.g. 'markdown', 'pdf'), or null. */
     viewType: string | null;
     /** Vault-relative path of the active file, or null if the view has no file. */
@@ -44,7 +44,7 @@ const EMPTY_TAGS: readonly string[] = Object.freeze([]);
 const EMPTY_PROPERTIES: Readonly<Record<string, unknown>> = Object.freeze({});
 
 /** The empty context (no active content leaf / no file). */
-export const EMPTY_OCAP_CONTEXT: OCAPContextSnapshot = Object.freeze({
+export const EMPTY_WORKSPACE_CONTEXT: WorkspaceContextSnapshot = Object.freeze({
     viewType: null,
     filePath: null,
     fileName: null,
@@ -137,7 +137,7 @@ function extractProperties(
  * Build an immutable context snapshot from plain input data.
  * Pure function: same input yields a structurally identical snapshot.
  */
-export function buildContextSnapshot(input: ContextSnapshotInput): OCAPContextSnapshot {
+export function buildContextSnapshot(input: ContextSnapshotInput): WorkspaceContextSnapshot {
     const filePath = input.filePath && input.filePath.length > 0 ? input.filePath : null;
 
     let fileName: string | null = null;
@@ -200,8 +200,8 @@ function recordsEqual(
  * metadata changes, so identity is a reliable change signal here.
  */
 export function contextSnapshotsEqual(
-    a: OCAPContextSnapshot,
-    b: OCAPContextSnapshot
+    a: WorkspaceContextSnapshot,
+    b: WorkspaceContextSnapshot
 ): boolean {
     if (a === b) {
         return true;

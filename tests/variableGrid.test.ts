@@ -38,7 +38,7 @@ import {
     getGridSlotButtonsFromAllCategories,
     slotDroppableId,
 } from '@/utils/buttonDragItems';
-import type { OCAPContextSnapshot } from '@/context/OCAPContext';
+import type { WorkspaceContextSnapshot } from '@/context/workspaceContext';
 import { p, registryOf, stateOf, storedGrid, storedVariant, tool } from './helpers/stored';
 
 /**
@@ -115,7 +115,7 @@ function storedDynamicGrid(variants: StoredVariant[]): StoredCategory {
     return { id: 'cat', name: 'Cat', order: 0, layout: 'grid', placements: [], variants };
 }
 
-const context: OCAPContextSnapshot = {
+const context: WorkspaceContextSnapshot = {
     hasActiveFile: false,
     filePath: null,
     fileName: null,
@@ -124,7 +124,7 @@ const context: OCAPContextSnapshot = {
     frontmatter: {},
     tags: [],
     viewType: null,
-} as unknown as OCAPContextSnapshot;
+} as unknown as WorkspaceContextSnapshot;
 
 /** Slot -> button id of a resolved view, for readable assertions. */
 function layout(slots: (ButtonConfig | null)[]): (string | null)[] {

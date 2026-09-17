@@ -15,7 +15,7 @@
 
 import React, { createContext, useContext } from 'react';
 import type { CategoryConfig } from '@/types/settings';
-import type { OCAPContextSnapshot } from '@/context/OCAPContext';
+import type { WorkspaceContextSnapshot } from '@/context/workspaceContext';
 import {
     findVariant,
     getCategoryVariants,
@@ -102,7 +102,7 @@ export function useGridViewResolution(category: CategoryConfig): ResolvedGridVie
 export function selectedVariantOf(
     category: CategoryConfig,
     selection: VariantSelectionState,
-    context: OCAPContextSnapshot
+    context: WorkspaceContextSnapshot
 ): VariantSelectionEntry | null {
     if (!isDynamicCategory(category)) {
         return null;

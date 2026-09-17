@@ -78,7 +78,7 @@ export function materializeButtons(
         const definition = tools[placement.toolId];
         if (!definition) {
             console.warn(
-                `[OCAP] Placement references unknown tool "${placement.toolId}"; skipping.`
+                `[Dynamic Action Panel] Placement references unknown tool "${placement.toolId}"; skipping.`
             );
             continue;
         }

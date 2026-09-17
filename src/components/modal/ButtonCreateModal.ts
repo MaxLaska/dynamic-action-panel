@@ -46,7 +46,7 @@ export class ButtonCreateModal extends Modal {
     nameInput: NameInput | null = null;
     // Icon input component
     iconInput: IconInput | null = null;
-    // OCAP visibility conditions editor (visual builder + advanced JSON)
+    // visibility conditions editor (visual builder + advanced JSON)
     conditionsInput: ConditionEditor | null = null;
     /**
      * Grid categories: the variant the new tool is created in (the one the
@@ -151,7 +151,7 @@ export class ButtonCreateModal extends Modal {
         this.nameInput.setValue(this.tempButton.name || '');
         this.iconInput.setValue(this.tempButton.icon || '');
 
-        // OCAP: inside a grid category, contextuality is a property of the
+        // inside a grid category, contextuality is a property of the
         // VARIANT the tool is created in, not of the individual button — so
         // the per-button condition editor is replaced by a statement of where
         // it will land.
@@ -160,7 +160,7 @@ export class ButtonCreateModal extends Modal {
             return;
         }
 
-        // OCAP: visual visibility-conditions editor (validated on save)
+        // visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(container, this.tempButton.conditions);
     }
 
@@ -273,7 +273,7 @@ export class ButtonCreateModal extends Modal {
             hasError = true;
         }
 
-        // Validate the OCAP conditions input (JSON plus structural checks).
+        // Validate the visibility conditions input (JSON plus structural checks).
         const conditionsResult = this.conditionsInput?.getResult();
         if (conditionsResult && !conditionsResult.ok) {
             new Notice(conditionsResult.error);

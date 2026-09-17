@@ -40,7 +40,7 @@ export class ButtonEditModal extends Modal {
     nameInput: NameInput | null = null;
     // Icon input component
     iconInput: IconInput | null = null;
-    // OCAP visibility conditions editor (visual builder + advanced JSON)
+    // visibility conditions editor (visual builder + advanced JSON)
     conditionsInput: ConditionEditor | null = null;
 
     /**
@@ -141,7 +141,7 @@ export class ButtonEditModal extends Modal {
         this.nameInput.setValue(this.tempButton.name || '');
         this.iconInput.setValue(this.tempButton.icon || '');
 
-        // OCAP: inside a grid category the variant decides contextuality, so
+        // inside a grid category the variant decides contextuality, so
         // the per-button condition editor is replaced by the target statement.
         if (isGridCategory(this.parentCategory)) {
             const stored = findStoredCategory(this.plugin, this.parentCategory.id);
@@ -153,7 +153,7 @@ export class ButtonEditModal extends Modal {
             return;
         }
 
-        // OCAP: visual visibility-conditions editor (validated on save)
+        // visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(container, this.tempButton.conditions);
     }
 
@@ -266,7 +266,7 @@ export class ButtonEditModal extends Modal {
             hasError = true;
         }
 
-        // Validate the OCAP conditions input (JSON plus structural checks).
+        // Validate the visibility conditions input (JSON plus structural checks).
         const conditionsResult = this.conditionsInput?.getResult();
         if (conditionsResult && !conditionsResult.ok) {
             new Notice(conditionsResult.error);

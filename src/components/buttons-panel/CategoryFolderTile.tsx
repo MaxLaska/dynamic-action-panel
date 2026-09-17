@@ -5,7 +5,7 @@ import { safeSetSVG } from '@/utils/dom';
 import {
     useContextHiddenCategoryIds,
     useInteractionMode,
-} from '@/contexts/OCAPVisibilityContext';
+} from '@/contexts/PanelVisibilityContext';
 import { hasConditions } from '@/context/conditions';
 import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
 import { DYNAMIC_CATEGORY_ICON } from '@/utils/categoryIcon';

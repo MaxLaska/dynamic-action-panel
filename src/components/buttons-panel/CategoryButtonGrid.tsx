@@ -31,7 +31,7 @@ import {
     type GridResizeDirection,
     type GridResizeEdge,
 } from '@/utils/categoryVariants';
-import { useOCAPContext } from '@/hooks/useOCAPContext';
+import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
 import { useButtonCreation } from '@/hooks/useButtonCreation';
 import { useSlotFileDrop } from '@/hooks/useSlotFileDrop';
 import { gridResizeAvailability, useGridResize } from '@/hooks/useGridResize';
@@ -100,7 +100,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     // grid.
     const { manageable, selection, selectVariant } = useCategoryVariants();
     const resolution = useGridViewResolution(category);
-    const ocapContext = useOCAPContext();
+    const workspaceContext = useWorkspaceContext();
 
     // Creating a tool is a property of the CELL, not of the category: the slot
     // the user points at already says where the tool goes, so neither entry
@@ -113,9 +113,9 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     const runtimeResolution = React.useMemo(
         () =>
             isDynamic
-                ? resolveDynamicCategoryVariant(category, ocapContext)
+                ? resolveDynamicCategoryVariant(category, workspaceContext)
                 : { variant: null, reason: 'none' as const },
-        [isDynamic, category, ocapContext]
+        [isDynamic, category, workspaceContext]
     );
 
     /**

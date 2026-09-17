@@ -1,15 +1,15 @@
-// OCAPContextService.ts
-// Central reactive context store for the OCAP Context Engine.
+// WorkspaceContextService.ts
+// Central reactive context store for the context engine.
 //
 // Responsibilities:
-// - builds an initial OCAPContextSnapshot at plugin start;
+// - builds an initial WorkspaceContextSnapshot at plugin start;
 // - subscribes to the relevant Obsidian events (workspace, metadataCache,
 //   vault) and rebuilds the snapshot when they fire;
 // - only replaces the snapshot (and notifies subscribers) when the snapshot
 //   actually changed semantically (contextSnapshotsEqual), keeping React
 //   re-renders minimal;
 // - is deliberately NOT coupled to React: subscribers get a plain callback,
-//   the React side connects via useSyncExternalStore (src/hooks/useOCAPContext.ts).
+//   the React side connects via useSyncExternalStore (src/hooks/useWorkspaceContext.ts).
 //
 // Context source semantics: the context always describes the last active
 // CONTENT leaf in the main workspace area. Focusing the buttons panel itself
@@ -23,10 +23,10 @@ import type { App, EventRef, Events, WorkspaceLeaf } from 'obsidian';
 import {
     buildContextSnapshot,
     contextSnapshotsEqual,
-    EMPTY_OCAP_CONTEXT,
+    EMPTY_WORKSPACE_CONTEXT,
     type ContextFileCache,
-    type OCAPContextSnapshot,
-} from '@/context/OCAPContext';
+    type WorkspaceContextSnapshot,
+} from '@/context/workspaceContext';
 
 /** Read the file backing a (file-based) view, if any. */
 function readViewFile(view: unknown): TFile | null {
@@ -37,10 +37,10 @@ function readViewFile(view: unknown): TFile | null {
     return file instanceof TFile ? file : null;
 }
 
-export class OCAPContextService {
+export class WorkspaceContextService {
     private app: App;
     private excludedViewTypes: readonly string[];
-    private snapshot: OCAPContextSnapshot = EMPTY_OCAP_CONTEXT;
+    private snapshot: WorkspaceContextSnapshot = EMPTY_WORKSPACE_CONTEXT;
     private listeners = new Set<() => void>();
     /** Registered Obsidian event refs together with their emitters for cleanup. */
     private eventRefs: { emitter: Events; ref: EventRef }[] = [];
@@ -146,7 +146,7 @@ export class OCAPContextService {
     }
 
     /** Current immutable snapshot (referentially stable while unchanged). */
-    getSnapshot(): OCAPContextSnapshot {
+    getSnapshot(): WorkspaceContextSnapshot {
         return this.snapshot;
     }
 
@@ -198,7 +198,7 @@ export class OCAPContextService {
             try {
                 listener();
             } catch (error) {
-                console.error('[OCAP] context subscriber failed:', error);
+                console.error('[Dynamic Action Panel] context subscriber failed:', error);
             }
         }
     }

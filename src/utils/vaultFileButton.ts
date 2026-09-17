@@ -1,5 +1,5 @@
 // vaultFileButton.ts
-// Pure mapping from a vault file to the tool OCAP creates for it.
+// Pure mapping from a vault file to the tool created for it.
 //
 // This is the whole decision layer of the "drag a file from Obsidian's file
 // explorer onto an empty slot" gesture: what the tool is called, which of the
@@ -31,7 +31,7 @@ export interface VaultFileButtonDraft {
     /** Tool name: the file's basename, without folders or extension. */
     name: string;
     /**
-     * Obsidian icon id. Resolved to the SVG markup OCAP stores in
+     * Obsidian icon id. Resolved to the SVG markup stored in
      * `ButtonConfig.icon` by the caller (the icon picker does the same).
      */
     iconId: string;
@@ -76,7 +76,7 @@ export function resolveScriptName(
     return path.startsWith(prefix) ? path.slice(prefix.length) : null;
 }
 
-/** Icon id for a file OCAP opens; `file` is the neutral default. */
+/** Icon id for a file the plugin opens; `file` is the neutral default. */
 function openFileIconId(extension: string): string {
     return extension === 'md' ? 'file-text' : 'file';
 }

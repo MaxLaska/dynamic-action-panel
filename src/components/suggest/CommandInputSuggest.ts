@@ -37,7 +37,7 @@ export class CommandInputSuggest extends AbstractInputSuggest<Command> {
 
         if (!allCommands.length) {
             // Still no command list: degrade to an empty result instead of throwing.
-            console.warn('[Buttons Panel] Could not read the Obsidian command list; command suggestions are empty.');
+            console.warn('[Dynamic Action Panel] Could not read the Obsidian command list; command suggestions are empty.');
             return [];
         }
 

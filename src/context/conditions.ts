@@ -1,6 +1,6 @@
 // conditions.ts
 // Pure validation and evaluation of the declarative condition model
-// (src/types/conditions.ts) against an OCAPContextSnapshot.
+// (src/types/conditions.ts) against an WorkspaceContextSnapshot.
 //
 // Guarantees:
 // - deterministic pure functions, no exceptions for legitimate inputs;
@@ -16,7 +16,7 @@ import type {
     ConditionScalar,
 } from '@/types/conditions';
 import type { ButtonConfig, CategoryConfig } from '@/types/settings';
-import type { OCAPContextSnapshot } from '@/context/OCAPContext';
+import type { WorkspaceContextSnapshot } from '@/context/workspaceContext';
 
 /** Maximum nesting depth accepted by the validator (guards against cycles). */
 export const MAX_CONDITION_DEPTH = 32;
@@ -148,7 +148,7 @@ function tagMatches(contextTag: string, wanted: string): boolean {
     return tag === wanted || tag.startsWith(wanted + '/');
 }
 
-function evaluateRule(rule: ConditionRule, context: OCAPContextSnapshot): boolean {
+function evaluateRule(rule: ConditionRule, context: WorkspaceContextSnapshot): boolean {
     switch (rule.rule) {
         case 'viewType': {
             if (context.viewType === null) {
@@ -248,7 +248,7 @@ function evaluateRule(rule: ConditionRule, context: OCAPContextSnapshot): boolea
  */
 export function evaluateCondition(
     condition: ButtonCondition,
-    context: OCAPContextSnapshot
+    context: WorkspaceContextSnapshot
 ): boolean {
     if ('all' in condition) {
         return condition.all.every((child) => evaluateCondition(child, context));
@@ -270,7 +270,7 @@ export function evaluateCondition(
  */
 export function isButtonVisibleInContext(
     button: ButtonConfig,
-    context: OCAPContextSnapshot
+    context: WorkspaceContextSnapshot
 ): boolean {
     const conditions = button.conditions;
     if (conditions === undefined || conditions === null) {
@@ -292,7 +292,7 @@ export function isButtonVisibleInContext(
  */
 export function isCategoryVisibleInContext(
     category: CategoryConfig,
-    context: OCAPContextSnapshot
+    context: WorkspaceContextSnapshot
 ): boolean {
     const conditions = category.conditions;
     if (conditions === undefined || conditions === null) {

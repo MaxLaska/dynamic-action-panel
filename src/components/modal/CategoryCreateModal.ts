@@ -11,7 +11,7 @@ import {
 /**
  * Modal for creating a category.
  * Collects the name of the new category and hands it to the create callback.
- * OCAP: optionally sets the category's visibility conditions with the shared
+ * optionally sets the category's visibility conditions with the shared
  * visual ConditionEditor.
  */
 export class CategoryCreateModal extends Modal {
@@ -27,9 +27,9 @@ export class CategoryCreateModal extends Modal {
     newName: string;
     /** Reference to the text control of the Obsidian Setting */
     private nameInput: TextComponent | null = null;
-    /** OCAP visibility conditions editor (visual builder + advanced JSON) */
+    /** visibility conditions editor (visual builder + advanced JSON) */
     private conditionsInput: ConditionEditor | null = null;
-    /** OCAP palette: button layout of the new category */
+    /** Palette: button layout of the new category */
     private selectedLayout: CategoryLayout = DEFAULT_CATEGORY_LAYOUT;
 
     /**
@@ -84,7 +84,7 @@ export class CategoryCreateModal extends Modal {
             });
         });
 
-        // OCAP palette: button layout of the new category
+        // Palette: button layout of the new category
         new Setting(contentEl)
             .setName(t('category_layout'))
             .setDesc(t('category_layout_desc'))
@@ -98,7 +98,7 @@ export class CategoryCreateModal extends Modal {
                     });
             });
 
-        // OCAP: visual visibility-conditions editor (validated on save)
+        // visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(contentEl, undefined, {
             description: t('conditions_category_desc'),
         });
@@ -134,7 +134,7 @@ export class CategoryCreateModal extends Modal {
         // Clear the error state.
         this.nameInput?.inputEl.classList.remove('input-error');
 
-        // Validate the OCAP conditions input (visual editor or JSON).
+        // Validate the visibility conditions input (visual editor or JSON).
         const conditionsResult = this.conditionsInput?.getResult();
         if (conditionsResult && !conditionsResult.ok) {
             new Notice(conditionsResult.error);

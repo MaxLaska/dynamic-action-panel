@@ -2,7 +2,7 @@
 // THE trust boundary of the template feature.
 //
 // A template file is EXTERNAL INPUT: it may be hand-written, truncated,
-// produced by a newer OCAP, or hostile. Everything downstream of this module
+// produced by a newer build, or hostile. Everything downstream of this module
 // (templateImport.ts) works on a TemplateDocument and may assume it is
 // structurally sound, which is only true because nothing else is ever handed
 // through.
