@@ -210,5 +210,5 @@ export function buttonsInOrder(buttons: readonly ButtonConfig[]): ButtonConfig[]
     return inOrder(buttons);
 }
 
-// Layout conversion (flow <-> palette) lives in src/utils/paletteLayers.ts,
-// because converting a palette has to account for its context layers as well.
+// Layout conversion (flow <-> grid) lives in src/utils/categoryVariants.ts,
+// because converting a grid category has to account for its variants as well.

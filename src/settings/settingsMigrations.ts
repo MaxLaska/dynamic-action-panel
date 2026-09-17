@@ -15,12 +15,17 @@ import {
     ButtonConfig,
     ButtonsPanelPluginSettings,
     CategoryConfig,
-    ContextProfile,
+    CategoryVariant,
     CURRENT_SETTINGS_VERSION,
     DEFAULT_SETTINGS,
 } from '@/types/settings';
+import type { ButtonCondition } from '@/types/conditions';
 import { placeButtonsOnGrid } from '@/utils/categoryGrid';
-import { liftButtonConditionsToProfiles } from '@/utils/paletteLayers';
+import {
+    composeFallbackVariant,
+    composeFullVariant,
+    liftButtonConditions,
+} from '@/utils/categoryVariants';
 
 /** How the raw persisted data was handled by migrateSettings. */
 export type MigrationStatus =
@@ -117,19 +122,29 @@ function withNormalizedOrder(buttons: ButtonConfig[]): ButtonConfig[] {
     return buttons.map((button, index) => ({ ...button, order: index }));
 }
 
+// --- Version 2 (legacy palette context layers) --------------------------------
+//
+// Version 2 modelled a grid category as a layered palette: `buttons` was the
+// base/pinned layer and `contextProfiles` carried named alternative layers.
+// Version 3 retires that model, but the migration CHAIN still passes through
+// it, so the v2 shape lives on here as a purely internal representation.
+
+/** The persisted shape of a v2 context profile (legacy, migration-only). */
+interface LegacyContextProfile {
+    id: string;
+    name: string;
+    conditions?: ButtonCondition;
+    buttons: ButtonConfig[];
+}
+
 /**
  * 1 -> 2 for ONE grid category: lift per-button conditions into context
  * profiles.
  *
- * Version 1 let every grid button carry its own condition, which meant five
- * tools belonging to the same context needed five independent rules and two
- * unrelated context systems (button conditions and, from now on, profiles)
- * could drive the same slots. Version 2 models palette contextuality with
- * context profiles only.
- *
- * The split rule itself lives in liftButtonConditionsToProfiles
- * (src/utils/paletteLayers.ts) so the flow -> palette conversion produces
- * exactly the same shape. Nothing is dropped, and slots are preserved exactly.
+ * Version 1 let every grid button carry its own condition. Version 2 grouped
+ * buttons sharing the same valid condition into ONE profile (per-button copy
+ * dropped), kept condition-free and invalid-condition buttons in the base
+ * layer, and materialized the current arrangement first so nothing moves.
  */
 function migrateGridCategoryToLayers(
     category: Record<string, unknown>
@@ -151,14 +166,21 @@ function migrateGridCategoryToLayers(
     positioned.push(...placement.overflow.map((button) => ({ ...button })));
 
     const categoryId = typeof category['id'] === 'string' ? category['id'] : 'category';
-    const { base, profiles } = liftButtonConditionsToProfiles(positioned, categoryId);
+    const { base, groups } = liftButtonConditions(positioned);
 
-    if (profiles.length === 0) {
+    if (groups.length === 0) {
         return { ...category, buttons: withNormalizedOrder(positioned) };
     }
 
+    const profiles: LegacyContextProfile[] = groups.map((group, index) => ({
+        id: `${categoryId}-ctx-${index + 1}`,
+        name: group.name,
+        conditions: group.condition,
+        buttons: group.buttons,
+    }));
+
     const existing = Array.isArray(category['contextProfiles'])
-        ? (category['contextProfiles'] as ContextProfile[])
+        ? (category['contextProfiles'] as LegacyContextProfile[])
         : [];
 
     return {
@@ -169,10 +191,9 @@ function migrateGridCategoryToLayers(
 }
 
 /**
- * 1 -> 2: palette context layers.
- * Only `layout: 'grid'` categories are transformed; flow categories (including
- * their per-button conditions, which keep working exactly as before) and every
- * other setting are passed through untouched.
+ * 1 -> 2: palette context layers (legacy step, kept so the chain stays
+ * forward-only). Only `layout: 'grid'` categories are transformed; flow
+ * categories and every other setting are passed through untouched.
  */
 function migrateV1toV2(data: Record<string, unknown>): Record<string, unknown> {
     const categories = Array.isArray(data['categories'])
@@ -200,9 +221,120 @@ function migrateV1toV2(data: Record<string, unknown>): Record<string, unknown> {
     };
 }
 
+// --- Version 3 (dynamic category variants) ------------------------------------
+
+/**
+ * The v2 runtime only considered profiles with this exact shape; malformed
+ * entries were filtered out and never rendered. The migration mirrors that
+ * rule so a profile that was dead data in v2 cannot suddenly become an active
+ * (or always-matching) variant in v3.
+ */
+function readLegacyProfiles(category: Record<string, unknown>): LegacyContextProfile[] {
+    const raw = category['contextProfiles'];
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+    return raw.filter(
+        (profile): profile is LegacyContextProfile =>
+            typeof profile === 'object' &&
+            profile !== null &&
+            typeof (profile as LegacyContextProfile).id === 'string' &&
+            Array.isArray((profile as LegacyContextProfile).buttons)
+    );
+}
+
+/**
+ * 2 -> 3 for ONE layered grid category: compose full variants.
+ *
+ * Every v2 context profile becomes one COMPLETE variant that reproduces the
+ * old effective runtime grid of that profile: the base/pinned buttons on their
+ * exact slots plus the profile's buttons on the slots the base left free.
+ * Base copies get deterministic derived ids (`<profileId>--<buttonId>`) so
+ * every button id stays unique across variants; the profile's own buttons
+ * keep their ids (they exist in exactly one variant).
+ *
+ * - profile order -> variant priority (unchanged);
+ * - a profile's condition -> the variant's trigger;
+ * - a profile WITHOUT a condition always matched in v2, so it gets the
+ *   explicit always-true trigger `{ all: [] }` — same priority behavior,
+ *   nothing hidden;
+ * - the base-only state (what v2 rendered when no profile matched) becomes
+ *   the fallback variant "Default", so the old runtime semantics survive
+ *   exactly. Deliberate redundancy, zero data loss.
+ *
+ * A grid category without profiles stays a STATIC grid and is not touched.
+ */
+function migrateLayeredCategoryToVariants(
+    category: Record<string, unknown>
+): Record<string, unknown> {
+    const profiles = readLegacyProfiles(category);
+    if (profiles.length === 0) {
+        // No layers: a static grid. Only drop a malformed/empty
+        // contextProfiles field if one exists.
+        if (category['contextProfiles'] === undefined) {
+            return category;
+        }
+        const { contextProfiles: _dropped, ...rest } = category;
+        return rest;
+    }
+
+    const base = Array.isArray(category['buttons'])
+        ? (category['buttons'] as ButtonConfig[])
+        : [];
+    const categoryId = typeof category['id'] === 'string' ? category['id'] : 'category';
+
+    const variants: CategoryVariant[] = profiles.map((profile) =>
+        composeFullVariant(
+            base,
+            profile.buttons,
+            profile.id,
+            typeof profile.name === 'string' && profile.name.length > 0
+                ? profile.name
+                : profile.id,
+            profile.conditions ?? { all: [] }
+        )
+    );
+    if (base.length > 0) {
+        variants.push(composeFallbackVariant(base, `${categoryId}-fallback`));
+    }
+
+    const { contextProfiles: _profiles, ...rest } = category;
+    return { ...rest, buttons: [], variants };
+}
+
+/**
+ * 2 -> 3: dynamic category variants. Only grid categories carrying context
+ * profiles are transformed; static grids, flow categories and every other
+ * setting pass through untouched.
+ */
+function migrateV2toV3(data: Record<string, unknown>): Record<string, unknown> {
+    const categories = Array.isArray(data['categories'])
+        ? (data['categories'] as unknown[])
+        : [];
+
+    let anyChanged = false;
+    const migrated = categories.map((category) => {
+        if (!isRecord(category) || category['layout'] !== 'grid') {
+            return category;
+        }
+        const next = migrateLayeredCategoryToVariants(category);
+        if (next !== category) {
+            anyChanged = true;
+        }
+        return next;
+    });
+
+    return {
+        ...data,
+        categories: anyChanged ? migrated : (data['categories'] ?? categories),
+        settingsVersion: 3,
+    };
+}
+
 const MIGRATION_STEPS: readonly MigrationStep[] = [
     { from: 0, apply: migrateV0toV1 },
     { from: 1, apply: migrateV1toV2 },
+    { from: 2, apply: migrateV2toV3 },
 ];
 
 /**

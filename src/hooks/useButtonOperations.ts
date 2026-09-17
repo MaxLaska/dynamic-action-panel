@@ -5,12 +5,11 @@ import { useRefresh } from './useRefresh';
 import { ButtonDeleteModal } from '@/components/modal/ButtonDeleteModal';
 import { findStoredCategory, replaceStoredCategory } from '@/utils/categoryStore';
 import {
-    BASE_LAYER_ID,
-    addButtonToLayer,
-    findButtonLayerId,
-    isPaletteCategory,
-    removeButtonFromPalette,
-} from '@/utils/paletteLayers';
+    addButtonToGrid,
+    findButtonVariantId,
+    removeButtonFromGridCategory,
+} from '@/utils/categoryVariants';
+import { isGridCategory } from '@/utils/categoryGrid';
 import { t } from '@/utils/i18n';
 import type { ButtonConfig, CategoryConfig } from '@/types';
 
@@ -19,9 +18,9 @@ import type { ButtonConfig, CategoryConfig } from '@/types';
  *
  * 封装按钮操作（复制、删除等）的业务逻辑，提供统一的操作接口。
  *
- * OCAP: in a grid palette every operation works on the layer the tool actually
- * lives in — a copy stays in its own context profile, and a delete removes it
- * from there instead of from the base layer.
+ * OCAP: in a grid category every operation works on the variant the tool
+ * actually lives in — a copy stays in its own variant, and a delete removes
+ * it from there. Other variants are never touched.
  *
  * @returns 按钮操作函数对象
  */
@@ -45,11 +44,11 @@ export function useButtonOperations() {
                 id: Date.now().toString(),
             };
 
-            if (isPaletteCategory(stored)) {
-                const layerId = findButtonLayerId(stored, button.id) ?? BASE_LAYER_ID;
-                const next = addButtonToLayer(stored, layerId, newButton);
+            if (isGridCategory(stored)) {
+                const variantId = findButtonVariantId(stored, button.id);
+                const next = addButtonToGrid(stored, variantId, newButton);
                 if (!next) {
-                    new Notice(t('palette_layer_full'));
+                    new Notice(t('variant_grid_full'));
                     return;
                 }
                 replaceStoredCategory(plugin, next);
@@ -85,10 +84,10 @@ export function useButtonOperations() {
                 void (async () => {
                     const stored = findStoredCategory(plugin, category.id);
                     if (stored) {
-                        if (isPaletteCategory(stored)) {
+                        if (isGridCategory(stored)) {
                             replaceStoredCategory(
                                 plugin,
-                                removeButtonFromPalette(stored, button.id)
+                                removeButtonFromGridCategory(stored, button.id)
                             );
                             await plugin.saveSettings();
                             refresh();

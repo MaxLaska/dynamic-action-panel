@@ -4,11 +4,12 @@
 // Two very different questions are answered here, and only here:
 // - locked (consumption) mode: which categories and which buttons the user can
 //   actually use right now. Flow categories filter their buttons by the
-//   per-button conditions; grid palettes resolve their context layers
-//   (base/pinned + the first matching context profile).
+//   per-button conditions; dynamic grid categories resolve their variant
+//   (first matching trigger, else fallback, else hidden); static grid
+//   categories always show their one grid.
 // - sort/edit (management) mode: everything stays rendered and manageable.
 //   Categories pass through with their identity intact; the projection only
-//   reports what should be MARKED, plus the resolved palette of the layer the
+//   reports what should be MARKED, plus the resolved grid of the variant the
 //   user currently has selected.
 //
 // Keeping both in one pure function is what makes list/tabs/folder mode and the
@@ -20,20 +21,21 @@ import {
     isButtonVisibleInContext,
     isCategoryVisibleInContext,
 } from '@/context/conditions';
+import { isGridCategory } from '@/utils/categoryGrid';
 import {
-    BASE_LAYER_ID,
-    effectivePaletteButtons,
-    isPaletteCategory,
-    resolvePaletteForContext,
-    resolvePaletteLayer,
-    type PaletteLayerSelection,
-    type ResolvedPalette,
-} from '@/utils/paletteLayers';
+    effectiveGridButtons,
+    resolveGridViewForContext,
+    resolveGridViewForVariant,
+    type ResolvedGridView,
+} from '@/utils/categoryVariants';
 
 /** Shared empty set for projections that hide nothing / mark nothing. */
 export const EMPTY_ID_SET: ReadonlySet<string> = new Set<string>();
 
-const EMPTY_PALETTES: ReadonlyMap<string, ResolvedPalette> = new Map();
+const EMPTY_GRID_VIEWS: ReadonlyMap<string, ResolvedGridView> = new Map();
+
+/** Variant each dynamic category is being edited on (management modes). */
+export type VariantSelectionMap = Readonly<Record<string, string>>;
 
 export interface PanelContextProjection {
     /** Categories the active view mode should render. */
@@ -43,18 +45,18 @@ export interface PanelContextProjection {
     /** Categories to mark as context-hidden (management modes only). */
     hiddenCategoryIds: ReadonlySet<string>;
     /**
-     * Resolved palette per grid category id: the runtime resolution in locked
-     * mode, the selected layer's view in the management modes.
+     * Resolved grid per grid category id: the runtime resolution in locked
+     * mode, the selected variant's view in the management modes.
      */
-    palettes: ReadonlyMap<string, ResolvedPalette>;
+    gridViews: ReadonlyMap<string, ResolvedGridView>;
 }
 
 export interface PanelProjectionOptions {
     /**
-     * Management modes: the layer each palette is currently being edited on.
-     * Absent entries mean the base/pinned layer.
+     * Management modes: the variant each dynamic category is currently being
+     * edited on. Absent entries fall back to the first variant.
      */
-    selectedLayers?: PaletteLayerSelection;
+    selectedVariants?: VariantSelectionMap;
 }
 
 /** True when the resolved buttons are exactly the stored ones, in order. */
@@ -72,31 +74,30 @@ function sameButtons(
  * Locked-mode projection: categories reduced to what the user can actually use.
  *
  * - a flow category drops the buttons their own conditions hide;
- * - a grid palette is resolved into base/pinned + the first matching context
- *   profile; per-button conditions are NOT consulted there (see DECISIONS.md);
- * - a category disappears when its own palette-visibility condition does not
+ * - a static grid category shows its one grid (per-button conditions are NOT
+ *   consulted in a grid, see DECISIONS.md);
+ * - a dynamic grid category resolves to the first matching variant, else the
+ *   fallback, else it disappears;
+ * - a category also disappears when its own visibility condition does not
  *   hold, or when it has nothing left to offer.
- *
- * A palette carrying pinned base tools therefore never disappears just because
- * no context profile matches — that is the whole point of the base layer.
  */
 export function filterCategoriesByContext(
     categories: CategoryConfig[],
     context: OCAPContextSnapshot,
-    palettes?: Map<string, ResolvedPalette>
+    gridViews?: Map<string, ResolvedGridView>
 ): CategoryConfig[] {
     let anyChanged = false;
     const result: CategoryConfig[] = [];
 
     for (const category of categories) {
-        if (isPaletteCategory(category)) {
-            const resolved = resolvePaletteForContext(category, context);
-            palettes?.set(category.id, resolved);
+        if (isGridCategory(category)) {
+            const view = resolveGridViewForContext(category, context);
+            gridViews?.set(category.id, view);
             if (!isCategoryVisibleInContext(category, context)) {
                 anyChanged = true;
                 continue;
             }
-            const buttons = effectivePaletteButtons(resolved);
+            const buttons = effectiveGridButtons(view);
             if (buttons.length === 0) {
                 anyChanged = true;
                 continue;
@@ -134,9 +135,9 @@ export function filterCategoriesByContext(
 
 /**
  * Ids of all buttons hidden by their own conditions in the given context, for
- * the management-mode markers. Grid palettes are skipped: their contextuality
- * lives in the layer a button belongs to, not in a per-button condition, and
- * the layer selector already states which layer is on screen.
+ * the management-mode markers. Grid categories are skipped: a grid ignores
+ * per-button conditions, and the variant selector already states which grid is
+ * on screen.
  */
 export function collectContextHiddenButtonIds(
     categories: CategoryConfig[],
@@ -144,7 +145,7 @@ export function collectContextHiddenButtonIds(
 ): Set<string> {
     const hidden = new Set<string>();
     for (const category of categories) {
-        if (isPaletteCategory(category)) continue;
+        if (isGridCategory(category)) continue;
         for (const button of category.buttons) {
             if (!isButtonVisibleInContext(button, context)) {
                 hidden.add(button.id);
@@ -155,7 +156,7 @@ export function collectContextHiddenButtonIds(
 }
 
 /**
- * Ids of all categories whose own palette-visibility condition does not hold.
+ * Ids of all categories whose own visibility condition does not hold.
  * Mirrors the button marker semantics: the marker reflects the element's own
  * condition only.
  */
@@ -179,23 +180,23 @@ export function projectCategoriesForContext(
     options?: PanelProjectionOptions
 ): PanelContextProjection {
     if (interactionMode === 'locked') {
-        const palettes = new Map<string, ResolvedPalette>();
-        const filtered = filterCategoriesByContext(categories, context, palettes);
+        const gridViews = new Map<string, ResolvedGridView>();
+        const filtered = filterCategoriesByContext(categories, context, gridViews);
         return {
             categories: filtered,
             hiddenButtonIds: EMPTY_ID_SET,
             hiddenCategoryIds: EMPTY_ID_SET,
-            palettes: palettes.size === 0 ? EMPTY_PALETTES : palettes,
+            gridViews: gridViews.size === 0 ? EMPTY_GRID_VIEWS : gridViews,
         };
     }
 
-    const selectedLayers = options?.selectedLayers;
-    const palettes = new Map<string, ResolvedPalette>();
+    const selectedVariants = options?.selectedVariants;
+    const gridViews = new Map<string, ResolvedGridView>();
     for (const category of categories) {
-        if (!isPaletteCategory(category)) continue;
-        palettes.set(
+        if (!isGridCategory(category)) continue;
+        gridViews.set(
             category.id,
-            resolvePaletteLayer(category, selectedLayers?.[category.id] ?? BASE_LAYER_ID)
+            resolveGridViewForVariant(category, selectedVariants?.[category.id] ?? null)
         );
     }
 
@@ -203,6 +204,6 @@ export function projectCategoriesForContext(
         categories,
         hiddenButtonIds: collectContextHiddenButtonIds(categories, context),
         hiddenCategoryIds: collectContextHiddenCategoryIds(categories, context),
-        palettes: palettes.size === 0 ? EMPTY_PALETTES : palettes,
+        gridViews: gridViews.size === 0 ? EMPTY_GRID_VIEWS : gridViews,
     };
 }

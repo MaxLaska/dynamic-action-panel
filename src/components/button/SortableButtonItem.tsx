@@ -23,8 +23,8 @@ interface SortableButtonItemProps {
      * to preview a list reorder. Positions only change on drop.
      */
     positional?: boolean;
-    /** Palette grid: marker derived from the tool's layer (see SimpleButton). */
-    contextStatus?: ContextStatus;
+    /** Marker override; grid categories pass 'none' (see SimpleButton). */
+    contextStatus?: ContextStatus | 'none';
 }
 
 export const SortableButtonItem: React.FC<SortableButtonItemProps> = React.memo(

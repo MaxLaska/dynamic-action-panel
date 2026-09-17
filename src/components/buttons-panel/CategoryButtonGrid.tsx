@@ -14,20 +14,21 @@ import { containerDroppableId } from '@/utils/buttonDragItems';
 import { useButtonDragOptional } from '@/contexts/ButtonDragContext';
 import { ButtonDragEmptySlot } from '@/components/buttons-panel/ButtonDragEmptySlot';
 import { GridSlotCell } from '@/components/buttons-panel/GridSlotCell';
-import { PaletteLayerSelector } from '@/components/buttons-panel/PaletteLayerSelector';
+import { VariantSelector } from '@/components/buttons-panel/VariantSelector';
 import { GRID_COLUMNS, isGridCategory } from '@/utils/categoryGrid';
 import {
-    selectedLayerOf,
-    usePaletteLayers,
-    usePaletteResolution,
-} from '@/contexts/PaletteLayerContext';
-import { findContextProfile, selectActiveProfile } from '@/utils/paletteLayers';
+    useCategoryVariants,
+    useGridViewResolution,
+} from '@/contexts/CategoryVariantContext';
+import {
+    isDynamicCategory,
+    resolveDynamicCategoryVariant,
+} from '@/utils/categoryVariants';
 import { useOCAPContext } from '@/hooks/useOCAPContext';
 import type { ContextStatus } from '@/components/shared/ContextStatusBadge';
-import { t, tWithParams } from '@/utils/i18n';
 
 /**
- * Sorting strategy for the palette grid: never translate anything.
+ * Sorting strategy for the grid: never translate anything.
  * A grid is positional — a button stays on its slot until the drop actually
  * reassigns it, so the list-style "make room" animation would be a lie.
  */
@@ -60,6 +61,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
 }) => {
     const buttonDrag = useButtonDragOptional();
     const isGrid = isGridCategory(category);
+    const isDynamic = isDynamicCategory(category);
     const showDragEmptySlot =
         (buttonDrag?.isDragging ?? false) && orderedButtons.length === 0 && !isGrid;
 
@@ -80,32 +82,35 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         [setNodeRef]
     );
 
-    // --- Palette context layers -------------------------------------------
-    // The resolution decides which layer the grid shows: base/pinned plus the
-    // selected context profile in the management modes, base plus the first
-    // matching profile in locked mode.
-    const { manageable, selection, selectLayer } = usePaletteLayers();
-    const resolution = usePaletteResolution(category);
+    // --- Dynamic category variants ----------------------------------------
+    // The resolution decides which grid the category shows: the selected
+    // variant in the management modes, the first matching trigger (or the
+    // fallback) in locked mode. A static grid category always shows its one
+    // grid.
+    const { manageable, selection, selectVariant } = useCategoryVariants();
+    const resolution = useGridViewResolution(category);
     const ocapContext = useOCAPContext();
-    const selectedLayerId = selectedLayerOf(category, selection);
-    const matchingProfile = React.useMemo(
-        () => (isGrid ? selectActiveProfile(category, ocapContext) : null),
-        [isGrid, category, ocapContext]
+    const selectionEntry = isDynamic ? (selection[category.id] ?? null) : null;
+    const runtimeResolution = React.useMemo(
+        () =>
+            isDynamic
+                ? resolveDynamicCategoryVariant(category, ocapContext)
+                : { variant: null, reason: 'none' as const },
+        [isDynamic, category, ocapContext]
     );
 
     /**
      * Grid layout: slot occupancy of all GRID_SLOT_COUNT cells. During a drag
      * this comes from the live drag state so the preview is positional too;
-     * otherwise it is the resolved layer. A tool that is not part of the layer
-     * on screen simply leaves its slot empty — which is the whole point of the
-     * palette: positions never shift.
+     * otherwise it is the resolved grid. An empty slot simply stays empty —
+     * which is the whole point of the grid: positions never shift.
      */
     const gridSlots = React.useMemo(() => {
         if (!isGrid) return null;
         if (sortableEnabled && buttonDrag) {
             return buttonDrag.getGridSlotButtons(category);
         }
-        return resolution.slots.map((slot) => slot.button);
+        return resolution.slots;
     }, [isGrid, sortableEnabled, buttonDrag, category, resolution]);
 
     /** Buttons that could not be placed (corrupt data); never dropped. */
@@ -119,7 +124,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     const renderButton = (
         button: ButtonConfig,
         index: number,
-        contextStatus?: ContextStatus
+        contextStatus?: ContextStatus | 'none'
     ) =>
         sortableEnabled ? (
             <SortableButtonItem
@@ -154,62 +159,17 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         // Empty cells stay in the DOM in every mode so positions never shift;
         // only their chrome is mode-dependent.
         const showSlotOutlines = sortableEnabled || enableEditMode;
-        // The layer currently on screen: base/pinned, or a context profile
-        // (selected by the user in management modes, decided by the context in
-        // locked mode).
-        const layerIsBase = resolution.activeProfileId === null;
-        // A base tool inside a context layer is shown for orientation but
-        // belongs to the base layer, so it is locked here.
-        const lockedInLayer = (slot: number) =>
-            manageable && !layerIsBase && resolution.slots[slot]?.pinned === true;
 
         const gridClassName = [
             contentClass,
             'ocap-palette-grid',
             showSlotOutlines && 'ocap-palette-grid--managed',
-            !layerIsBase && 'ocap-palette-grid--context-layer',
         ]
             .filter(Boolean)
             .join(' ');
 
         const cells = gridSlots.map((button, slot) => {
-            const meta = resolution.slots[slot];
             if (button) {
-                const isBaseTool = layerIsBase || meta?.pinned === true;
-                const locked = lockedInLayer(slot);
-
-                // A pinned base tool inside a context layer keeps a registered
-                // (but refusing) droppable, so a drop aimed at it is rejected
-                // explicitly instead of falling through to the palette's
-                // background container.
-                if (locked) {
-                    return (
-                        <GridSlotCell
-                            key={`slot-${slot}`}
-                            categoryId={category.id}
-                            slot={slot}
-                            droppableEnabled={sortableEnabled}
-                            isDropTarget={false}
-                            showOutline={showSlotOutlines}
-                            blocked
-                            locked
-                        >
-                            <ButtonItem
-                                button={button}
-                                category={category}
-                                index={slot}
-                                displayStyle={displayStyle}
-                                enableAnimation={false}
-                                enableEditMode={false}
-                                plugin={plugin}
-                                app={app}
-                                contextStatus="persistent"
-                                layerLocked
-                            />
-                        </GridSlotCell>
-                    );
-                }
-
                 // The live drag state already shows the post-drop arrangement,
                 // so the target cell is usually filled by then — it still gets
                 // the target ring so "this is where it lands" stays explicit.
@@ -225,7 +185,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                         key={`slot-${slot}`}
                         data-slot={slot}
                     >
-                        {renderButton(button, slot, isBaseTool ? 'persistent' : 'contextual')}
+                        {renderButton(button, slot, 'none')}
                     </div>
                 );
             }
@@ -237,15 +197,13 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                     droppableEnabled={sortableEnabled}
                     isDropTarget={dropTargetSlot === slot}
                     showOutline={showSlotOutlines}
-                    blocked={meta?.blocked === true}
-                    reservedBy={meta?.reservedBy}
                 />
             );
         });
 
         const overflowSection = gridOverflow.length > 0 && (
             <div className="ocap-palette-grid-overflow">
-                {gridOverflow.map((button, index) => renderButton(button, index))}
+                {gridOverflow.map((button, index) => renderButton(button, index, 'none'))}
             </div>
         );
 
@@ -259,39 +217,25 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
             </div>
         );
 
-        // Only tools of the layer being edited are draggable; base tools shown
-        // inside a context layer are not part of its sortable set.
         const sortableIds = gridSlots
-            .map((button, slot) => (button && !lockedInLayer(slot) ? button.id : null))
+            .map((button) => button?.id ?? null)
             .filter((id): id is string => id !== null);
-
-        const selectedProfile = layerIsBase
-            ? null
-            : findContextProfile(category, resolution.activeProfileId!);
 
         return (
             <>
-                {manageable && (
-                    <>
-                        <PaletteLayerSelector
-                            category={category}
-                            selectedLayerId={selectedLayerId}
-                            matchingProfileId={matchingProfile?.id ?? null}
-                            onSelect={(layerId) => selectLayer(category.id, layerId)}
-                        />
-                        <div className="ocap-layer-hint">
-                            {layerIsBase
-                                ? t('palette_hint_base')
-                                : tWithParams('palette_hint_context', {
-                                      name: selectedProfile?.name ?? '',
-                                  })}
-                        </div>
-                    </>
+                {manageable && isDynamic && (
+                    <VariantSelector
+                        category={category}
+                        selectedVariantId={selectionEntry?.current ?? null}
+                        previousVariantId={selectionEntry?.previous ?? null}
+                        runtime={runtimeResolution}
+                        onSelect={(variantId) => selectVariant(category.id, variantId)}
+                    />
                 )}
                 {sortableEnabled ? (
                     <SortableContext
                         items={sortableIds}
-                        // A palette is positional: no sliding preview, the
+                        // A grid is positional: no sliding preview, the
                         // highlighted target slot shows where the drop lands.
                         strategy={NO_SORT_TRANSFORM}
                     >

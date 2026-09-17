@@ -185,6 +185,10 @@ Converting a category with more than 16 buttons to the grid is **refused** with 
 
 ## 2026-09-17 – A palette is a layered surface: base/pinned plus context profiles
 
+> **SUPERSEDED** by "Dynamic category variants replace the palette layer
+> model" (2026-09-17, below), together with the four layer-model decisions
+> that follow it. Kept for the history of settings version 2.
+
 **Decision:** A `layout: 'grid'` category is a layered palette.
 
 - `CategoryConfig.buttons` is the **base / pinned layer**: present in every
@@ -204,6 +208,9 @@ per-button rules, which is neither writable nor readable. A profile states the
 context once and owns the tools that belong to it.
 
 ## 2026-09-17 – Base slots are reserved in every context profile
+
+> **SUPERSEDED** — see "Dynamic category variants replace the palette layer
+> model" below. There are no pinned or reserved slots any more.
 
 **Decision:** A slot occupied by the base layer is blocked in **all** context
 profiles: it cannot be taken, overwritten or swapped from there. The reverse
@@ -225,6 +232,10 @@ user cannot predict.
 
 ## 2026-09-17 – First matching profile wins; profiles are never merged
 
+> **SUPERSEDED** in form, preserved in substance: first-match-wins,
+> no-merging and the non-fail-open rule for invalid conditions carry over
+> verbatim to variant triggers (see below).
+
 **Decision:** Context profiles are ordered, and order **is** priority: the first
 profile whose condition matches becomes active and the rest are ignored. Merging
 several matching profiles is explicitly rejected. The user reorders profiles
@@ -243,6 +254,9 @@ combination of rules. One winner keeps every filled slot attributable to exactly
 one layer, which is what makes the palette explainable at all.
 
 ## 2026-09-17 – Contextuality of a palette lives in its layers, not in its buttons
+
+> **SUPERSEDED** in form, preserved in substance: a grid still ignores
+> per-button conditions; contextuality now lives at the variant level.
 
 **Decision:** Inside a grid palette, `ButtonConfig.conditions` is **ignored at
 runtime**. Contextuality is modelled by context profiles only, so a palette
@@ -281,6 +295,9 @@ disappear because an unrelated profile did not match.
 
 ## 2026-09-17 – The selected layer is the management context
 
+> **SUPERSEDED** — the layer selector is gone; the selected VARIANT is the
+> management context now (see below).
+
 **Decision:** In sort and edit mode a palette shows a layer selector
 (`[Base / Pinned] [Type A] … [+ Context]`), and the selected layer decides what
 the grid shows, what a drag operates on and where a newly created tool lands.
@@ -317,6 +334,84 @@ policy; this is simply the first release where it is user-visible in a
 mixed-version vault.
 
 **Reason:** Version bumps are for actual data transformations, and this is one.
+
+## 2026-09-17 – SUPERSEDING DECISION: Dynamic category variants replace the palette layer model
+
+**Decision:** The version-2 model for grid categories (base/pinned layer +
+context profiles + reserved/locked slots + per-layer button ownership) is
+**retired** after a manual UX test. A grid category is now either:
+
+- **static** — one full 4×4 grid in `category.buttons`, always the same
+  tools, no context behavior; or
+- **dynamic** — one stable container holding several **complete** variants
+  (`category.variants`). Each variant is a full, independent 4×4 grid with
+  exactly one trigger, or it is the single explicit **fallback** variant.
+
+Rules, in full:
+
+- runtime picks exactly one variant: first matching trigger in array order,
+  else the fallback, else the category is hidden. Variants are never merged;
+- **no inheritance, no overrides, no pinned slots, no slot blocking, no
+  mixed ownership** inside one visible grid. If two variants agree on most
+  slots, those buttons are stored twice — deliberate redundancy; simple and
+  predictable UX beats data normalization;
+- a variant is independently editable: changing a tool in one variant can
+  never change another (duplicate regenerates every button id; no shared
+  object graphs);
+- **Duplicate Variant is the primary workflow**: copy the working variant,
+  rename it, change the trigger, adjust the few differing slots. It is
+  reachable directly from the variant selector;
+- the editor states, at all times, both the variant being EDITED (dominant
+  dropdown + trigger line) and the variant the current context resolves to
+  at RUNTIME (`Active now:`), and offers a one-click ⇄ flip between the last
+  two edited variants (session-local UI state);
+- without an explicit pick, editing preselects the runtime-active variant,
+  so switching modes never silently changes what the grid shows;
+- a switch of the active variant changes only the rendered grid content —
+  the category keeps its id, position, container and name;
+- the fallback is modelled explicitly (`fallback: true`, at most one, not
+  movable — its position never affects resolution), never as a hidden
+  always-true trigger. An always-matching *triggered* variant is expressed
+  explicitly as `{ all: [] }` and respects priority;
+- an invalid trigger does not match (unchanged non-fail-open rule: a corrupt
+  variant must not shadow the ones below it);
+- a grid (static or dynamic) ignores per-button conditions; flow categories
+  keep the Phase-3 per-button model unchanged — that dividing line stands;
+- static → dynamic conversion turns the existing grid into the first variant
+  (nothing lost); dynamic → static/flow is deliberately **not** offered in
+  this phase (it would collapse several complete grids into one);
+- flow → grid: a flow category without per-button conditions becomes a
+  static grid; one WITH per-button conditions becomes a dynamic category
+  (fallback = condition-free tools, one full variant per distinct condition);
+- drag previews and drops are computed from the drag-start baseline: a
+  release means exactly "the dragged tool lands on the release cell, an
+  occupant takes the vacated slot" — cells crossed on the way leave no trace.
+
+**Reason (why v2 was retired):** the layer model demanded too much invisible
+state — which layer is being edited, which layer owns a button, where to park
+tools between layers, which slots other layers block. It scaled mentally
+badly. Full variants make every question answerable by looking at the screen.
+
+## 2026-09-17 – Dynamic category variants bump the settings version to 3
+
+**Decision:** `CURRENT_SETTINGS_VERSION = 3`, forward-only step `2 → 3` (the
+`1 → 2` step is kept verbatim as internal legacy code so the chain still
+carries v0/v1/v2 documents). Every v2 context profile becomes one COMPLETE
+variant reproducing the old effective runtime grid (base + profile on the
+slots the base left free); the base-only state becomes the fallback variant
+`Default`; profile order becomes priority; a conditionless profile gets the
+explicit `{ all: [] }` trigger. Base copies get deterministic derived ids
+(`<profileId>--<buttonId>`); nothing depends on a clock or randomness, and
+the step is idempotent. Grid categories without profiles stay static;
+malformed profile entries (dead data in v2) are skipped, mirroring the old
+runtime filter. Flow categories pass through untouched.
+
+**Consequence, accepted:** the migration duplicates base tools into every
+variant (redundancy by design), and a v3 document opened by a pre-v3 build
+shows a dynamic category as an empty grid.
+
+**Reason:** A real semantic transformation of stored data; the old runtime
+behavior is preserved exactly, with zero data loss.
 
 ## Open decisions
 

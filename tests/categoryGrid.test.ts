@@ -18,9 +18,9 @@ import {
 } from '@/utils/categoryGrid';
 import {
     applyCategoryLayout,
-    convertCategoryToFlow,
     convertCategoryToGrid,
-} from '@/utils/paletteLayers';
+    convertStaticGridToFlow,
+} from '@/utils/categoryVariants';
 
 function button(id: string, order: number, slot?: number): ButtonConfig {
     const b: ButtonConfig = { id, name: id, actions: [], order };
@@ -317,8 +317,10 @@ describe('convertCategoryToGrid', () => {
         const result = convertCategoryToGrid(category(buttons));
 
         expect(result.ok).toBe(false);
-        if (result.ok) return;
-        expect(result.reason).toBe('too_many_buttons');
+        if (result.ok || result.reason !== 'too_many_buttons') {
+            expect.fail('expected a too_many_buttons refusal');
+            return;
+        }
         expect(result.buttonCount).toBe(17);
         expect(result.slotCount).toBe(16);
     });
@@ -336,9 +338,9 @@ describe('convertCategoryToGrid', () => {
         expect(original.layout).toBeUndefined();
     });
 
-    it('lifts a per-button condition into a context profile, keeping every other field', () => {
-        // A palette models contextuality through its layers, so the condition
-        // moves to a profile instead of staying (inert) on the button.
+    it('lifts a per-button condition into a variant, keeping every other field', () => {
+        // A grid models contextuality through variants, so the condition
+        // becomes a variant trigger instead of staying (inert) on the button.
         const rich: ButtonConfig = {
             id: 'x',
             name: 'X',
@@ -354,19 +356,21 @@ describe('convertCategoryToGrid', () => {
         if (!result.ok) return;
         expect(result.category.buttons).toEqual([]);
 
-        const profile = result.category.contextProfiles![0]!;
-        expect(profile.conditions).toEqual({ rule: 'viewType', value: 'markdown' });
-        expect(profile.name).toBe('markdown');
-        expect(profile.buttons[0]).toMatchObject({
+        const variant = result.category.variants![0]!;
+        expect(variant.trigger).toEqual({ rule: 'viewType', value: 'markdown' });
+        expect(variant.name).toBe('markdown');
+        expect(variant.buttons[0]).toMatchObject({
             id: 'x',
             icon: 'star',
             customCss: 'color: red',
             slot: 0,
         });
-        expect(profile.buttons[0]!.conditions).toBeUndefined();
+        expect(variant.buttons[0]!.conditions).toBeUndefined();
+        // No condition-free tools, so no fallback variant is invented.
+        expect(result.category.variants!.some((v) => v.fallback === true)).toBe(false);
     });
 
-    it('keeps a conditionless button on the base layer', () => {
+    it('keeps a conditionless category static (no variants)', () => {
         const result = convertCategoryToGrid(category([button('a', 0), button('b', 1)]));
         expect(result.ok).toBe(true);
         if (!result.ok) return;
@@ -374,17 +378,38 @@ describe('convertCategoryToGrid', () => {
             ['a', 0],
             ['b', 1],
         ]);
-        expect(result.category.contextProfiles).toBeUndefined();
+        expect(result.category.variants).toBeUndefined();
+    });
+
+    it('mixed conditions become a dynamic category with a Default fallback', () => {
+        const conditional: ButtonConfig = {
+            ...button('cond', 1),
+            conditions: { rule: 'viewType', value: 'markdown' },
+        };
+        const result = convertCategoryToGrid(category([button('home', 0), conditional]));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.category.buttons).toEqual([]);
+        const variants = result.category.variants!;
+        expect(variants).toHaveLength(2);
+        // Triggered variant = full grid: base copy plus the conditional tool.
+        expect(variants[0]!.buttons.map((b) => b.slot).sort()).toEqual([0, 1]);
+        expect(variants[0]!.trigger).toEqual({ rule: 'viewType', value: 'markdown' });
+        // Fallback = the condition-free tools only.
+        expect(variants[1]!.fallback).toBe(true);
+        expect(variants[1]!.name).toBe('Default');
+        expect(variants[1]!.buttons.map((b) => b.id)).toEqual(['home']);
     });
 });
 
-describe('convertCategoryToFlow', () => {
+describe('convertStaticGridToFlow', () => {
     it('keeps the spatial reading order and drops the slots', () => {
         const grid = category(
             [button('c', 0, 9), button('a', 1, 1), button('b', 2, 4)],
             'grid'
         );
-        const flow = convertCategoryToFlow(grid);
+        const flow = convertStaticGridToFlow(grid);
 
         expect(flow.layout).toBe('flow');
         expect(flow.buttons.map((b) => b.id)).toEqual(['a', 'b', 'c']);
@@ -395,7 +420,7 @@ describe('convertCategoryToFlow', () => {
 
     it('loses no button, including overflow', () => {
         const buttons = Array.from({ length: 18 }, (_, i) => button(`b${i}`, i, i < 16 ? i : undefined));
-        const flow = convertCategoryToFlow(category(buttons, 'grid'));
+        const flow = convertStaticGridToFlow(category(buttons, 'grid'));
         expect(flow.buttons).toHaveLength(18);
     });
 });
@@ -437,5 +462,19 @@ describe('applyCategoryLayout', () => {
         const big = category(Array.from({ length: 20 }, (_, i) => button(`b${i}`, i)));
         const result = applyCategoryLayout(big, 'grid');
         expect(result.ok).toBe(false);
+    });
+
+    it('refuses to flatten a dynamic category into a flow list', () => {
+        const dynamic: CategoryConfig = {
+            ...category([], 'grid'),
+            variants: [
+                { id: 'v1', name: 'Source', trigger: { all: [] }, buttons: [button('a', 0, 0)] },
+                { id: 'v2', name: 'Topic', trigger: { all: [] }, buttons: [button('b', 0, 0)] },
+            ],
+        };
+        const result = applyCategoryLayout(dynamic, 'flow');
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.reason).toBe('dynamic_category');
     });
 });

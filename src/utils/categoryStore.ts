@@ -9,7 +9,7 @@
 
 import type { ButtonConfig, CategoryConfig } from '@/types/settings';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
-import { getContextProfiles } from '@/utils/paletteLayers';
+import { getCategoryVariants, isDynamicCategory } from '@/utils/categoryVariants';
 
 /** The persisted category with this id, or null when it no longer exists. */
 export function findStoredCategory(
@@ -54,15 +54,14 @@ function copyButtons(buttons: readonly ButtonConfig[]): ButtonConfig[] {
 
 /**
  * Deep copy of a category for the "duplicate category" command.
- * Every layer of a palette is copied — base buttons AND the buttons of every
- * context profile — with fresh ids, so the copy is fully independent of its
- * source. Copying only `buttons` would silently lose every contextual tool.
+ * Every variant of a dynamic category is copied — with fresh variant and
+ * button ids — so the copy is fully independent of its source. Copying only
+ * `buttons` would silently lose every variant's tools.
  */
 export function duplicateCategoryConfig(
     category: CategoryConfig,
     order: number
 ): CategoryConfig {
-    const profiles = getContextProfiles(category);
     const copy: CategoryConfig = {
         ...category,
         id: freshId(),
@@ -70,16 +69,16 @@ export function duplicateCategoryConfig(
         order,
         buttons: copyButtons(category.buttons),
     };
-    if (profiles.length === 0) {
-        delete copy.contextProfiles;
+    if (!isDynamicCategory(category)) {
+        delete copy.variants;
         return copy;
     }
     return {
         ...copy,
-        contextProfiles: profiles.map((profile) => ({
-            ...profile,
+        variants: getCategoryVariants(category).map((variant) => ({
+            ...variant,
             id: freshId(),
-            buttons: copyButtons(profile.buttons),
+            buttons: copyButtons(variant.buttons),
         })),
     };
 }

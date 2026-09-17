@@ -1,24 +1,21 @@
-// Slot stability under dynamic visibility.
+// Slot stability and category visibility under dynamic variants.
 //
-// This is the load-bearing product guarantee of the palette: a tool that is
-// not part of the layer resolved for the current context leaves its slot
-// EMPTY, and every other tool stays on exactly the slot it had. These tests
-// drive the real projection (projectCategoriesForContext) and the real
-// placement (placeButtonsOnGrid) together, because that pair is what the
-// renderer actually uses.
+// This is the load-bearing product guarantee of the grid: a slot that is
+// empty in the active variant stays EMPTY, and every tool sits on exactly the
+// slot its variant stores. These tests drive the real projection
+// (projectCategoriesForContext) and the real placement (placeButtonsOnGrid)
+// together, because that pair is what the renderer actually uses.
 //
-// Since version 2 a palette expresses contextuality through its context
-// profiles, not through per-button conditions — the guarantee is unchanged,
-// the mechanism is the layer.
+// Since version 3 a grid category is either STATIC (one grid) or DYNAMIC
+// (complete variants, first matching trigger wins, explicit fallback).
 
 import { describe, expect, it } from 'vitest';
-import type { ButtonConfig, CategoryConfig, ContextProfile } from '@/types/settings';
+import type { ButtonConfig, CategoryConfig, CategoryVariant } from '@/types/settings';
 import type { ButtonCondition } from '@/types/conditions';
 import type { OCAPContextSnapshot } from '@/context/OCAPContext';
 import { hasConditions } from '@/context/conditions';
 import { projectCategoriesForContext } from '@/context/panelProjection';
 import { placeButtonsOnGrid } from '@/utils/categoryGrid';
-import { BASE_LAYER_ID } from '@/utils/paletteLayers';
 
 function context(overrides: Partial<OCAPContextSnapshot> = {}): OCAPContextSnapshot {
     return {
@@ -33,98 +30,119 @@ function context(overrides: Partial<OCAPContextSnapshot> = {}): OCAPContextSnaps
     } as OCAPContextSnapshot;
 }
 
-function button(
-    id: string,
-    order: number,
-    slot: number,
-    conditions?: ButtonCondition
-): ButtonConfig {
-    const b: ButtonConfig = { id, name: id, actions: [], order, slot };
-    if (conditions) b.conditions = conditions;
-    return b;
+function button(id: string, order: number, slot: number): ButtonConfig {
+    return { id, name: id, actions: [], order, slot };
 }
 
 const MARKDOWN_ONLY: ButtonCondition = { rule: 'viewType', value: 'markdown' };
 const PDF_ONLY: ButtonCondition = { rule: 'viewType', value: 'pdf' };
 
-function profile(
+function variant(
     id: string,
-    conditions: ButtonCondition | undefined,
-    buttons: ButtonConfig[]
-): ContextProfile {
-    const p: ContextProfile = { id, name: id, buttons };
-    if (conditions) p.conditions = conditions;
-    return p;
+    trigger: ButtonCondition | undefined,
+    buttons: ButtonConfig[],
+    fallback = false
+): CategoryVariant {
+    const v: CategoryVariant = { id, name: id, buttons };
+    if (fallback) v.fallback = true;
+    else if (trigger) v.trigger = trigger;
+    return v;
 }
 
-function gridCategory(
-    buttons: ButtonConfig[],
-    conditions?: ButtonCondition,
-    contextProfiles?: ContextProfile[]
+function dynamicCategory(
+    variants: CategoryVariant[],
+    conditions?: ButtonCondition
 ): CategoryConfig {
     const c: CategoryConfig = {
-        id: 'palette',
-        name: 'Palette',
+        id: 'grid',
+        name: 'Grid',
         order: 0,
-        buttons,
+        buttons: [],
         layout: 'grid',
+        variants,
     };
     if (conditions) c.conditions = conditions;
-    if (contextProfiles) c.contextProfiles = contextProfiles;
+    return c;
+}
+
+function staticGrid(buttons: ButtonConfig[], conditions?: ButtonCondition): CategoryConfig {
+    const c: CategoryConfig = { id: 'grid', name: 'Grid', order: 0, buttons, layout: 'grid' };
+    if (conditions) c.conditions = conditions;
     return c;
 }
 
 /** Slot ids as the renderer would see them for a given projection. */
-function renderedSlots(categories: CategoryConfig[], categoryId = 'palette'): (string | null)[] {
+function renderedSlots(categories: CategoryConfig[], categoryId = 'grid'): (string | null)[] {
     const category = categories.find((c) => c.id === categoryId);
     if (!category) return [];
     return placeButtonsOnGrid(category.buttons).slots.map((b) => b?.id ?? null);
 }
 
-describe('Case A: pinned base tools plus one context profile', () => {
-    // Base holds slots 0 and 2; the profile contributes slot 1.
-    const category = gridCategory(
-        [button('static-1', 0, 0), button('static-2', 1, 2)],
-        undefined,
-        [profile('md', MARKDOWN_ONLY, [button('dynamic', 0, 1)])]
-    );
+describe('Case A: static grid category', () => {
+    const category = staticGrid([button('a', 0, 0), button('b', 1, 2)]);
 
-    it('shows all three when the profile matches', () => {
+    it('always shows the same grid, whatever the context', () => {
+        for (const view of ['markdown', 'pdf', 'canvas']) {
+            const projection = projectCategoriesForContext(
+                [category],
+                context({ viewType: view }),
+                'locked'
+            );
+            expect(renderedSlots(projection.categories).slice(0, 3)).toEqual([
+                'a',
+                null,
+                'b',
+            ]);
+        }
+    });
+
+    it('preserves identity when nothing changes', () => {
         const projection = projectCategoriesForContext([category], context(), 'locked');
-        expect(renderedSlots(projection.categories).slice(0, 3)).toEqual([
-            'static-1',
-            'dynamic',
-            'static-2',
+        expect(projection.categories[0]).toBe(category);
+    });
+});
+
+describe('Case B: dynamic category runtime', () => {
+    const category = dynamicCategory([
+        variant('md', MARKDOWN_ONLY, [button('md-1', 0, 0), button('md-2', 1, 3)]),
+        variant('pdf', PDF_ONLY, [button('pdf-1', 0, 0), button('pdf-2', 1, 5)]),
+        variant('default', undefined, [button('home', 0, 0)], true),
+    ]);
+
+    it('renders the first matching variant as the full grid', () => {
+        const projection = projectCategoriesForContext([category], context(), 'locked');
+        expect(renderedSlots(projection.categories).slice(0, 6)).toEqual([
+            'md-1', null, null, 'md-2', null, null,
         ]);
     });
 
-    it('leaves the contextual slot EMPTY when no profile matches', () => {
-        const projection = projectCategoriesForContext(
-            [category],
-            context({ viewType: 'pdf' }),
-            'locked'
-        );
-        expect(renderedSlots(projection.categories).slice(0, 3)).toEqual([
-            'static-1',
-            null,
-            'static-2',
-        ]);
-    });
-
-    it('does not move the pinned neighbours when the profile stops matching', () => {
-        const visible = renderedSlots(
+    it('the same slot holds a different tool per variant, positions stable', () => {
+        const md = renderedSlots(
             projectCategoriesForContext([category], context(), 'locked').categories
         );
-        const hidden = renderedSlots(
+        const pdf = renderedSlots(
             projectCategoriesForContext([category], context({ viewType: 'pdf' }), 'locked')
                 .categories
         );
-
-        expect(hidden.indexOf('static-1')).toBe(visible.indexOf('static-1'));
-        expect(hidden.indexOf('static-2')).toBe(visible.indexOf('static-2'));
+        expect(md[0]).toBe('md-1');
+        expect(pdf[0]).toBe('pdf-1');
+        expect(pdf[5]).toBe('pdf-2');
+        expect(pdf[3]).toBeNull();
+        expect(md).toHaveLength(16);
+        expect(pdf).toHaveLength(16);
     });
 
-    it('restores the tool to its exact original slot when the context returns', () => {
+    it('falls back to the fallback grid when nothing matches', () => {
+        const projection = projectCategoriesForContext(
+            [category],
+            context({ viewType: 'canvas' }),
+            'locked'
+        );
+        expect(renderedSlots(projection.categories).slice(0, 2)).toEqual(['home', null]);
+        expect(projection.gridViews.get('grid')!.reason).toBe('fallback');
+    });
+
+    it('switching back restores the exact original grid', () => {
         const before = renderedSlots(
             projectCategoriesForContext([category], context(), 'locked').categories
         );
@@ -132,165 +150,94 @@ describe('Case A: pinned base tools plus one context profile', () => {
         const after = renderedSlots(
             projectCategoriesForContext([category], context(), 'locked').categories
         );
-
         expect(after).toEqual(before);
-        expect(after.indexOf('dynamic')).toBe(1);
     });
 
-    it('keeps the grid at 16 cells regardless of which profile matches', () => {
-        for (const view of ['markdown', 'pdf', 'canvas']) {
-            const projection = projectCategoriesForContext(
-                [category],
-                context({ viewType: view }),
-                'locked'
-            );
-            expect(renderedSlots(projection.categories)).toHaveLength(16);
-        }
-    });
-
-    it('keeps holes stable across two competing profiles', () => {
-        const mixed = gridCategory(
-            [button('a', 0, 0), button('b', 1, 2), button('c', 2, 4)],
-            undefined,
-            [
-                profile('md', MARKDOWN_ONLY, [button('md', 0, 1)]),
-                profile('pdf', PDF_ONLY, [button('pdf', 0, 3)]),
-            ]
+    it('hides the category when nothing matches and no fallback exists', () => {
+        const noFallback = dynamicCategory([
+            variant('md', MARKDOWN_ONLY, [button('md-1', 0, 0)]),
+        ]);
+        const projection = projectCategoriesForContext(
+            [noFallback],
+            context({ viewType: 'pdf' }),
+            'locked'
         );
-
-        expect(
-            renderedSlots(
-                projectCategoriesForContext([mixed], context(), 'locked').categories
-            ).slice(0, 5)
-        ).toEqual(['a', 'md', 'b', null, 'c']);
-
-        expect(
-            renderedSlots(
-                projectCategoriesForContext([mixed], context({ viewType: 'pdf' }), 'locked')
-                    .categories
-            ).slice(0, 5)
-        ).toEqual(['a', null, 'b', 'pdf', 'c']);
+        expect(projection.categories).toEqual([]);
+        expect(projection.gridViews.get('grid')!.reason).toBe('none');
     });
 });
 
-describe('Case B: palette visibility condition', () => {
-    it('removes the whole palette in locked mode when its rule fails', () => {
-        const category = gridCategory([button('a', 0, 0)], PDF_ONLY);
+describe('Case C: category visibility condition', () => {
+    it('removes the whole category in locked mode when its rule fails', () => {
+        const category = staticGrid([button('a', 0, 0)], PDF_ONLY);
         const projection = projectCategoriesForContext([category], context(), 'locked');
         expect(projection.categories).toEqual([]);
     });
 
-    it('renders the palette when its rule matches', () => {
-        const category = gridCategory([button('a', 0, 0)], MARKDOWN_ONLY);
-        const projection = projectCategoriesForContext([category], context(), 'locked');
-        expect(projection.categories).toHaveLength(1);
-        expect(renderedSlots(projection.categories)[0]).toBe('a');
-    });
-
-    it('keeps a palette with pinned base tools visible when NO profile matches', () => {
-        // The core §10 guarantee: profiles decide the contextual slots, never
-        // whether the palette itself exists.
-        const category = gridCategory([button('home', 0, 0)], undefined, [
-            profile('pdf', PDF_ONLY, [button('pdf-tool', 0, 1)]),
-        ]);
-        const projection = projectCategoriesForContext([category], context(), 'locked');
-        expect(projection.categories).toHaveLength(1);
-        expect(renderedSlots(projection.categories).slice(0, 2)).toEqual(['home', null]);
-    });
-
-    it('hides a palette that has nothing at all to offer right now', () => {
-        const category = gridCategory([], undefined, [
-            profile('pdf', PDF_ONLY, [button('pdf-tool', 0, 1)]),
-        ]);
-        expect(
-            projectCategoriesForContext([category], context(), 'locked').categories
-        ).toEqual([]);
-    });
-});
-
-describe('Case C: palette condition plus context profiles', () => {
-    const category = gridCategory([button('always', 0, 0)], MARKDOWN_ONLY, [
-        profile('md', MARKDOWN_ONLY, [button('md-only', 0, 2)]),
-        profile('pdf', PDF_ONLY, [button('pdf-only', 0, 3)]),
-    ]);
-
-    it('applies the first matching profile inside a visible palette', () => {
-        const projection = projectCategoriesForContext([category], context(), 'locked');
-        expect(renderedSlots(projection.categories).slice(0, 4)).toEqual([
-            'always',
-            null,
-            'md-only',
-            null,
-        ]);
-    });
-
-    it('drops everything when the palette rule fails, whatever the profiles say', () => {
-        const projection = projectCategoriesForContext(
-            [category],
-            context({ viewType: 'pdf' }),
-            'locked'
+    it('hides a dynamic category whose own rule fails even when a variant matches', () => {
+        const category = dynamicCategory(
+            [variant('md', MARKDOWN_ONLY, [button('a', 0, 0)])],
+            PDF_ONLY
         );
+        const projection = projectCategoriesForContext([category], context(), 'locked');
+        expect(projection.categories).toEqual([]);
+    });
+
+    it('hides a dynamic category whose active variant is empty', () => {
+        const category = dynamicCategory([variant('md', MARKDOWN_ONLY, [])]);
+        const projection = projectCategoriesForContext([category], context(), 'locked');
         expect(projection.categories).toEqual([]);
     });
 });
 
 describe('management modes keep the full configuration', () => {
-    const category = gridCategory(
-        [button('static-1', 0, 0), button('static-2', 1, 2)],
-        undefined,
-        [profile('pdf', PDF_ONLY, [button('dynamic', 0, 1)])]
-    );
+    const category = dynamicCategory([
+        variant('md', MARKDOWN_ONLY, [button('md-1', 0, 0)]),
+        variant('pdf', PDF_ONLY, [button('pdf-1', 0, 1)]),
+    ]);
 
     for (const mode of ['sort', 'edit'] as const) {
-        it(`${mode} mode renders the base layer by default`, () => {
+        it(`${mode} mode renders the first variant when nothing is selected`, () => {
             const projection = projectCategoriesForContext([category], context(), mode);
 
             expect(projection.categories).toHaveLength(1);
             // Identity is preserved: management modes never hand out copies.
             expect(projection.categories[0]).toBe(category);
-            const palette = projection.palettes.get('palette')!;
-            expect(palette.activeProfileId).toBeNull();
-            expect(palette.slots.map((s) => s.button?.id ?? null).slice(0, 3)).toEqual([
-                'static-1',
-                null,
-                'static-2',
-            ]);
+            const view = projection.gridViews.get('grid')!;
+            expect(view.reason).toBe('selected');
+            expect(view.variantId).toBe('md');
+            expect(view.slots[0]?.id).toBe('md-1');
         });
 
-        it(`${mode} mode shows the selected profile on top of the pinned base`, () => {
+        it(`${mode} mode shows the SELECTED variant, whatever the context`, () => {
             const projection = projectCategoriesForContext([category], context(), mode, {
-                selectedLayers: { palette: 'pdf' },
+                selectedVariants: { grid: 'pdf' },
             });
-            const palette = projection.palettes.get('palette')!;
-            expect(palette.activeProfileId).toBe('pdf');
-            expect(palette.slots.map((s) => s.button?.id ?? null).slice(0, 3)).toEqual([
-                'static-1',
-                'dynamic',
-                'static-2',
-            ]);
-            expect(palette.slots[0]!.pinned).toBe(true);
-            expect(palette.slots[1]!.pinned).toBe(false);
+            const view = projection.gridViews.get('grid')!;
+            expect(view.variantId).toBe('pdf');
+            expect(view.slots[1]?.id).toBe('pdf-1');
+            expect(view.slots[0]).toBeNull();
         });
 
-        it(`${mode} mode does not mark palette tools via button conditions`, () => {
+        it(`${mode} mode does not mark grid tools via button conditions`, () => {
             expect([
                 ...projectCategoriesForContext([category], context(), mode).hiddenButtonIds,
             ]).toEqual([]);
         });
 
-        it(`${mode} mode keeps a palette with a failing visibility rule manageable`, () => {
-            const conditioned = gridCategory([button('a', 0, 0)], PDF_ONLY);
+        it(`${mode} mode keeps a category with a failing visibility rule manageable`, () => {
+            const conditioned = staticGrid([button('a', 0, 0)], PDF_ONLY);
             const projection = projectCategoriesForContext([conditioned], context(), mode);
 
             expect(projection.categories).toHaveLength(1);
-            expect([...projection.hiddenCategoryIds]).toEqual(['palette']);
+            expect([...projection.hiddenCategoryIds]).toEqual(['grid']);
         });
 
-        it(`${mode} mode falls back to the base layer for an unknown selection`, () => {
+        it(`${mode} mode falls back to the first variant for an unknown selection`, () => {
             const projection = projectCategoriesForContext([category], context(), mode, {
-                selectedLayers: { palette: 'deleted-profile' },
+                selectedVariants: { grid: 'deleted-variant' },
             });
-            expect(projection.palettes.get('palette')!.layerId).toBe(BASE_LAYER_ID);
+            expect(projection.gridViews.get('grid')!.variantId).toBe('md');
         });
     }
 });
@@ -298,12 +245,11 @@ describe('management modes keep the full configuration', () => {
 describe('hasConditions marker semantics', () => {
     it('reports persistent for an element without conditions', () => {
         expect(hasConditions(button('a', 0, 0))).toBe(false);
-        expect(hasConditions(gridCategory([]))).toBe(false);
+        expect(hasConditions(staticGrid([]))).toBe(false);
     });
 
     it('reports contextual for an element with conditions', () => {
-        expect(hasConditions(button('a', 0, 0, MARKDOWN_ONLY))).toBe(true);
-        expect(hasConditions(gridCategory([], MARKDOWN_ONLY))).toBe(true);
+        expect(hasConditions(staticGrid([], MARKDOWN_ONLY))).toBe(true);
     });
 
     it('reports contextual for configured-but-invalid conditions', () => {
@@ -318,7 +264,7 @@ describe('hasConditions marker semantics', () => {
     });
 });
 
-describe('legacy flow categories are untouched by the palette', () => {
+describe('legacy flow categories are untouched by the grid model', () => {
     const legacy: CategoryConfig = {
         id: 'legacy',
         name: 'Legacy',
@@ -354,11 +300,10 @@ describe('legacy flow categories are untouched by the palette', () => {
 
 describe('serialization round-trip keeps slots', () => {
     it('reload reproduces exactly the same grid', () => {
-        const category = gridCategory(
-            [button('a', 0, 0), button('b', 1, 7)],
-            undefined,
-            [profile('md', MARKDOWN_ONLY, [button('c', 0, 15)])]
-        );
+        const category = dynamicCategory([
+            variant('md', MARKDOWN_ONLY, [button('a', 0, 0), button('b', 1, 15)]),
+            variant('default', undefined, [button('home', 0, 7)], true),
+        ]);
 
         const before = renderedSlots(
             projectCategoriesForContext([category], context(), 'locked').categories
@@ -371,14 +316,14 @@ describe('serialization round-trip keeps slots', () => {
             )
         ).toEqual(before);
         expect(reloaded.layout).toBe('grid');
-        expect(reloaded.buttons.map((b) => b.slot)).toEqual([0, 7]);
-        expect(reloaded.contextProfiles![0]!.buttons[0]!.slot).toBe(15);
+        expect(reloaded.variants![0]!.buttons.map((b) => b.slot)).toEqual([0, 15]);
     });
 
-    it('carries no functions, so the whole palette stays JSON-serializable', () => {
-        const category = gridCategory([button('a', 0, 0)], MARKDOWN_ONLY, [
-            profile('md', MARKDOWN_ONLY, [button('c', 0, 15)]),
-        ]);
+    it('carries no functions, so the whole category stays JSON-serializable', () => {
+        const category = dynamicCategory(
+            [variant('md', MARKDOWN_ONLY, [button('a', 0, 0)])],
+            MARKDOWN_ONLY
+        );
         expect(JSON.parse(JSON.stringify(category))).toEqual(category);
     });
 });

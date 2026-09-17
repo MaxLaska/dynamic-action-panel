@@ -10,13 +10,12 @@ import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { t } from '@/utils/i18n';
 import { ActionSequence } from '@/actions/ActionSequence';
 import { NameInput, IconInput, ConditionEditor } from '@/components/input';
-import { renderPaletteLayerNotice } from '@/components/modal/ButtonCreateModal';
+import { renderGridTargetNotice } from '@/components/modal/ButtonCreateModal';
 import {
-    BASE_LAYER_ID,
-    findButtonLayerId,
-    isPaletteCategory,
-    replaceButtonInPalette,
-} from '@/utils/paletteLayers';
+    findButtonVariantId,
+    replaceButtonInGridCategory,
+} from '@/utils/categoryVariants';
+import { isGridCategory } from '@/utils/categoryGrid';
 import { findStoredCategory, replaceStoredCategory } from '@/utils/categoryStore';
 
 /**
@@ -141,16 +140,16 @@ export class ButtonEditModal extends Modal {
         this.nameInput.setValue(this.tempButton.name || '');
         this.iconInput.setValue(this.tempButton.icon || '');
 
-        // OCAP: inside a palette the layer decides contextuality, so the
-        // per-button condition editor is replaced by the layer statement.
-        if (isPaletteCategory(this.parentCategory)) {
+        // OCAP: inside a grid category the variant decides contextuality, so
+        // the per-button condition editor is replaced by the target statement.
+        if (isGridCategory(this.parentCategory)) {
             const stored =
                 findStoredCategory(this.plugin, this.parentCategory.id) ??
                 this.parentCategory;
-            renderPaletteLayerNotice(
+            renderGridTargetNotice(
                 container,
                 stored,
-                findButtonLayerId(stored, this.button.id) ?? BASE_LAYER_ID
+                findButtonVariantId(stored, this.button.id)
             );
             return;
         }
@@ -294,12 +293,15 @@ export class ButtonEditModal extends Modal {
         const updatedButton: ButtonConfig = { ...this.button, ...this.tempButton };
 
         // Write into the stored category — the modal may have been opened with
-        // a projection copy — and, in a palette, into whichever layer holds
-        // the button.
+        // a projection copy — and, in a grid category, into whichever variant
+        // holds the button.
         const stored =
             findStoredCategory(this.plugin, this.parentCategory.id) ?? this.parentCategory;
-        if (isPaletteCategory(stored)) {
-            replaceStoredCategory(this.plugin, replaceButtonInPalette(stored, updatedButton));
+        if (isGridCategory(stored)) {
+            replaceStoredCategory(
+                this.plugin,
+                replaceButtonInGridCategory(stored, updatedButton)
+            );
         } else {
             const index = stored.buttons.findIndex(
                 (b: ButtonConfig) => b.id === this.button.id

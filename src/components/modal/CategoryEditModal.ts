@@ -4,7 +4,12 @@ import { CategoryConfig } from '@/types';
 import { t, tWithParams } from '@/utils/i18n';
 import { ConditionEditor } from '@/components/input';
 import { GRID_SLOT_COUNT, getCategoryLayout, type CategoryLayout } from '@/utils/categoryGrid';
-import { applyCategoryLayout, getContextProfiles } from '@/utils/paletteLayers';
+import {
+    applyCategoryLayout,
+    describeConditionForName,
+    getCategoryVariants,
+    isDynamicCategory,
+} from '@/utils/categoryVariants';
 import { isValidCondition } from '@/context/conditions';
 
 /**
@@ -79,59 +84,67 @@ export class CategoryEditModal extends Modal {
     }
 
     /**
-     * Read-only overview of the palette's context profiles, in priority order.
-     * Creating, editing, reordering and deleting them happens on the palette's
-     * own layer selector (one place, right next to the grid they affect); this
-     * section exists so the priority order is visible while the palette itself
-     * is being configured.
+     * Read-only overview of a dynamic category's variants, in priority order.
+     * Creating, editing, reordering and deleting them happens on the
+     * category's own variant selector (one place, right next to the grid they
+     * affect); this section exists so the priority order is visible while the
+     * category itself is being configured.
      */
-    private renderContextProfiles(contentEl: HTMLElement): void {
+    private renderVariantsOverview(contentEl: HTMLElement): void {
         const category = this.plugin.settings.categories.find(
             (c) => c.id === this.categoryId
         );
-        if (!category || getCategoryLayout(category) !== 'grid') {
+        if (!category || !isDynamicCategory(category)) {
             return;
         }
 
         const section = new Setting(contentEl)
-            .setName(t('palette_profiles_section'))
-            .setDesc(t('palette_profiles_desc'));
-        section.settingEl.addClass('ocap-context-profiles-heading');
+            .setName(t('variants_section'))
+            .setDesc(t('variants_section_desc'));
+        section.settingEl.addClass('ocap-variants-heading');
 
-        const profiles = getContextProfiles(category);
-        const list = contentEl.createDiv('ocap-context-profiles-list');
-        if (profiles.length === 0) {
+        const variants = getCategoryVariants(category);
+        const list = contentEl.createDiv('ocap-variants-list');
+        if (variants.length === 0) {
             list.createDiv({
-                cls: 'ocap-context-profiles-empty',
-                text: t('palette_profiles_empty'),
+                cls: 'ocap-variants-empty',
+                text: t('variant_none_yet'),
             });
             return;
         }
 
-        profiles.forEach((profile, index) => {
-            const row = list.createDiv('ocap-context-profiles-row');
+        let priority = 0;
+        for (const variant of variants) {
+            const row = list.createDiv('ocap-variants-row');
+            const isFallback = variant.fallback === true;
             row.createSpan({
-                cls: 'ocap-context-profiles-priority',
-                text: tWithParams('palette_profiles_priority', { index: index + 1 }),
+                cls: 'ocap-variants-priority',
+                text: isFallback
+                    ? t('variant_fallback_badge')
+                    : tWithParams('variant_priority', { index: ++priority }),
             });
-            row.createSpan({ cls: 'ocap-context-profiles-name', text: profile.name });
-            const conditions = profile.conditions;
+            row.createSpan({ cls: 'ocap-variants-name', text: variant.name });
+            const trigger = variant.trigger;
             row.createSpan({
-                cls: 'ocap-context-profiles-condition',
-                text:
-                    conditions === undefined || conditions === null
-                        ? t('palette_profiles_no_condition')
-                        : !isValidCondition(conditions)
-                          ? t('palette_profiles_invalid_condition')
-                          : JSON.stringify(conditions),
+                cls: 'ocap-variants-trigger',
+                text: isFallback
+                    ? t('variant_trigger_fallback')
+                    : trigger === undefined || trigger === null
+                      ? t('variant_trigger_missing')
+                      : !isValidCondition(trigger)
+                        ? t('variant_trigger_invalid')
+                        : 'all' in trigger && trigger.all.length === 0
+                          ? t('variant_trigger_always')
+                          : (describeConditionForName(trigger) ??
+                            JSON.stringify(trigger)),
             });
             row.createSpan({
-                cls: 'ocap-context-profiles-count',
-                text: tWithParams('palette_profiles_tools', {
-                    count: profile.buttons.length,
+                cls: 'ocap-variants-count',
+                text: tWithParams('variant_tools_count', {
+                    count: variant.buttons.length,
                 }),
             });
-        });
+        }
     }
 
     private updateLayoutHint(): void {
@@ -173,11 +186,11 @@ export class CategoryEditModal extends Modal {
             });
         });
 
-        // OCAP palette: button layout of this category
+        // OCAP grid: button layout of this category
         this.renderLayoutSetting(contentEl);
 
-        // OCAP palette: priority overview of the context profiles
-        this.renderContextProfiles(contentEl);
+        // OCAP dynamic category: priority overview of the variants
+        this.renderVariantsOverview(contentEl);
 
         // OCAP: visual visibility-conditions editor (validated on save)
         this.conditionsInput = new ConditionEditor(contentEl, this.oldConditions, {
@@ -237,10 +250,12 @@ export class CategoryEditModal extends Modal {
         const layoutResult = applyCategoryLayout(categories[index]!, this.selectedLayout);
         if (!layoutResult.ok) {
             new Notice(
-                tWithParams('category_layout_too_many_buttons', {
-                    count: layoutResult.buttonCount,
-                    slots: layoutResult.slotCount,
-                })
+                layoutResult.reason === 'dynamic_category'
+                    ? t('category_layout_dynamic_refused')
+                    : tWithParams('category_layout_too_many_buttons', {
+                          count: layoutResult.buttonCount,
+                          slots: layoutResult.slotCount,
+                      })
             );
             return;
         }

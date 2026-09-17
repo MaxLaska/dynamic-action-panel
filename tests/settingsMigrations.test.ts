@@ -181,7 +181,8 @@ describe('migrateSettings', () => {
 });
 
 // The palette grid added CategoryConfig.layout and ButtonConfig.slot in
-// version 1; version 2 turns a grid category into a layered palette.
+// version 1; version 2 turned a grid category into a layered palette;
+// version 3 turns the layers into complete variants.
 describe('palette grid fields are carried through', () => {
     it('loads legacy categories without layout/slot unchanged', () => {
         const result = migrateSettings(makeLegacyData());
@@ -189,14 +190,14 @@ describe('palette grid fields are carried through', () => {
 
         expect(category.layout).toBeUndefined();
         expect(category.buttons[0]!.slot).toBeUndefined();
-        expect(category.contextProfiles).toBeUndefined();
+        expect(category.variants).toBeUndefined();
         // Buttons are handed through untouched, order included.
         expect(category.buttons.map((b) => b.order)).toEqual(
             [...category.buttons].map((_, i) => i)
         );
     });
 
-    it('preserves layout and slot of a conditionless grid category', () => {
+    it('keeps a conditionless grid category STATIC with its exact slots', () => {
         const stored = {
             settingsVersion: 1,
             categories: [
@@ -218,23 +219,34 @@ describe('palette grid fields are carried through', () => {
         const result = migrateSettings(stored);
 
         expect(result.status).toBe('migrated');
-        expect(result.settings.settingsVersion).toBe(2);
+        expect(result.settings.settingsVersion).toBe(3);
         expect(result.settings.categories[0]!.layout).toBe('grid');
         expect(result.settings.categories[0]!.buttons.map((b) => b.slot)).toEqual([0, 7]);
-        // Nothing contextual in this palette, so no profile is invented.
-        expect(result.settings.categories[0]!.contextProfiles).toBeUndefined();
+        // Nothing contextual in this grid, so no variant is invented.
+        expect(result.settings.categories[0]!.variants).toBeUndefined();
     });
 });
 
-// Version 2: palette context layers. Grid categories stop expressing
-// contextuality per button and express it through named context profiles.
-describe('version 2 – palette context layers', () => {
-    it('is the current settings version', () => {
-        expect(CURRENT_SETTINGS_VERSION).toBe(2);
-    });
+const MD: unknown = { rule: 'viewType', value: 'markdown' };
+const TYPE_A: unknown = { rule: 'property', op: 'equals', key: 'type', value: 'A' };
+const TYPE_B: unknown = { rule: 'property', op: 'equals', key: 'type', value: 'B' };
 
-    const MD: unknown = { rule: 'viewType', value: 'markdown' };
-    const TYPE_A: unknown = { rule: 'property', op: 'equals', key: 'type', value: 'A' };
+/** Buttons of a variant as a sorted [name, slot] list (ids are derived). */
+function variantGrid(variant: {
+    buttons: { name: string; slot?: number }[];
+}): [string, number | undefined][] {
+    return variant.buttons
+        .map((b): [string, number | undefined] => [b.name, b.slot])
+        .sort((a, b) => (a[0] < b[0] ? -1 : 1));
+}
+
+// Version 3: dynamic category variants, reached from v1 data through the
+// retired v2 layer model. A v1 grid category with per-button conditions ends
+// as a DYNAMIC category whose variants reproduce the old effective grids.
+describe('chain v1 → v3 (through the retired layer model)', () => {
+    it('is the current settings version', () => {
+        expect(CURRENT_SETTINGS_VERSION).toBe(3);
+    });
 
     function gridData(buttons: unknown[], extra: Record<string, unknown> = {}) {
         return {
@@ -254,7 +266,7 @@ describe('version 2 – palette context layers', () => {
         };
     }
 
-    it('lifts per-button conditions into one profile per distinct condition', () => {
+    it('turns per-button conditions into full variants plus a Default fallback', () => {
         const result = migrateSettings(
             gridData([
                 { id: 'home', name: 'Home', actions: [], order: 0, slot: 0 },
@@ -265,90 +277,33 @@ describe('version 2 – palette context layers', () => {
         );
 
         const category = result.settings.categories[0]!;
-        expect(category.buttons.map((b) => b.id)).toEqual(['home']);
+        expect(category.buttons).toEqual([]);
 
-        const profiles = category.contextProfiles!;
-        expect(profiles).toHaveLength(2);
-        // First-appearance order, so the result is deterministic.
-        expect(profiles[0]!.conditions).toEqual(TYPE_A);
-        expect(profiles[0]!.buttons.map((b) => b.id)).toEqual(['a1', 'a2']);
-        expect(profiles[1]!.conditions).toEqual(MD);
-        expect(profiles[1]!.buttons.map((b) => b.id)).toEqual(['md']);
-    });
-
-    it('keeps every slot exactly where it was', () => {
-        const result = migrateSettings(
-            gridData([
-                { id: 'home', name: 'Home', actions: [], order: 0, slot: 0 },
-                { id: 'a1', name: 'A1', actions: [], order: 1, slot: 5, conditions: TYPE_A },
-            ])
-        );
-        const category = result.settings.categories[0]!;
-        expect(category.buttons[0]!.slot).toBe(0);
-        expect(category.contextProfiles![0]!.buttons[0]!.slot).toBe(5);
-    });
-
-    it('materializes missing slots before splitting, so nothing moves', () => {
-        const result = migrateSettings(
-            gridData([
-                { id: 'a', name: 'A', actions: [], order: 0 },
-                { id: 'b', name: 'B', actions: [], order: 1, conditions: TYPE_A },
-                { id: 'c', name: 'C', actions: [], order: 2 },
-            ])
-        );
-        const category = result.settings.categories[0]!;
-        expect(category.buttons.map((b) => [b.id, b.slot])).toEqual([
-            ['a', 0],
-            ['c', 2],
+        const variants = category.variants!;
+        expect(variants).toHaveLength(3);
+        // First-appearance order, so priority is deterministic.
+        expect(variants[0]!.trigger).toEqual(TYPE_A);
+        expect(variants[0]!.name).toBe('type = A');
+        // The variant is the COMPLETE old effective grid: base + its tools.
+        expect(variantGrid(variants[0]!)).toEqual([
+            ['A1', 1],
+            ['A2', 3],
+            ['Home', 0],
         ]);
-        expect(category.contextProfiles![0]!.buttons[0]!.slot).toBe(1);
-    });
-
-    it('drops the now-redundant condition from a lifted button', () => {
-        const result = migrateSettings(
-            gridData([{ id: 'a', name: 'A', actions: [], order: 0, slot: 0, conditions: MD }])
-        );
-        const profile = result.settings.categories[0]!.contextProfiles![0]!;
-        expect(profile.buttons[0]!.conditions).toBeUndefined();
-    });
-
-    it('derives a readable profile name from the rule', () => {
-        const result = migrateSettings(
-            gridData([
-                { id: 'a', name: 'A', actions: [], order: 0, slot: 0, conditions: TYPE_A },
-                { id: 'b', name: 'B', actions: [], order: 1, slot: 1, conditions: MD },
-                {
-                    id: 'c',
-                    name: 'C',
-                    actions: [],
-                    order: 2,
-                    slot: 2,
-                    conditions: { all: [MD, TYPE_A] },
-                },
-            ])
-        );
-        const profiles = result.settings.categories[0]!.contextProfiles!;
-        expect(profiles[0]!.name).toBe('type = A');
-        expect(profiles[1]!.name).toBe('markdown');
-        // Too complex for a one-liner: falls back to a neutral name.
-        expect(profiles[2]!.name).toBe('Context 3');
-    });
-
-    it('generates deterministic profile ids', () => {
-        const data = gridData([
-            { id: 'a', name: 'A', actions: [], order: 0, slot: 0, conditions: MD },
+        expect(variants[1]!.trigger).toEqual(MD);
+        expect(variantGrid(variants[1]!)).toEqual([
+            ['Home', 0],
+            ['MD', 2],
         ]);
-        expect(migrateSettings(data).settings.categories[0]!.contextProfiles![0]!.id).toBe(
-            migrateSettings(data).settings.categories[0]!.contextProfiles![0]!.id
-        );
-        expect(migrateSettings(data).settings.categories[0]!.contextProfiles![0]!.id).toBe(
-            'palette-ctx-1'
-        );
+        // The old base-only state survives as the fallback.
+        expect(variants[2]!.fallback).toBe(true);
+        expect(variants[2]!.name).toBe('Default');
+        expect(variantGrid(variants[2]!)).toEqual([['Home', 0]]);
     });
 
-    it('keeps a structurally invalid condition on the base button', () => {
+    it('keeps a structurally invalid condition on the (static) grid button', () => {
         // It failed open in version 1 (the button was always visible), so the
-        // base layer is the behavior-preserving home — and the data survives.
+        // static grid is the behavior-preserving home — the data survives.
         const broken = { rule: 'nonsense' };
         const result = migrateSettings(
             gridData([
@@ -356,7 +311,7 @@ describe('version 2 – palette context layers', () => {
             ])
         );
         const category = result.settings.categories[0]!;
-        expect(category.contextProfiles).toBeUndefined();
+        expect(category.variants).toBeUndefined();
         expect(category.buttons[0]!.conditions).toEqual(broken);
     });
 
@@ -388,7 +343,7 @@ describe('version 2 – palette context layers', () => {
             pathConfig: {},
         };
         const category = migrateSettings(stored).settings.categories[0]!;
-        expect(category.contextProfiles).toBeUndefined();
+        expect(category.variants).toBeUndefined();
         expect(category.buttons[0]!.conditions).toEqual(MD);
         expect(category.buttons.map((b) => b.slot)).toEqual([undefined, undefined]);
     });
@@ -396,45 +351,14 @@ describe('version 2 – palette context layers', () => {
     it('handles an empty grid category', () => {
         const category = migrateSettings(gridData([])).settings.categories[0]!;
         expect(category.buttons).toEqual([]);
-        expect(category.contextProfiles).toBeUndefined();
+        expect(category.variants).toBeUndefined();
     });
 
-    it('migrates unversioned upstream data straight through to version 2', () => {
+    it('migrates unversioned upstream data straight through to version 3', () => {
         const result = migrateSettings(makeLegacyData());
-        expect(result.settings.settingsVersion).toBe(2);
+        expect(result.settings.settingsVersion).toBe(3);
         expect(result.status).toBe('migrated');
         expect(result.fromVersion).toBe(0);
-    });
-
-    it('does not rewrite data that is already at version 2', () => {
-        const stored = {
-            settingsVersion: 2,
-            categories: [
-                {
-                    id: 'palette',
-                    name: 'Palette',
-                    order: 0,
-                    layout: 'grid',
-                    buttons: [{ id: 'a', name: 'A', actions: [], order: 0, slot: 0 }],
-                    contextProfiles: [
-                        {
-                            id: 'p1',
-                            name: 'Type A',
-                            conditions: TYPE_A,
-                            buttons: [
-                                { id: 'b', name: 'B', actions: [], order: 0, slot: 1 },
-                            ],
-                        },
-                    ],
-                },
-            ],
-            panelConfig: {},
-            pathConfig: {},
-        };
-        const result = migrateSettings(stored);
-        expect(result.status).toBe('current');
-        expect(result.changed).toBe(false);
-        expect(result.settings.categories[0]!.contextProfiles).toHaveLength(1);
     });
 
     it('is idempotent: migrating the migrated result changes nothing', () => {
@@ -448,31 +372,7 @@ describe('version 2 – palette context layers', () => {
         expect(twice).toEqual(once);
     });
 
-    it('appends migrated profiles behind profiles that already exist', () => {
-        const stored = {
-            settingsVersion: 1,
-            categories: [
-                {
-                    id: 'palette',
-                    name: 'Palette',
-                    order: 0,
-                    layout: 'grid',
-                    contextProfiles: [
-                        { id: 'existing', name: 'Existing', buttons: [] },
-                    ],
-                    buttons: [
-                        { id: 'a', name: 'A', actions: [], order: 0, slot: 0, conditions: MD },
-                    ],
-                },
-            ],
-            panelConfig: {},
-            pathConfig: {},
-        };
-        const profiles = migrateSettings(stored).settings.categories[0]!.contextProfiles!;
-        expect(profiles.map((p) => p.id)).toEqual(['existing', 'palette-ctx-1']);
-    });
-
-    it('loses no button when the palette holds more buttons than slots', () => {
+    it('loses no button when the grid holds more buttons than slots', () => {
         const buttons = Array.from({ length: 20 }, (_, i) => ({
             id: `b${i}`,
             name: `B${i}`,
@@ -481,10 +381,299 @@ describe('version 2 – palette context layers', () => {
             ...(i % 2 === 0 ? {} : { conditions: MD }),
         }));
         const category = migrateSettings(gridData(buttons)).settings.categories[0]!;
-        const migratedIds = [
-            ...category.buttons.map((b) => b.id),
-            ...(category.contextProfiles ?? []).flatMap((p) => p.buttons.map((b) => b.id)),
+        // Every original button name survives somewhere (base copies may be
+        // duplicated across variants, so compare unique names).
+        const names = new Set([
+            ...category.buttons.map((b) => b.name),
+            ...(category.variants ?? []).flatMap((v) => v.buttons.map((b) => b.name)),
+        ]);
+        expect([...names].sort()).toEqual(buttons.map((b) => b.name).sort());
+    });
+});
+
+// Version 2 → 3 directly: every context profile becomes one complete variant
+// (base + profile on the old effective slots), the base-only state becomes
+// the fallback, and profile order stays the priority.
+describe('version 3 – v2 layer palettes become variant categories', () => {
+    function v2Data(
+        category: Record<string, unknown>,
+        more: Record<string, unknown>[] = []
+    ) {
+        return {
+            settingsVersion: 2,
+            categories: [category, ...more],
+            panelConfig: {},
+            pathConfig: {},
+        };
+    }
+
+    function v2Grid(
+        buttons: unknown[],
+        contextProfiles?: unknown[],
+        extra: Record<string, unknown> = {}
+    ): Record<string, unknown> {
+        return {
+            id: 'palette',
+            name: 'Palette',
+            order: 0,
+            layout: 'grid',
+            buttons,
+            ...(contextProfiles ? { contextProfiles } : {}),
+            ...extra,
+        };
+    }
+
+    const base = [
+        { id: 'b1', name: 'Home', actions: [], order: 0, slot: 0 },
+        { id: 'b3', name: 'Search', actions: [], order: 1, slot: 2 },
+    ];
+    const sourceProfile = {
+        id: 'p-source',
+        name: 'Source',
+        conditions: TYPE_A,
+        buttons: [
+            { id: 'b2', name: 'Fundstelle', actions: [], order: 0, slot: 1 },
+            { id: 'b4', name: 'Zotero', actions: [], order: 1, slot: 3 },
+        ],
+    };
+    const topicProfile = {
+        id: 'p-topic',
+        name: 'Topic',
+        conditions: TYPE_B,
+        buttons: [
+            { id: 'b2t', name: 'Argument', actions: [], order: 0, slot: 1 },
+            { id: 'b6', name: 'Refs', actions: [], order: 1, slot: 5 },
+        ],
+    };
+
+    it('composes base + profile into one complete variant per profile', () => {
+        const result = migrateSettings(
+            v2Data(v2Grid(base, [sourceProfile, topicProfile]))
+        );
+        const category = result.settings.categories[0]!;
+
+        expect(result.status).toBe('migrated');
+        expect(category.buttons).toEqual([]);
+        const variants = category.variants!;
+        expect(variants).toHaveLength(3);
+
+        // Source variant: base + Source, exactly on the old effective slots.
+        expect(variants[0]!.name).toBe('Source');
+        expect(variants[0]!.trigger).toEqual(TYPE_A);
+        expect(variantGrid(variants[0]!)).toEqual([
+            ['Fundstelle', 1],
+            ['Home', 0],
+            ['Search', 2],
+            ['Zotero', 3],
+        ]);
+
+        // Topic variant: base + Topic.
+        expect(variants[1]!.name).toBe('Topic');
+        expect(variants[1]!.trigger).toEqual(TYPE_B);
+        expect(variantGrid(variants[1]!)).toEqual([
+            ['Argument', 1],
+            ['Home', 0],
+            ['Refs', 5],
+            ['Search', 2],
+        ]);
+
+        // Fallback: base only, original button ids preserved.
+        expect(variants[2]!.fallback).toBe(true);
+        expect(variants[2]!.buttons.map((b) => b.id)).toEqual(['b1', 'b3']);
+        expect(variantGrid(variants[2]!)).toEqual([
+            ['Home', 0],
+            ['Search', 2],
+        ]);
+    });
+
+    it('keeps every button id unique across variants (derived base copies)', () => {
+        const result = migrateSettings(
+            v2Data(v2Grid(base, [sourceProfile, topicProfile]))
+        );
+        const variants = result.settings.categories[0]!.variants!;
+        const ids = variants.flatMap((v) => v.buttons.map((b) => b.id));
+        expect(new Set(ids).size).toBe(ids.length);
+        // Profile-owned tools keep their original ids.
+        expect(ids).toContain('b2');
+        expect(ids).toContain('b6');
+    });
+
+    it('preserves actions, icons and the full button config in the copies', () => {
+        const richBase = [
+            {
+                id: 'b1',
+                name: 'Home',
+                icon: 'home',
+                actions: [{ type: 'command', parameters: { commandId: 'go-home' } }],
+                order: 0,
+                slot: 0,
+                customCss: 'color: red',
+                executionMode: 'parallel',
+                stopOnError: false,
+                delayBetweenActions: 250,
+            },
         ];
-        expect(migratedIds.sort()).toEqual(buttons.map((b) => b.id).sort());
+        const result = migrateSettings(v2Data(v2Grid(richBase, [sourceProfile])));
+        const composed = result.settings.categories[0]!.variants![0]!;
+        const copy = composed.buttons.find((b) => b.name === 'Home')!;
+        expect(copy).toMatchObject({
+            icon: 'home',
+            customCss: 'color: red',
+            executionMode: 'parallel',
+            stopOnError: false,
+            delayBetweenActions: 250,
+            slot: 0,
+        });
+        expect(copy.actions).toEqual(richBase[0]!.actions);
+    });
+
+    it('a conditionless v2 profile becomes an explicit always-true trigger', () => {
+        // In v2 a profile without a condition always matched (in priority
+        // order); `{ all: [] }` reproduces exactly that.
+        const always = { id: 'p-always', name: 'Always', buttons: [] };
+        const result = migrateSettings(v2Data(v2Grid(base, [always])));
+        const variants = result.settings.categories[0]!.variants!;
+        expect(variants[0]!.trigger).toEqual({ all: [] });
+        expect(variants[0]!.fallback).toBeUndefined();
+    });
+
+    it('no base buttons -> no fallback variant', () => {
+        const result = migrateSettings(v2Data(v2Grid([], [sourceProfile])));
+        const variants = result.settings.categories[0]!.variants!;
+        expect(variants).toHaveLength(1);
+        expect(variants.some((v) => v.fallback === true)).toBe(false);
+    });
+
+    it('an empty profile still becomes a variant holding the base grid', () => {
+        const empty = { id: 'p-empty', name: 'Empty', conditions: TYPE_A, buttons: [] };
+        const result = migrateSettings(v2Data(v2Grid(base, [empty])));
+        const variants = result.settings.categories[0]!.variants!;
+        expect(variantGrid(variants[0]!)).toEqual([
+            ['Home', 0],
+            ['Search', 2],
+        ]);
+    });
+
+    it('a profile tool colliding with a base slot is relocated, never dropped', () => {
+        const clashing = {
+            id: 'p-clash',
+            name: 'Clash',
+            conditions: TYPE_A,
+            buttons: [{ id: 'x', name: 'X', actions: [], order: 0, slot: 0 }],
+        };
+        const result = migrateSettings(v2Data(v2Grid(base, [clashing])));
+        const composed = result.settings.categories[0]!.variants![0]!;
+        const x = composed.buttons.find((b) => b.name === 'X')!;
+        expect(x.slot).toBe(1); // lowest slot the base leaves free
+        expect(composed.buttons).toHaveLength(3);
+    });
+
+    it('skips malformed profile entries exactly like the v2 runtime did', () => {
+        const result = migrateSettings(
+            v2Data(
+                v2Grid(base, [
+                    null,
+                    42,
+                    { id: 7, buttons: [] },
+                    { id: 'no-buttons-field' },
+                    sourceProfile,
+                ])
+            )
+        );
+        const variants = result.settings.categories[0]!.variants!;
+        // Source + fallback; the dead entries produce nothing.
+        expect(variants.map((v) => v.name)).toEqual(['Source', 'Default']);
+    });
+
+    it('a v2 grid without profiles stays a static grid', () => {
+        const result = migrateSettings(v2Data(v2Grid(base)));
+        const category = result.settings.categories[0]!;
+        expect(category.variants).toBeUndefined();
+        expect(category.buttons.map((b) => [b.id, b.slot])).toEqual([
+            ['b1', 0],
+            ['b3', 2],
+        ]);
+    });
+
+    it('leaves v2 flow categories completely untouched', () => {
+        const flow = {
+            id: 'flow',
+            name: 'Flow',
+            order: 1,
+            buttons: [{ id: 'f', name: 'F', actions: [], order: 0, conditions: MD }],
+        };
+        const result = migrateSettings(v2Data(v2Grid(base, [sourceProfile]), [flow]));
+        const migratedFlow = result.settings.categories[1]!;
+        expect(migratedFlow.variants).toBeUndefined();
+        expect(migratedFlow.buttons[0]!.conditions).toEqual(MD);
+    });
+
+    it('profile order becomes variant priority', () => {
+        const result = migrateSettings(
+            v2Data(v2Grid(base, [topicProfile, sourceProfile]))
+        );
+        const variants = result.settings.categories[0]!.variants!;
+        expect(variants.map((v) => v.name)).toEqual(['Topic', 'Source', 'Default']);
+    });
+
+    it('is deterministic and idempotent over its own output', () => {
+        const data = v2Data(v2Grid(base, [sourceProfile, topicProfile]));
+        const once = migrateSettings(data).settings;
+        const again = migrateSettings(JSON.parse(JSON.stringify(data))).settings;
+        expect(again).toEqual(once);
+
+        const reloaded = migrateSettings(JSON.parse(JSON.stringify(once)));
+        expect(reloaded.status).toBe('current');
+        expect(reloaded.changed).toBe(false);
+        expect(JSON.parse(JSON.stringify(reloaded.settings))).toEqual(
+            JSON.parse(JSON.stringify(once))
+        );
+    });
+
+    it('does not rewrite data that is already at version 3', () => {
+        const stored = {
+            settingsVersion: 3,
+            categories: [
+                {
+                    id: 'dyn',
+                    name: 'Dyn',
+                    order: 0,
+                    layout: 'grid',
+                    buttons: [],
+                    variants: [
+                        {
+                            id: 'v1',
+                            name: 'Source',
+                            trigger: TYPE_A,
+                            buttons: [{ id: 'a', name: 'A', actions: [], order: 0, slot: 0 }],
+                        },
+                    ],
+                },
+            ],
+            panelConfig: {},
+            pathConfig: {},
+        };
+        const result = migrateSettings(stored);
+        expect(result.status).toBe('current');
+        expect(result.changed).toBe(false);
+        expect(result.settings.categories[0]!.variants).toHaveLength(1);
+    });
+
+    it('handles malformed v2 data without throwing or losing the category', () => {
+        const malformed = v2Data({
+            id: 'weird',
+            name: 'Weird',
+            order: 0,
+            layout: 'grid',
+            buttons: 'not-an-array',
+            contextProfiles: { not: 'an array' },
+        });
+        const result = migrateSettings(malformed);
+        const category = result.settings.categories[0]!;
+        expect(category.id).toBe('weird');
+        expect(category.variants).toBeUndefined();
+        expect((category as unknown as Record<string, unknown>)['contextProfiles']).toBe(
+            undefined
+        );
     });
 });

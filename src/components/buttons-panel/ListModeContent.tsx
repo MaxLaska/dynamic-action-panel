@@ -18,6 +18,7 @@ import {
 import { hasConditions } from '@/context/conditions';
 import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
 import { isGridCategory } from '@/utils/categoryGrid';
+import { isDynamicCategory } from '@/utils/categoryVariants';
 import { t } from '@/utils/i18n';
 
 interface ListModeContentProps {
@@ -207,9 +208,17 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
                     className="category-icon-left"
                     ref={(el) => {
                         if (el) {
-                            // Layout icon: the palette keeps the grid glyph,
-                            // flow categories read as a list.
-                            setIcon(el, isGridCategory(category) ? 'layout-grid' : 'list');
+                            // Layout icon: a dynamic category reads as layers
+                            // (its content follows the context), a static grid
+                            // keeps the grid glyph, flow categories a list.
+                            setIcon(
+                                el,
+                                isDynamicCategory(category)
+                                    ? 'layers'
+                                    : isGridCategory(category)
+                                      ? 'layout-grid'
+                                      : 'list'
+                            );
                         }
                     }}
                 />

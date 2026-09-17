@@ -44,23 +44,19 @@ import {
     itemsShallowEqual,
     parseSlotDroppableId,
     resolveOverContainerId,
-    type BlockedSlots,
     type ButtonDragItems,
 } from '@/utils/buttonDragItems';
 import {
     getCategoryLayout,
-    isGridCategory,
     isValidSlotIndex,
     placeButtonsOnGrid,
     type CategoryLayout,
 } from '@/utils/categoryGrid';
 import {
-    BASE_LAYER_ID,
-    applySlotIdsToPalette,
-    blockedSlotsForLayer,
-    type PaletteLayerSelection,
-    type ResolvedPalette,
-} from '@/utils/paletteLayers';
+    applySlotIdsToGridCategory,
+    type ResolvedGridView,
+} from '@/utils/categoryVariants';
+import type { VariantSelectionMap } from '@/context/panelProjection';
 import {
     applyCategoryDragOver,
     buildCategoryDragIds,
@@ -141,13 +137,14 @@ export type CategoryDragOverlayVariant = 'list' | 'tabs' | 'folder';
 interface ButtonDragProviderProps {
     categories: CategoryConfig[];
     /**
-     * Resolved palettes (base/pinned + the selected context layer) per grid
+     * Resolved grid (the selected variant, or the static grid) per grid
      * category. The drag state mirrors exactly what is on screen, so a drag in
-     * one context profile can never touch another one.
+     * one variant can never touch another one.
      */
-    palettes?: ReadonlyMap<string, ResolvedPalette>;
-    /** Layer each palette is being edited on; decides where a dropped tool lands. */
-    layerSelection?: PaletteLayerSelection;
+    gridViews?: ReadonlyMap<string, ResolvedGridView>;
+    /** Variant each dynamic category is being edited on; decides where a
+     * dropped tool lands. */
+    variantSelection?: VariantSelectionMap;
     enabled: boolean;
     displayStyle: 'icon_left' | 'icon_top';
     enableAnimation: boolean;
@@ -168,8 +165,7 @@ function resolveGridDropTarget(
     activeId: string,
     overId: string,
     items: ButtonDragItems,
-    layouts: Record<string, CategoryLayout>,
-    blocked: BlockedSlots
+    layouts: Record<string, CategoryLayout>
 ): { categoryId: string; slot: number } | null {
     let target: { categoryId: string; slot: number } | null = null;
 
@@ -185,12 +181,6 @@ function resolveGridDropTarget(
     }
 
     if (!target) {
-        return null;
-    }
-
-    // A slot another palette layer reserves rejects the drop, so it must not
-    // advertise itself as a landing spot either.
-    if (blocked[target.categoryId]?.[target.slot] === true) {
         return null;
     }
 
@@ -212,8 +202,8 @@ function resolveGridDropTarget(
 /** 统一面板拖拽：按钮与分类共用一个 DndContext */
 export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     categories,
-    palettes,
-    layerSelection,
+    gridViews,
+    variantSelection,
     enabled,
     displayStyle,
     enableAnimation,
@@ -224,7 +214,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
 }) => {
     const { plugin, app } = usePluginContext();
     const [items, setItems] = useState<ButtonDragItems>(() =>
-        buildButtonDragItems(categories, palettes)
+        buildButtonDragItems(categories, gridViews)
     );
     const [categoryIds, setCategoryIds] = useState<string[]>(() =>
         buildCategoryDragIds(categories)
@@ -245,6 +235,15 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         slot: number;
     } | null>(null);
     const itemsRef = useRef(items);
+    /**
+     * Drag state at the moment the CURRENT drag started. Every drag-over
+     * preview is computed from this baseline, never cumulatively from the
+     * previous preview: crossing an occupied cell on the way to the target
+     * must not leave a trail of intermediate swaps behind — releasing on a
+     * cell means exactly "active moves there, its occupant takes the vacated
+     * slot", nothing else moves (see DECISIONS.md).
+     */
+    const dragStartItemsRef = useRef<ButtonDragItems | null>(null);
     const categoryIdsRef = useRef(categoryIds);
     const categoryHoverRef = useRef<((categoryId: string) => void) | null>(null);
     const lastNotifiedHoverContainerRef = useRef<string | null>(null);
@@ -278,36 +277,15 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     const containerLayoutsRef = useRef(containerLayouts);
     containerLayoutsRef.current = containerLayouts;
 
-    /**
-     * Slots the currently displayed palette layer may not occupy: pinned base
-     * slots while a context profile is on screen, and slots other profiles use
-     * while the base layer is being edited. Enforced in the drop semantics and
-     * in the drop-target highlight, so a blocked slot never even promises a
-     * landing spot.
-     */
-    const blockedSlots = useMemo<BlockedSlots>(() => {
-        const blocked: Record<string, readonly boolean[]> = {};
-        for (const category of categories) {
-            if (!isGridCategory(category)) continue;
-            blocked[category.id] = blockedSlotsForLayer(
-                category,
-                layerSelection?.[category.id] ?? BASE_LAYER_ID
-            );
-        }
-        return blocked;
-    }, [categories, layerSelection]);
-    const blockedSlotsRef = useRef(blockedSlots);
-    blockedSlotsRef.current = blockedSlots;
+    const variantSelectionRef = useRef(variantSelection);
+    variantSelectionRef.current = variantSelection;
 
-    const layerSelectionRef = useRef(layerSelection);
-    layerSelectionRef.current = layerSelection;
+    const gridViewsRef = useRef(gridViews);
+    gridViewsRef.current = gridViews;
 
-    const palettesRef = useRef(palettes);
-    palettesRef.current = palettes;
-
-    /** Drag state matching the stored data for the layers currently on screen. */
+    /** Drag state matching the stored data for the grids currently on screen. */
     const buildBaselineItems = useCallback(
-        () => buildButtonDragItems(categories, palettesRef.current),
+        () => buildButtonDragItems(categories, gridViewsRef.current),
         [categories]
     );
 
@@ -341,9 +319,9 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
 
     useEffect(() => {
         if (activeButtonId) return;
-        const next = buildButtonDragItems(categories, palettes);
+        const next = buildButtonDragItems(categories, gridViews);
         setItems((prev) => (itemsShallowEqual(prev, next) ? prev : next));
-    }, [categories, palettes, activeButtonId, enabled]);
+    }, [categories, gridViews, activeButtonId, enabled]);
 
     useEffect(() => {
         if (activeCategoryId) return;
@@ -470,10 +448,10 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     const persistItems = useCallback(
         async (finalItems: ButtonDragItems, pluginInstance: ButtonsPanelPlugin) => {
             const storedCategories = pluginInstance.settings.categories;
-            // Buttons of every layer, so a drag state referencing a context
-            // profile's tool resolves just like a base one.
+            // Buttons of every variant, so a drag state referencing a
+            // variant's tool resolves just like any other.
             const allButtons = collectButtonsById(storedCategories);
-            const selection = layerSelectionRef.current ?? {};
+            const selection = variantSelectionRef.current ?? {};
 
             // Every button the drag state accounts for. Buttons outside this
             // set were never part of the drag (e.g. grid overflow from
@@ -491,15 +469,15 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 if (!ids) return category;
 
                 if (getCategoryLayout(category) === 'grid') {
-                    // A palette writes back per layer: the index IS the slot,
-                    // buttons keep the layer they belong to, tools arriving
-                    // from another category join the layer on screen, and
-                    // off-screen layers are left completely untouched.
-                    return applySlotIdsToPalette(
+                    // A grid writes back into the ONE grid on screen: the
+                    // index IS the slot, tools arriving from another category
+                    // join the selected variant (or the static grid), and
+                    // every off-screen variant is left completely untouched.
+                    return applySlotIdsToGridCategory(
                         category,
                         ids,
                         allButtons,
-                        selection[category.id] ?? BASE_LAYER_ID,
+                        selection[category.id] ?? null,
                         placedIds
                     );
                 }
@@ -577,8 +555,11 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         }
 
         const prev = itemsRef.current;
-        const hoverActiveContainer = findContainerForButtonId(activeId, prev);
-        const hoverOverContainer = resolveOverContainerId(overId, prev);
+        // Previews are computed from the drag-start baseline (see
+        // dragStartItemsRef), so target resolution must read it as well.
+        const base = dragStartItemsRef.current ?? prev;
+        const hoverActiveContainer = findContainerForButtonId(activeId, base);
+        const hoverOverContainer = resolveOverContainerId(overId, base);
         if (
             hoverActiveContainer &&
             hoverOverContainer &&
@@ -588,14 +569,13 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         }
 
         const next = applyDragOverToItems(
-            prev,
+            base,
             activeId,
             overId,
-            containerLayoutsRef.current,
-            blockedSlotsRef.current
+            containerLayoutsRef.current
         );
         lastAppliedDragOverRef.current = { activeId, overId };
-        if (next !== prev) {
+        if (!itemsShallowEqual(next, prev)) {
             itemsRef.current = next;
             setItems(next);
         }
@@ -633,6 +613,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 return;
             }
             resetButtonDragHoverState();
+            dragStartItemsRef.current = itemsRef.current;
             setActiveButtonId(activeId);
             setActiveCategoryId(null);
             setCategoryTabOverlayWidth(null);
@@ -700,9 +681,8 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 resolveGridDropTarget(
                     activeId,
                     overIdStr,
-                    itemsRef.current,
-                    containerLayoutsRef.current,
-                    blockedSlotsRef.current
+                    dragStartItemsRef.current ?? itemsRef.current,
+                    containerLayoutsRef.current
                 )
             );
             scheduleButtonDragOver(activeId, overIdStr);
@@ -776,12 +756,21 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 return;
             }
 
-            cancelDragOverFrame();
+            // Apply a still-pending drag-over synchronously instead of
+            // discarding it: the release may happen before the scheduled
+            // animation frame ran, and the preview must reflect the last
+            // hovered target before the drop is finalized below.
+            if (dragOverFrameRef.current !== null) {
+                cancelAnimationFrame(dragOverFrameRef.current);
+                dragOverFrameRef.current = null;
+            }
+            flushButtonDragOver();
 
             // 文件夹拖拽取消：跳过位置应用与持久化
             if (dragForceCancelledRef.current) {
                 dragForceCancelledRef.current = false;
                 setActiveButtonId(null);
+                dragStartItemsRef.current = null;
                 resetButtonDragHoverState();
                 return;
             }
@@ -792,49 +781,57 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 itemsRef.current = baseline;
                 setItems(baseline);
                 setActiveButtonId(null);
+                dragStartItemsRef.current = null;
                 resetButtonDragHoverState();
                 return;
             }
 
-            if (active && over) {
+            // A release over the dragged tool itself means the pointer rests
+            // on the PREVIEW position of that tool — the baseline-derived
+            // preview already is the final arrangement, so nothing must be
+            // recomputed (recomputing against the baseline would read the
+            // tool's OLD slot and undo the move).
+            if (active && over && String(over.id) !== activeId) {
                 const overId = String(over.id);
 
-                // Released on a cell the palette rules refuse: a slot another
-                // layer reserves, or a flow tool on an occupied slot. The live
-                // drag state follows the pointer, so it may already show the
-                // tool on the last accepted cell it crossed — committing that
-                // would drop the tool where the user never aimed. The whole
-                // drag is therefore reverted and the refusal is explained.
-                // (A release over the palette's background, `no-cell`, is left
+                // Released on a cell the grid rules refuse: a flow tool on an
+                // occupied slot. The preview may already show the tool on the
+                // last accepted cell it crossed — committing that would drop
+                // the tool where the user never aimed. The whole drag is
+                // therefore reverted and the refusal is explained.
+                // (A release over the grid's background, `no-cell`, is left
                 // alone: it is the normal case once the preview already fills
                 // the target cell, which removes that cell's droppable.)
+                const base = dragStartItemsRef.current ?? itemsRef.current;
                 if (
                     resolveGridDropOutcome(
-                        itemsRef.current,
+                        base,
                         activeId,
                         overId,
-                        containerLayoutsRef.current,
-                        blockedSlotsRef.current
+                        containerLayoutsRef.current
                     ) === 'blocked'
                 ) {
                     const baseline = buildBaselineItems();
                     itemsRef.current = baseline;
                     setItems(baseline);
                     setActiveButtonId(null);
+                    dragStartItemsRef.current = null;
                     resetButtonDragHoverState();
-                    new Notice(t('palette_drop_blocked'));
+                    new Notice(t('grid_drop_occupied'));
                     return;
                 }
 
+                // The final arrangement is computed from the drag-start
+                // baseline: the release target is the only thing that counts,
+                // cells crossed on the way must leave no trace.
                 const prev = itemsRef.current;
                 const next = applyDragOverToItems(
-                    prev,
+                    base,
                     activeId,
                     overId,
-                    containerLayoutsRef.current,
-                    blockedSlotsRef.current
+                    containerLayoutsRef.current
                 );
-                if (next !== prev) {
+                if (!itemsShallowEqual(next, prev)) {
                     itemsRef.current = next;
                     setItems(next);
                 }
@@ -844,6 +841,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             const baseline = buildBaselineItems();
 
             setActiveButtonId(null);
+            dragStartItemsRef.current = null;
             resetButtonDragHoverState();
 
             if (!itemsShallowEqual(baseline, finalItems)) {
@@ -857,7 +855,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
         },
         [
             buildBaselineItems,
-            cancelDragOverFrame,
+            flushButtonDragOver,
             categories,
             categoryDragOverlayVariant,
             categoryTabDropTargetId,
@@ -872,6 +870,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
     const handleDragCancel = useCallback(() => {
         dragForceCancelledRef.current = true;
         cancelDragOverFrame();
+        dragStartItemsRef.current = null;
         setActiveButtonId(null);
         setActiveCategoryId(null);
         lastAppliedCategoryDragOverRef.current = null;

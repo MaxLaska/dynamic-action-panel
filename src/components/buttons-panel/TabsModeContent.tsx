@@ -18,6 +18,7 @@ import {
 import { hasConditions } from '@/context/conditions';
 import { ContextStatusBadge } from '@/components/shared/ContextStatusBadge';
 import { isGridCategory } from '@/utils/categoryGrid';
+import { isDynamicCategory } from '@/utils/categoryVariants';
 import { t } from '@/utils/i18n';
 
 function resolveActiveTabId(
@@ -225,7 +226,14 @@ export const TabsModeContent: React.FC<TabsModeContentProps> = ({
                     className="tab-icon"
                     ref={(el) => {
                         if (el) {
-                            setIcon(el, isGridCategory(category) ? 'layout-grid' : 'list');
+                            setIcon(
+                                el,
+                                isDynamicCategory(category)
+                                    ? 'layers'
+                                    : isGridCategory(category)
+                                      ? 'layout-grid'
+                                      : 'list'
+                            );
                         }
                     }}
                 />

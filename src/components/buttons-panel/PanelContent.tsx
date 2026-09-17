@@ -3,11 +3,19 @@ import type { CategoryConfig } from '@/types';
 import { useConfigContext } from '@/contexts/ConfigContext';
 import { ButtonDragProvider } from '@/contexts/ButtonDragContext';
 import { useOCAPContext } from '@/hooks/useOCAPContext';
-import { projectCategoriesForContext } from '@/context/panelProjection';
+import {
+    projectCategoriesForContext,
+    type VariantSelectionMap,
+} from '@/context/panelProjection';
 import { OCAPVisibilityProvider } from '@/contexts/OCAPVisibilityContext';
-import { PaletteLayerProvider, selectedLayerOf } from '@/contexts/PaletteLayerContext';
-import { filterPaletteButtons, isPaletteCategory } from '@/utils/paletteLayers';
-import type { PaletteLayerId, PaletteLayerSelection } from '@/utils/paletteLayers';
+import {
+    CategoryVariantProvider,
+    selectedVariantOf,
+    type VariantSelectionEntry,
+    type VariantSelectionState,
+} from '@/contexts/CategoryVariantContext';
+import { filterCategoryButtonsDeep, isDynamicCategory } from '@/utils/categoryVariants';
+import { isGridCategory } from '@/utils/categoryGrid';
 import { TabsModeContent } from '@/components/buttons-panel/TabsModeContent';
 import { ListModeContent } from '@/components/buttons-panel/ListModeContent';
 import { FolderModeContent } from '@/components/buttons-panel/FolderModeContent';
@@ -61,14 +69,14 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                     return category;
                 }
 
-                // A palette's tools can live in any of its layers, so the
-                // search filters every layer instead of `buttons` alone.
-                if (isPaletteCategory(category)) {
-                    const filtered = filterPaletteButtons(category, matches);
+                // A grid category's tools can live in any of its variants, so
+                // the search filters every variant instead of `buttons` alone.
+                if (isGridCategory(category)) {
+                    const filtered = filterCategoryButtonsDeep(category, matches);
                     const hasMatch =
                         filtered.buttons.length > 0 ||
-                        (filtered.contextProfiles ?? []).some(
-                            (profile) => profile.buttons.length > 0
+                        (filtered.variants ?? []).some(
+                            (variant) => variant.buttons.length > 0
                         );
                     return hasMatch ? filtered : null;
                 }
@@ -83,29 +91,70 @@ export const PanelContent: React.FC<PanelContentProps> = ({
     }, [categories, normalizedQuery]);
 
     /**
-     * Management modes: which layer of each palette the user is editing.
-     * Locked mode ignores this entirely — there the context decides.
+     * Management modes: which variant of each dynamic category the user is
+     * editing, plus the previously edited one (for the quick A/B flip).
+     * Locked mode ignores this entirely — there the context decides. Pure UI
+     * state, never persisted.
      */
-    const [layerSelection, setLayerSelection] = React.useState<
-        Record<string, PaletteLayerId>
+    const [variantSelection, setVariantSelection] = React.useState<
+        Record<string, VariantSelectionEntry>
     >({});
 
-    const selectLayer = React.useCallback((categoryId: string, layerId: PaletteLayerId) => {
-        setLayerSelection((prev) =>
-            prev[categoryId] === layerId ? prev : { ...prev, [categoryId]: layerId }
-        );
+    // "Previous" for the A/B flip is what was actually ON SCREEN before the
+    // pick — which may have been an implicit (runtime-derived) selection, so
+    // it comes from the normalized state, not from the raw picks.
+    const normalizedSelectionRef = React.useRef<VariantSelectionState>({});
+
+    const selectVariant = React.useCallback((categoryId: string, variantId: string) => {
+        const onScreen = normalizedSelectionRef.current[categoryId] ?? null;
+        setVariantSelection((prev) => {
+            const entry = prev[categoryId];
+            if (onScreen?.current === variantId) {
+                // Re-selecting what is already shown: make it explicit but
+                // keep the existing flip target.
+                if (entry?.current === variantId) {
+                    return prev;
+                }
+                return {
+                    ...prev,
+                    [categoryId]: { current: variantId, previous: onScreen.previous },
+                };
+            }
+            return {
+                ...prev,
+                [categoryId]: {
+                    current: variantId,
+                    previous: onScreen?.current ?? entry?.current ?? null,
+                },
+            };
+        });
     }, []);
 
-    // A selection pointing at a deleted profile must never survive: normalize
-    // it against the categories that actually exist.
-    const normalizedSelection = React.useMemo<PaletteLayerSelection>(() => {
-        const next: Record<string, PaletteLayerId> = {};
+    // A selection pointing at a deleted variant must never survive: normalize
+    // it against the categories that actually exist. Without an explicit pick
+    // the variant active in the CURRENT context is preselected, so switching
+    // into a management mode never silently changes what the grid shows.
+    const normalizedSelection = React.useMemo<VariantSelectionState>(() => {
+        const next: Record<string, VariantSelectionEntry> = {};
         for (const category of searchFilteredCategories) {
-            if (!isPaletteCategory(category)) continue;
-            next[category.id] = selectedLayerOf(category, layerSelection);
+            if (!isDynamicCategory(category)) continue;
+            const entry = selectedVariantOf(category, variantSelection, ocapContext);
+            if (entry) {
+                next[category.id] = entry;
+            }
         }
         return next;
-    }, [searchFilteredCategories, layerSelection]);
+    }, [searchFilteredCategories, variantSelection, ocapContext]);
+    normalizedSelectionRef.current = normalizedSelection;
+
+    /** Flat map (categoryId -> variantId) for the projection and DnD. */
+    const selectedVariantIds = React.useMemo<VariantSelectionMap>(() => {
+        const next: Record<string, string> = {};
+        for (const [categoryId, entry] of Object.entries(normalizedSelection)) {
+            next[categoryId] = entry.current;
+        }
+        return next;
+    }, [normalizedSelection]);
 
     // Central context projection: in locked mode categories/buttons hidden by
     // their conditions are filtered out (a category also disappears when no
@@ -119,9 +168,9 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 searchFilteredCategories,
                 ocapContext,
                 interactionMode,
-                { selectedLayers: normalizedSelection }
+                { selectedVariants: selectedVariantIds }
             ),
-        [searchFilteredCategories, ocapContext, interactionMode, normalizedSelection]
+        [searchFilteredCategories, ocapContext, interactionMode, selectedVariantIds]
     );
     const filteredCategories = projection.categories;
 
@@ -179,16 +228,16 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 hiddenCategoryIds={projection.hiddenCategoryIds}
                 interactionMode={interactionMode}
             >
-            <PaletteLayerProvider
-                palettes={projection.palettes}
+            <CategoryVariantProvider
+                gridViews={projection.gridViews}
                 selection={normalizedSelection}
-                selectLayer={selectLayer}
+                selectVariant={selectVariant}
                 manageable={interactionMode !== 'locked'}
             >
             <ButtonDragProvider
                 categories={filteredCategories}
-                palettes={projection.palettes}
-                layerSelection={normalizedSelection}
+                gridViews={projection.gridViews}
+                variantSelection={selectedVariantIds}
                 enabled={dragReorderEnabled}
                 displayStyle={effectiveDisplayStyle}
                 enableAnimation={enableAnimation}
@@ -208,7 +257,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
             >
                 {panelContent}
             </ButtonDragProvider>
-            </PaletteLayerProvider>
+            </CategoryVariantProvider>
             </OCAPVisibilityProvider>
         </div>
     );

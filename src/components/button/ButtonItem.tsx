@@ -16,10 +16,8 @@ interface ButtonItemProps {
     enableEditMode: boolean;
     plugin: ButtonsPanelPlugin;
     app: App;
-    /** Palette grid: marker derived from the tool's layer (see SimpleButton). */
-    contextStatus?: ContextStatus;
-    /** Palette grid: base tool rendered inside a context-profile layer. */
-    layerLocked?: boolean;
+    /** Marker override; grid categories pass 'none' (see SimpleButton). */
+    contextStatus?: ContextStatus | 'none';
 }
 
 /**
@@ -48,7 +46,6 @@ export const ButtonItem: React.FC<ButtonItemProps> = React.memo(
         plugin,
         app,
         contextStatus,
-        layerLocked,
     }) => {
         const handleButtonClick = useButtonClickHandler(button);
 
@@ -63,7 +60,6 @@ export const ButtonItem: React.FC<ButtonItemProps> = React.memo(
                 app={app}
                 onClick={handleButtonClick}
                 contextStatus={contextStatus}
-                layerLocked={layerLocked}
             />
         );
     },

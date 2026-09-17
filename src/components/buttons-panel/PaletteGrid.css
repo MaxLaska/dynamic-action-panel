@@ -66,102 +66,120 @@ body .buttons-panel .ocap-palette-grid.icon-left .ocap-grid-slot--empty {
     opacity: 0.6;
 }
 
-/* --- Palette context layers -------------------------------------------- */
+/* --- Dynamic category variants ------------------------------------------ */
 
-/* Layer selector above the grid: [ Base / Pinned ] [ Type A ] [ + Context ].
-   Management modes only — in locked mode the context decides the layer. */
-.buttons-panel .ocap-layer-selector {
+/* Variant bar above the grid of a dynamic category (management modes only):
+       Editing: [ Source v ]  [swap]        [copy] [plus] [menu]
+       Trigger: type = Source  ·  Active now: Topic
+   The selected variant IS the grid below — it must dominate visually. */
+.buttons-panel .ocap-variant-bar {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    align-items: center;
-    margin: 0 0 4px;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0 0 6px;
 }
 
-.buttons-panel button.ocap-layer-chip {
+.buttons-panel .ocap-variant-editing-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.buttons-panel .ocap-variant-editing-label {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    flex: 0 0 auto;
+}
+
+/* The dropdown is the loudest element of the bar: the variant name is the one
+   thing the user must never have to guess. */
+.buttons-panel select.ocap-variant-select {
+    font-weight: var(--font-semibold, 600);
+    max-width: 60%;
+    min-width: 0;
+    text-overflow: ellipsis;
+}
+
+.buttons-panel .ocap-variant-empty {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    font-style: italic;
+}
+
+.buttons-panel .ocap-variant-spacer {
+    flex: 1 1 auto;
+}
+
+.buttons-panel button.ocap-variant-action {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 2px 8px;
+    padding: 2px 5px;
     height: auto;
     min-height: 0;
-    border: 1px solid var(--background-modifier-border);
+    border: 1px solid transparent;
     border-radius: var(--radius-s);
-    background-color: var(--background-secondary);
+    background-color: transparent;
     color: var(--text-muted);
     font-size: var(--font-ui-smaller);
-    line-height: 1.5;
     cursor: pointer;
     box-shadow: none;
 }
 
-.buttons-panel button.ocap-layer-chip:hover {
+.buttons-panel button.ocap-variant-action:hover {
     background-color: var(--background-modifier-hover);
     color: var(--text-normal);
 }
 
-/* The selected chip is the one the grid below belongs to — it must be
-   unmistakable, and not by color alone: it also carries the stronger border
-   and the full-contrast text. */
-.buttons-panel button.ocap-layer-chip--selected {
-    border-color: var(--interactive-accent);
-    background-color: var(--background-modifier-active-hover, var(--background-modifier-hover));
-    color: var(--text-normal);
-    font-weight: var(--font-semibold, 600);
-}
-
-/* The profile that matches the current context, so the editor and the runtime
-   can be told apart at a glance. Marked with a dot, not only a color. */
-.buttons-panel button.ocap-layer-chip--matching::after {
-    content: '';
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background-color: var(--text-accent);
-    flex: 0 0 auto;
-}
-
-.buttons-panel button.ocap-layer-chip--broken {
-    border-color: var(--text-error);
-    color: var(--text-error);
-}
-
-.buttons-panel .ocap-layer-chip-icon {
+.buttons-panel .ocap-variant-action-icon {
     display: inline-flex;
     align-items: center;
 }
 
-.buttons-panel .ocap-layer-chip-icon .svg-icon {
-    width: 12px;
-    height: 12px;
+.buttons-panel .ocap-variant-action-icon .svg-icon {
+    width: 14px;
+    height: 14px;
 }
 
-.buttons-panel .ocap-layer-chip-menu {
-    display: inline-flex;
-    align-items: center;
-    margin-left: 2px;
-    opacity: 0.7;
+/* Quick A/B flip: shows the previous variant's name so one click is enough
+   to compare two grids like two animation frames. */
+.buttons-panel button.ocap-variant-swap {
+    border-color: var(--background-modifier-border);
 }
 
-.buttons-panel .ocap-layer-chip-menu:hover {
-    opacity: 1;
-}
-
-.buttons-panel .ocap-layer-chip-menu .svg-icon {
-    width: 12px;
-    height: 12px;
-}
-
-.buttons-panel .ocap-layer-chip-label {
+.buttons-panel .ocap-variant-swap-label {
+    max-width: 9em;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/* One line stating which layer is being edited and what that implies. */
-.buttons-panel .ocap-layer-hint {
-    margin: 0 0 6px;
+/* Second line: trigger of the EDITED variant vs. the variant the current
+   context resolves to at RUNTIME — two different questions, stated apart. */
+.buttons-panel .ocap-variant-status-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
     color: var(--text-muted);
     font-size: var(--font-ui-smaller);
     line-height: 1.4;
+}
+
+.buttons-panel .ocap-variant-trigger--broken {
+    color: var(--text-error);
+}
+
+.buttons-panel .ocap-variant-active-name {
+    color: var(--text-accent);
+    font-weight: var(--font-semibold, 600);
+}
+
+.buttons-panel .ocap-variant-active-name--none {
+    color: var(--text-faint);
+    font-weight: normal;
+    font-style: italic;
 }
 
 /* Management modes outline every cell, filled ones included, so the 4x4 field
@@ -170,49 +188,15 @@ body .buttons-panel .ocap-palette-grid.icon-left .ocap-grid-slot--empty {
     border: 1px dashed var(--background-modifier-border);
 }
 
-/* A base/pinned tool shown while a context profile is being edited: visible
-   for orientation, but owned by the base layer and locked here. It must recede
-   behind the tools that ARE editable on this layer, so it only gets a dimmed
-   button and a quieter border — no filled box competing for attention. */
-.buttons-panel .ocap-grid-slot--locked {
-    border: 1px dashed var(--background-modifier-border);
-    background-color: transparent;
-    opacity: 0.75;
-}
-
-body .buttons-panel button.buttons-panel-simple-button.ocap-layer-locked {
-    opacity: 0.55;
-    cursor: not-allowed;
-    filter: saturate(0.4);
-}
-
-/* An empty slot another palette layer reserves. It stays in place (positions
-   must never shift) but rejects drops and explains itself in the tooltip. */
-.buttons-panel .ocap-grid-slot--reserved {
-    border-style: dotted;
-    border-color: var(--text-accent);
-    background-color: transparent;
-    opacity: 0.45;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.buttons-panel .ocap-grid-slot-reserved-icon .svg-icon {
-    width: 12px;
-    height: 12px;
-    color: var(--text-accent);
-}
-
-/* Context-profile priority overview in the category modal. */
-.buttons-panel .ocap-context-profiles-list {
+/* Variant priority overview in the category modal. */
+.buttons-panel .ocap-variants-list {
     margin: -6px 0 12px;
     display: flex;
     flex-direction: column;
     gap: 2px;
 }
 
-.buttons-panel .ocap-context-profiles-row {
+.buttons-panel .ocap-variants-row {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -221,32 +205,36 @@ body .buttons-panel button.buttons-panel-simple-button.ocap-layer-locked {
     color: var(--text-muted);
 }
 
-.buttons-panel .ocap-context-profiles-name {
+.buttons-panel .ocap-variants-name {
     color: var(--text-normal);
     font-weight: var(--font-semibold, 600);
 }
 
-.buttons-panel .ocap-context-profiles-condition {
-    font-family: var(--font-monospace);
+.buttons-panel .ocap-variants-trigger {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 100%;
 }
 
-.buttons-panel .ocap-context-profiles-empty {
+.buttons-panel .ocap-variants-empty {
     margin: -6px 0 12px;
     color: var(--text-muted);
     font-size: var(--font-ui-smaller);
 }
 
-.buttons-panel .ocap-context-delete-list {
+.buttons-panel .ocap-variant-delete-list {
     margin: 4px 0 12px 20px;
     color: var(--text-muted);
 }
 
-/* Palette layer statement replacing the condition editor in button modals. */
-.buttons-panel .ocap-palette-layer-notice-value {
+/* Variant modal: the trigger section disappears while "Fallback" is on. */
+.buttons-panel .ocap-variant-trigger-hidden {
+    display: none;
+}
+
+/* Grid target statement replacing the condition editor in button modals. */
+.buttons-panel .ocap-grid-target-notice-value {
     font-weight: var(--font-semibold, 600);
     color: var(--text-normal);
 }
@@ -331,13 +319,6 @@ body .buttons-panel button.buttons-panel-simple-button.ocap-layer-locked {
 .buttons-panel .ocap-context-badge--inactive {
     color: var(--text-muted);
     opacity: 0.75;
-}
-
-/* A base tool locked inside a context layer: the pin is the point, so it
-   stays legible rather than receding like an ordinary persistent marker. */
-.buttons-panel .ocap-context-badge--locked {
-    color: var(--text-muted);
-    opacity: 0.9;
 }
 
 /* Locked mode: only contextual elements are marked, and quietly. */

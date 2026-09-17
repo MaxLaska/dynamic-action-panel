@@ -10,14 +10,8 @@ import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { t } from '@/utils/i18n';
 import { ActionSequence } from '@/actions/ActionSequence';
 import { NameInput, IconInput, ConditionEditor } from '@/components/input';
-import {
-    BASE_LAYER_ID,
-    addButtonToLayer,
-    findContextProfile,
-    isBaseLayer,
-    isPaletteCategory,
-    type PaletteLayerId,
-} from '@/utils/paletteLayers';
+import { addButtonToGrid, findVariant } from '@/utils/categoryVariants';
+import { isGridCategory } from '@/utils/categoryGrid';
 import { findStoredCategory, replaceStoredCategory } from '@/utils/categoryStore';
 
 /**
@@ -42,11 +36,11 @@ export class ButtonCreateModal extends Modal {
     // OCAP visibility conditions editor (visual builder + advanced JSON)
     conditionsInput: ConditionEditor | null = null;
     /**
-     * Palette grid: the layer the new tool belongs to. Base = pinned into
-     * every context, a profile id = only in that context. There is no separate
-     * "pinned"/"contextual" switch — the layer the user is editing decides.
+     * Grid categories: the variant the new tool is created in (the one the
+     * user is editing), or null for a static grid. There is no separate
+     * "contextual" switch — the variant selector above the grid decides.
      */
-    private readonly targetLayerId: PaletteLayerId;
+    private readonly targetVariantId: string | null;
 
     /**
      * 构造函数，初始化模态框和临时按钮对象。
@@ -54,14 +48,14 @@ export class ButtonCreateModal extends Modal {
      * @param plugin 插件主类实例
      * @param parentCategory 按钮所属分类
      * @param onSave 保存成功回调
-     * @param targetLayerId 调色板目标图层（仅 grid 分类）
+     * @param targetVariantId 目标 variant（仅 dynamic grid 分类）
      */
-	constructor(app: App, plugin: ButtonsPanelPlugin, parentCategory: CategoryConfig, onSave?: () => void, targetLayerId: PaletteLayerId = BASE_LAYER_ID) {
+	constructor(app: App, plugin: ButtonsPanelPlugin, parentCategory: CategoryConfig, onSave?: () => void, targetVariantId: string | null = null) {
         super(app);
         this.plugin = plugin;
         this.parentCategory = parentCategory;
         this.onSave = onSave;
-        this.targetLayerId = targetLayerId;
+        this.targetVariantId = targetVariantId;
         this.tempButton = {
             id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
             name: '',
@@ -145,11 +139,12 @@ export class ButtonCreateModal extends Modal {
         this.nameInput.setValue(this.tempButton.name || '');
         this.iconInput.setValue(this.tempButton.icon || '');
 
-        // OCAP: inside a palette, contextuality is a property of the LAYER the
-        // tool is created on, not of the individual button — so the per-button
-        // condition editor is replaced by a statement of where it will land.
-        if (isPaletteCategory(this.parentCategory)) {
-            renderPaletteLayerNotice(container, this.parentCategory, this.targetLayerId);
+        // OCAP: inside a grid category, contextuality is a property of the
+        // VARIANT the tool is created in, not of the individual button — so
+        // the per-button condition editor is replaced by a statement of where
+        // it will land.
+        if (isGridCategory(this.parentCategory)) {
+            renderGridTargetNotice(container, this.parentCategory, this.targetVariantId);
             return;
         }
 
@@ -289,10 +284,10 @@ export class ButtonCreateModal extends Modal {
         const stored =
             findStoredCategory(this.plugin, this.parentCategory.id) ?? this.parentCategory;
 
-        if (isPaletteCategory(stored)) {
-            const next = addButtonToLayer(stored, this.targetLayerId, this.tempButton);
+        if (isGridCategory(stored)) {
+            const next = addButtonToGrid(stored, this.targetVariantId, this.tempButton);
             if (!next) {
-                new Notice(t('palette_layer_full'));
+                new Notice(t('variant_grid_full'));
                 return;
             }
             replaceStoredCategory(this.plugin, next);
@@ -313,29 +308,28 @@ export class ButtonCreateModal extends Modal {
 }
 
 /**
- * Explains, inside a palette's button modal, which layer the tool belongs to
- * and what that means — replacing the per-button condition editor, which a
- * palette deliberately does not use.
+ * Explains, inside a grid category's button modal, where the tool lives — a
+ * variant of a dynamic category, or the static grid — replacing the
+ * per-button condition editor, which a grid deliberately does not use.
  */
-export function renderPaletteLayerNotice(
+export function renderGridTargetNotice(
     container: HTMLElement,
     category: CategoryConfig,
-    layerId: PaletteLayerId
+    variantId: string | null
 ): void {
-    const profileName = isBaseLayer(layerId)
-        ? null
-        : (findContextProfile(category, layerId)?.name ?? null);
+    const variantName =
+        variantId !== null ? (findVariant(category, variantId)?.name ?? null) : null;
 
     const setting = new Setting(container)
-        .setName(t('palette_button_layer_label'))
+        .setName(t('grid_button_target_label'))
         .setDesc(
-            profileName === null
-                ? t('palette_button_layer_base_desc')
-                : t('palette_button_layer_context_desc').replace('{name}', profileName)
+            variantName === null
+                ? t('grid_button_target_static_desc')
+                : t('grid_button_target_variant_desc').replace('{name}', variantName)
         );
-    setting.settingEl.addClass('ocap-palette-layer-notice');
+    setting.settingEl.addClass('ocap-grid-target-notice');
     setting.controlEl.createSpan({
-        cls: 'ocap-palette-layer-notice-value',
-        text: profileName ?? t('palette_layer_base'),
+        cls: 'ocap-grid-target-notice-value',
+        text: variantName ?? t('grid_button_target_static'),
     });
 }
