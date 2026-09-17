@@ -1,5 +1,3 @@
-> English | [中文](./contributing.zh.md)
-
 ## 🤝 Contributing
 
 We welcome contributions from the community! Here's how you can help:
@@ -19,14 +17,14 @@ We welcome contributions from the community! Here's how you can help:
 
 #### 🐛 Bug Reports
 
-- Use the [bug report template](https://github.com/TracingOrigins/obsidian-buttons-panel-plugin/issues/new?template=bug_report.md)
+- Use the [bug report template](https://github.com/MaxLaska/obsidian-contextual-action-panel/issues/new?template=bug_report.md)
 - Include steps to reproduce
 - Describe expected vs actual behavior
 - Provide system information (OS, Obsidian version, plugin version)
 
 #### 💡 Feature Requests
 
-- Use the [feature request template](https://github.com/TracingOrigins/obsidian-buttons-panel-plugin/issues/new?template=feature_request.md)
+- Use the [feature request template](https://github.com/MaxLaska/obsidian-contextual-action-panel/issues/new?template=feature_request.md)
 - Explain the problem you're trying to solve
 - Describe your proposed solution
 - Consider implementation complexity
@@ -49,7 +47,7 @@ We welcome contributions from the community! Here's how you can help:
 
 ```bash
 # Clone the repository
-git clone https://github.com/TracingOrigins/obsidian-buttons-panel-plugin.git
+git clone https://github.com/MaxLaska/obsidian-contextual-action-panel.git
 cd obsidian-buttons-panel-plugin
 
 # Install dependencies
@@ -87,6 +85,6 @@ Use conventional commit format:
 
 ### 📞 Contact
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/TracingOrigins/obsidian-buttons-panel-plugin/issues)
-- **GitHub Discussions**: [Ask questions or share ideas](https://github.com/TracingOrigins/obsidian-buttons-panel-plugin/discussions)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/MaxLaska/obsidian-contextual-action-panel/issues)
+- **GitHub Discussions**: [Ask questions or share ideas](https://github.com/MaxLaska/obsidian-contextual-action-panel/discussions)
 - **Email**: [Contact the maintainer](mailto:liuqjit@163.com@163.com) (if available)

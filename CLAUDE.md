@@ -1,8 +1,10 @@
-# OCAP – Claude entry point
+# Dynamic Action Panel – Claude entry point
 
 ## Project
 
-Obsidian Contextual Action Panel (OCAP) is an independent fork-based Obsidian plugin project derived from Buttons Panel. The goal is a configurable, context-aware action surface for Obsidian that can combine persistent user tools with dynamic actions and richer React components.
+Dynamic Action Panel is an independent fork-based Obsidian plugin project derived from Buttons Panel. The goal is a configurable, context-aware action surface for Obsidian that can combine persistent user tools with dynamic actions and richer React components.
+
+The project was previously called Obsidian Contextual Action Panel (OCAP). That name survives only where it is a compatibility contract — the `ocap-` CSS prefix, the `ocap:<name>` colour values, the `ocap-template` format id with its `.ocap.json` extension — and in the `docs/ocap/` path. See `docs/ocap/rebranding-dynamic-action-panel.md`. The plugin id stays `buttons-panel`.
 
 Repository path:
 `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`
@@ -63,8 +65,8 @@ Before mutating code for a task:
 
 ## Product direction
 
-OCAP is intentionally an **independent fork**. Do not optimize architecture for routine upstream merging.
+Dynamic Action Panel is intentionally an **independent fork**. Do not optimize architecture for routine upstream merging.
 
-Upstream Buttons Panel remains a reference source. Useful upstream fixes and improvements may be analyzed and selectively ported into OCAP when beneficial.
+Upstream Buttons Panel remains a reference source. Useful upstream fixes and improvements may be analyzed and selectively ported into Dynamic Action Panel when beneficial.
 
 The immediate technical priority is stabilization and a test baseline before implementing the first Context Engine features.

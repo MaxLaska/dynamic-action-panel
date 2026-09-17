@@ -1,12 +1,12 @@
 {
-    "name": "buttons-panel",
+    "name": "dynamic-action-panel",
     "version": "2.4.7",
-    "description": "A modern button panel plugin for quick access to files, commands, links, and scripts.",
-    "author": "Kevin",
+    "description": "Context-aware action panel for the Obsidian sidebar: grids of tools that change with the file you are working in.",
+    "author": "Max Laska",
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/TracingOrigins/obsidian-buttons-panel-plugin.git"
+        "url": "https://github.com/MaxLaska/obsidian-contextual-action-panel.git"
     },
     "main": "main.js",
     "type": "module",
