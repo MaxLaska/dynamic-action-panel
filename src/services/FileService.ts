@@ -1,7 +1,7 @@
 import { App, Notice, WorkspaceLeaf } from 'obsidian';
 import { ButtonsPanelPlugin } from '@/types/plugin';
 import { ButtonAction, FileActionParams } from '@/types/action';
-import { t } from '@/utils/i18n';
+import { t, tWithParams } from '@/utils/i18n';
 
 /**
  * Handles the open-file action.
@@ -24,7 +24,7 @@ export class FileService {
      * @param action Button action config; must be type: 'file' with its parameters
      */
     async openFile(action: ButtonAction): Promise<void> {
-        const filePath = this.validateAndExtractFilePath(action);
+        const { filePath, subpath } = this.validateAndExtractParams(action);
         const file = this.getFileByPath(filePath);
         if (!file) {
             return;
@@ -33,24 +33,40 @@ export class FileService {
         const existingLeaf = this.findOpenLeafForFile(filePath);
         if (existingLeaf) {
             this.activateLeaf(existingLeaf);
+            // The file is already on screen, so there is nothing to open — only
+            // a position to move to. Reopening it instead would be worse than
+            // useless: a view that refuses a second leaf for the same file
+            // (Obsidian's PDF/reader views do) discards the navigation with the
+            // duplicate leaf, and the click would appear to do nothing.
+            if (subpath) {
+                this.applyEphemeralSubpath(existingLeaf, subpath);
+            }
             return;
         }
 
-        await this.openFileInNewLeaf(filePath);
+        this.warnIfNoViewRegistered(file.extension);
+        await this.openFileInNewLeaf(filePath, subpath);
     }
 
     /**
-     * Validates the action type and extracts the file path.
+     * Validates the action type and extracts its parameters.
      * @param action Button action config
-     * @returns The file path
+     * @returns The file path and the optional subpath
      * @throws When the action type is not 'file'
      */
-    private validateAndExtractFilePath(action: ButtonAction): string {
+    private validateAndExtractParams(action: ButtonAction): {
+        filePath: string;
+        subpath?: string;
+    } {
         if (action.type !== 'file') {
             throw new Error('Invalid action type for file opening');
         }
         const fileParams: FileActionParams = action.parameters;
-        return fileParams.filePath;
+        const subpath = fileParams.subpath?.trim();
+        return {
+            filePath: fileParams.filePath,
+            ...(subpath ? { subpath } : {}),
+        };
     }
 
     /**
@@ -96,11 +112,60 @@ export class FileService {
     }
 
     /**
-     * Opens the file in a new tab.
+     * Opens the file in a new tab, at the subpath when there is one.
+     *
+     * The subpath travels as part of the link text rather than as `eState`,
+     * because that is the form a view receives when the user follows a normal
+     * Obsidian link — the same path the target view is already known to handle.
      * @param filePath File path
+     * @param subpath Optional link subpath, including its leading `#`
      */
-    private async openFileInNewLeaf(filePath: string): Promise<void> {
-        await this.app.workspace.openLinkText(filePath, '', true);
+    private async openFileInNewLeaf(filePath: string, subpath?: string): Promise<void> {
+        await this.app.workspace.openLinkText(`${filePath}${subpath ?? ''}`, '', true);
+    }
+
+    /**
+     * Moves an already open leaf to the subpath.
+     *
+     * Wrapped on purpose: `setEphemeralState` runs the target view's own
+     * handler, and a view is free to throw on a subpath it cannot parse (the
+     * ZotFlow reader does, for instance). A position we cannot reach is not a
+     * reason to fail the click — the file is open, which is most of the intent.
+     * @param leaf The leaf showing the file
+     * @param subpath Link subpath, including its leading `#`
+     */
+    private applyEphemeralSubpath(leaf: WorkspaceLeaf, subpath: string): void {
+        try {
+            leaf.setEphemeralState({ subpath });
+        } catch (error) {
+            console.warn('[Dynamic Action Panel] Could not navigate to the subpath', subpath, error);
+        }
+    }
+
+    /**
+     * Warns when no view is registered for this extension, which is the one
+     * case where opening the file silently does nothing at all (it happens when
+     * the plugin that registered the type — a PDF reader, say — was disabled
+     * without a restart). Read defensively: the registry is not public API, and
+     * failing to consult it must never block the open attempt.
+     * @param extension File extension without the dot
+     */
+    private warnIfNoViewRegistered(extension: string): void {
+        const registry = (
+            this.app as unknown as {
+                viewRegistry?: { getTypeByExtension?: (ext: string) => string | undefined };
+            }
+        ).viewRegistry;
+        if (typeof registry?.getTypeByExtension !== 'function') {
+            return;
+        }
+        try {
+            if (!registry.getTypeByExtension(extension)) {
+                new Notice(tWithParams('no_view_for_extension', { extension }));
+            }
+        } catch {
+            // Consulting the registry is a courtesy; never let it break the open.
+        }
     }
 
     /**

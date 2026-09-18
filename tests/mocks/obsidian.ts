@@ -8,11 +8,19 @@
  * implemented; extend as needed.
  */
 
+/**
+ * Every notice raised during a test, newest last. Tests that assert on
+ * user-facing messages read this and clear it themselves.
+ */
+export const noticeLog: string[] = [];
+
 export class Notice {
     constructor(
         public message?: string,
         public duration?: number
-    ) {}
+    ) {
+        noticeLog.push(message ?? '');
+    }
 }
 
 export class WorkspaceLeaf {}

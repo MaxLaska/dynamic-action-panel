@@ -136,6 +136,54 @@ describe('saving a tool without an action', () => {
     });
 });
 
+// --- 1b. an edit round trip keeps a subpath ----------------------------------
+//
+// The edit modal rebuilds every action through `toJSON`, so anything the form
+// has no control for is lost unless the action carries it. A dropped
+// annotation's position is exactly such a value.
+
+describe('the optional file subpath survives the edit form', () => {
+    const SUBPATH = '#page=44#annotation=%7B%22annotationID%22%3A%22KWBFL8CQ%22%7D';
+
+    it('is carried through unchanged', () => {
+        const sequence = new ActionSequence([
+            { type: 'file', parameters: { filePath: 'Literatur/Bieker.pdf', subpath: SUBPATH } },
+        ]);
+        const result = sequence.collectConfiguredActions();
+
+        expect(result.ok).toBe(true);
+        expect(result.ok && result.actions).toEqual([
+            { type: 'file', parameters: { filePath: 'Literatur/Bieker.pdf', subpath: SUBPATH } },
+        ]);
+    });
+
+    it('adds no key to a plain file action', () => {
+        const sequence = new ActionSequence([
+            { type: 'file', parameters: { filePath: 'notes/a.md' } },
+        ]);
+        const result = sequence.collectConfiguredActions();
+
+        expect(result.ok && result.actions).toEqual([
+            { type: 'file', parameters: { filePath: 'notes/a.md' } },
+        ]);
+        // Not merely equal: the key must be absent, or every stored file tool
+        // would gain a field on its next edit.
+        const [action] = result.ok ? result.actions : [];
+        expect(action && 'subpath' in action.parameters).toBe(false);
+    });
+
+    it('does not make an otherwise empty row count as configured', () => {
+        // A subpath without a file is not a tool; the row is still untouched.
+        const sequence = new ActionSequence([
+            { type: 'file', parameters: { filePath: '', subpath: SUBPATH } },
+        ]);
+        const result = sequence.collectConfiguredActions();
+
+        expect(result.ok).toBe(true);
+        expect(result.ok && result.actions).toEqual([]);
+    });
+});
+
 // --- 2. the slot comes from the gesture --------------------------------------
 
 describe('creating a tool in a chosen slot', () => {

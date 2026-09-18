@@ -135,6 +135,7 @@
     "no_files_available": "Нет доступных файлов",
     "no_folders_available": "Нет доступных папок",
     "no_format_match": "Нет подходящего формата",
+    "no_view_for_extension": "Для файлов .{extension} не зарегистрирован просмотрщик. Если его предоставляет плагин, включите плагин и перезапустите Obsidian.",
     "no_icons_available": "Нет доступных значков",
     "open_panel": "Открыть Dynamic Action Panel",
     "open_options": "Открыть настройки Dynamic Action Panel",

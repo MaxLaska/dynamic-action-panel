@@ -298,6 +298,15 @@ function readAction(value: unknown, path: string): ButtonAction {
                         `${path}.parameters.filePath`,
                         MAX_TEXT_LENGTH
                     ),
+                    ...(own(parameters, 'subpath') !== undefined
+                        ? {
+                              subpath: readString(
+                                  own(parameters, 'subpath'),
+                                  `${path}.parameters.subpath`,
+                                  MAX_TEXT_LENGTH
+                              ),
+                          }
+                        : {}),
                 },
             };
         case 'url':

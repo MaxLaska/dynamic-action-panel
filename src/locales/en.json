@@ -135,6 +135,7 @@
     "no_files_available": "No files available",
     "no_folders_available": "No folders available",
     "no_format_match": "No matching format",
+    "no_view_for_extension": "No viewer is registered for .{extension} files. If a plugin provides the viewer, enable it and restart Obsidian.",
     "no_icons_available": "No icons available",
     "open_panel": "Open Dynamic Action Panel",
     "open_options": "Open Dynamic Action Panel options",

@@ -7,6 +7,14 @@
 export interface FileActionParams {
     /** Vault-relative file path */
     filePath: string;
+    /**
+     * Optional Obsidian link subpath, stored WITH its leading `#`
+     * (`#heading`, `#^block`, `#page=3`). It is handed to the target view as
+     * ephemeral state, so what it means is the view's business, not this
+     * plugin's — a heading for a Markdown view, a page for a PDF view.
+     * Absent means "just open the file", which is the historical behaviour.
+     */
+    subpath?: string;
 }
 
 /**

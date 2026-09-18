@@ -864,6 +864,109 @@ describe('a template is data, never code or a prototype', () => {
     });
 });
 
+// --- File action subpath ----------------------------------------------------------------
+
+describe('a file action carries its optional subpath through the format', () => {
+    const SUBPATH = '#page=44#annotation=%7B%22annotationID%22%3A%22KWBFL8CQ%22%7D';
+
+    const sourceWith = (subpath?: string) =>
+        stateOf(
+            registryOf(
+                tool('a', {
+                    name: 'Annotation',
+                    actions: [
+                        {
+                            type: 'file' as const,
+                            parameters: {
+                                filePath: 'Literatur/Bieker.pdf',
+                                ...(subpath !== undefined ? { subpath } : {}),
+                            },
+                        },
+                    ],
+                })
+            ),
+            storedGrid([p('a', 0)], { id: 'cat', name: 'Research' })
+        );
+
+    it('survives export and import unchanged', () => {
+        const { state, document } = roundtrip(sourceWith(SUBPATH), 'cat');
+
+        expect(document.tools['a']?.actions[0]).toEqual({
+            type: 'file',
+            parameters: { filePath: 'Literatur/Bieker.pdf', subpath: SUBPATH },
+        });
+        const imported = Object.values(state.tools);
+        expect(imported).toHaveLength(1);
+        expect(imported[0]?.actions[0]).toEqual({
+            type: 'file',
+            parameters: { filePath: 'Literatur/Bieker.pdf', subpath: SUBPATH },
+        });
+        // The tool identity is fresh, as for any import.
+        expect(Object.keys(state.tools)[0]).not.toBe('a');
+    });
+
+    it('adds no key when the tool has no subpath (old documents stay identical)', () => {
+        const { state, document } = roundtrip(sourceWith(), 'cat');
+
+        expect(document.tools['a']?.actions[0]).toEqual({
+            type: 'file',
+            parameters: { filePath: 'Literatur/Bieker.pdf' },
+        });
+        expect(Object.values(state.tools)[0]?.actions[0]).toEqual({
+            type: 'file',
+            parameters: { filePath: 'Literatur/Bieker.pdf' },
+        });
+    });
+
+    it('still counts the PDF as an external reference, subpath or not', () => {
+        const document = buildTemplateDocument(sourceWith(SUBPATH), ['cat']);
+        expect(collectTemplateExternalReferences(document).filePaths).toEqual([
+            'Literatur/Bieker.pdf',
+        ]);
+    });
+
+    it('accepts a document whose file action has no subpath', () => {
+        const parsed = parseTemplateDocument(
+            JSON.stringify({
+                format: OCAP_TEMPLATE_FORMAT,
+                formatVersion: 1,
+                categories: [{ id: 'c', name: 'C', placements: [{ toolId: 't' }] }],
+                tools: {
+                    t: {
+                        id: 't',
+                        name: 'T',
+                        actions: [{ type: 'file', parameters: { filePath: 'x.pdf' } }],
+                    },
+                },
+            })
+        );
+        expect(parsed.ok).toBe(true);
+    });
+
+    it('rejects a non-string subpath instead of coercing it', () => {
+        for (const bad of [42, null, { a: 1 }, ['#x']]) {
+            const parsed = parseTemplateDocument(
+                JSON.stringify({
+                    format: OCAP_TEMPLATE_FORMAT,
+                    formatVersion: 1,
+                    categories: [{ id: 'c', name: 'C', placements: [{ toolId: 't' }] }],
+                    tools: {
+                        t: {
+                            id: 't',
+                            name: 'T',
+                            actions: [
+                                { type: 'file', parameters: { filePath: 'x.pdf', subpath: bad } },
+                            ],
+                        },
+                    },
+                })
+            );
+            expect(parsed.ok).toBe(false);
+            if (!parsed.ok) expect(parsed.error.kind).toBe('invalid_structure');
+        }
+    });
+});
+
 // --- Serialization ----------------------------------------------------------------------
 
 describe('serialization', () => {

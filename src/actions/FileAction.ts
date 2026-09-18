@@ -12,13 +12,20 @@ type ActionRenderContext = { app: App; plugin: ButtonsPanelPlugin };
 export class FileAction implements IButtonAction {
     type = 'file';
     filePath: string;
+    /**
+     * Carried through untouched: the form has no control for it, but a tool
+     * created with one (a dropped annotation, a link to a heading) must survive
+     * an edit round trip, which goes through `toJSON`.
+     */
+    subpath?: string;
     private fileInput: FileInput | null = null;
 
     /**
      * Initializes the action parameters.
      */
-    constructor(params: { filePath: string }) {
+    constructor(params: { filePath: string; subpath?: string }) {
         this.filePath = params.filePath;
+        this.subpath = params.subpath;
     }
 
     /**
@@ -75,7 +82,15 @@ export class FileAction implements IButtonAction {
      * Serializes the action to its JSON shape.
      */
     toJSON() {
-        return { type: this.type, parameters: { filePath: this.filePath } };
+        return {
+            type: this.type,
+            parameters: {
+                filePath: this.filePath,
+                // Omit the key entirely when there is none, so a plain file
+                // tool serializes byte-identically to before.
+                ...(this.subpath !== undefined ? { subpath: this.subpath } : {}),
+            },
+        };
     }
 }
 

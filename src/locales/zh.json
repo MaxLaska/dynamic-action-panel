@@ -135,6 +135,7 @@
     "no_files_available": "无可用文件",
     "no_folders_available": "无可用文件夹",
     "no_format_match": "无匹配格式",
+    "no_view_for_extension": "没有插件注册 .{extension} 文件的查看器。如果查看器由插件提供，请启用该插件并重启 Obsidian。",
     "no_icons_available": "无可用图标",
     "open_panel": "打开 Dynamic Action Panel",
     "open_options": "打开 Dynamic Action Panel 选项",
