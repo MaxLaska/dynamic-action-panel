@@ -625,6 +625,63 @@ Spezifikation: `docs/ocap/cell-selection-colors.md` §9.2.
   genau einem der beiden Nachbarn gezeichnet), `paletteGridGeometry` +2,
   `cellSelectionGesturePrecedence` +6. Gesamt **1129**.
 
+### 2e.3 Auswahl beenden: Escape und Hintergrundklick (2026-09-19)
+
+Spezifikation: `docs/ocap/cell-selection-colors.md` §4.4.
+
+- **Escape** ist unverändert (`CellSelectionEscape`) und wurde nur nachgeprüft.
+- **Hintergrundklick** — `CellSelectionBackdrop.tsx`, montiert neben
+  `CellSelectionEscape` **innerhalb** des Drag-Providers, weil es
+  `buttonDrag.isDragging`, `categoryDrag.isDragging` und `cellGestureActive`
+  braucht. Hört am Panel-Element, nie am Dokument, und stoppt nie ein Event.
+- Das Prädikat ist pur: `src/utils/selectionBackdrop.ts` — eine
+  **Ausschlussliste** (`closest`), keine Allowlist. Begründung im
+  Dateikopf und in `DECISIONS.md`.
+- **Klick statt Druck:** In der List-View ist derselbe Hintergrund der
+  Kategorie-Drag-Griff. `pointerdown` merkt nur den Ursprung (Capture, damit
+  auch Kontrollen ihn nicht verschlucken), `click` entscheidet (Bubble, damit
+  Titel/Tool/Palette vorher gewinnen). Zusätzlich verwirft ein aktivierter Drag
+  den Ursprung — dieselbe Technik wie im Grid, weil ein Drag, der weg und
+  zurück wandert, nahe seinem Start loslässt.
+- Empirisch geprüft: Ein Kategorie-Drag erzeugt **gar kein** `click`-Event.
+  (Dass ein Kategorie-**Reorder** die Auswahl verwirft, ist vorbestehend und
+  ein Grid-Kontextwechsel nach §11 — nicht von diesem Listener verursacht.)
+
+### 2g. Datei-Drop im Locked Mode (2026-09-19)
+
+Spezifikation: `docs/ocap/cell-selection-colors.md` §3 (Präzisierung),
+`DECISIONS.md` vom 2026-09-19.
+
+- **Das einzige geänderte Gate:** `CategoryButtonGrid` hatte einen Schalter für
+  beides. Jetzt `creationEnabled = enableEditMode && !isDragging &&
+  !resizeDrag.preview` (das `+`) und `fileDropEnabled = !isDragging &&
+  !resizeDrag.preview` (der Drop). `droppableEnabled={sortableEnabled}` — der
+  plugin-**interne** dnd-kit-Drag — ist unberührt und bleibt Edit-only.
+- **Trennung interner/externer Drag:** Ein Datei-Drop ist ein nativer
+  HTML5-Drag (`dragenter/over/leave/drop`) von außen; der interne Drag ist
+  zeigerbasiert. Die beiden können einander nicht erreichen, weshalb Locked
+  nicht allgemein DnD-fähig wird.
+- **`GridSlotCell`:** `acceptsFiles = fileDrop !== undefined` (vorher
+  zusätzlich `!filled`) — eine Datei darf auf jede Zelle. Das `+` bleibt
+  `!filled && onCreate !== undefined`. Der Ziel-Hover (`--file-target`) wird
+  unverändert wiederverwendet, auch auf belegten Zellen.
+- **Ersetzen:** `createToolInCategory(..., { replaceOccupied: true })`. Opt-in,
+  damit `+`/Modal/Copy weiterhin auf einen freien Slot ausweichen. Intern wird
+  über `placeStoredGrid` das **Placement-Objekt** der Zielzelle geholt und per
+  **Identität** herausgefiltert — Filtern per `toolId` träfe auch eine zweite
+  Platzierung desselben Tools, und ein Neuaufbau aus der Occupancy schriebe
+  jedes andere Slot-Feld um und verlöre den Overflow.
+- **GC:** `gcTools(tools + neue Definition, neueKategorien, [verdrängteId])` —
+  die gewöhnliche Regel. Ein Tool, das noch in einer anderen Variant, einer
+  anderen Kategorie oder als `library` existiert, überlebt.
+- **Zielgrid:** `dropFileOnSlot(category, slot, dataTransfer, { variantId })`.
+  Der Renderer kennt die Variant auf dem Bildschirm exakt (Edit: die bearbeitete,
+  Locked: die kontextaufgelöste); der Hook riet vorher aus `selection`, was im
+  Locked Mode leer ist und auf „erste Variant" zurückfiel.
+- **Keine Meldung geändert:** Es gibt weiterhin genau drei `new Notice(...)` im
+  Hook (unidentifizierte Annotation, volles Grid, Erfolg). Keine
+  Overwrite-Warnung, kein Confirm.
+
 ### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
 
 `ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&

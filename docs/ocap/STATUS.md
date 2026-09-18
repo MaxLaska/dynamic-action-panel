@@ -1,10 +1,60 @@
 # OCAP – Status
 
-Last updated: 2026-09-19 (Persistent selection contour — implemented locally and
-live-smoke-tested in an isolated Obsidian; awaiting the user's own manual UX
-acceptance)
+Last updated: 2026-09-19 (Selection clear ways + file drop in locked mode —
+implemented locally and live-smoke-tested in an isolated Obsidian; awaiting the
+user's own manual acceptance)
 
 ## Newest work first
+
+- **Two productivity additions (2026-09-19) — implemented locally,
+  live-smoke-tested, deployed only to the disposable smoke vault. Not pushed,
+  not in the productive vault.** The selection visuals were accepted by the user
+  as finished and were NOT redesigned. Specification:
+  `docs/ocap/cell-selection-colors.md` §3, §4.2, §4.4; two new entries in
+  `DECISIONS.md`.
+  - **A selection now ends with Escape OR a click on empty panel background.**
+    Escape was already correct and was left alone (verified live, including for
+    a selection of empty cells). The background click is new: what counts as
+    background is an EXCLUSION list (`src/utils/selectionBackdrop.ts`) — the
+    grid, its frame and cells, tools, the palette, the category title, the
+    variant bar and every ordinary control keep their meaning. The decision is
+    made on the CLICK, never the press, because that same background is the
+    list-view category drag handle; an activated drag forfeits its click
+    outright. This supersedes "a click outside the grid has no effect" (§4.2).
+  - **Locked is the working mode: a file dropped on a cell creates a tool
+    there**, and a drop on an OCCUPIED cell replaces it with no confirmation.
+    The line is not between the modes but between bringing something IN and
+    rearranging what is there — move, swap, reorder, resize, selection, colours
+    and the `+` all stay edit-only. It coincides with a technical line that
+    keeps it safe: a file drop is a native HTML5 drag from outside, while the
+    plugin's own drag is pointer-based and still follows `sortableEnabled`.
+    Locked mode was NOT made DnD-capable.
+  - Replacing is opt-in at the call site (`createToolInCategory`'s
+    `replaceOccupied`) so the `+`, the modal and copy keep dodging to a free
+    slot. The displaced definition is collected by the ORDINARY `gcTools` rule:
+    a tool still placed in another variant, another category, or marked
+    `library`, survives. The renderer now tells the hook which variant the drop
+    landed on — in locked mode there is no editing selection, and the old
+    fallback ("the first variant") would have filed the tool into a grid nobody
+    was looking at.
+  - New: `src/utils/selectionBackdrop.ts`,
+    `src/components/buttons-panel/CellSelectionBackdrop.tsx`. No schema bump, no
+    template bump, no second create path, no new notice.
+  - Tests: **1172/1172** (42 files; +43). `tsc --noEmit`, `eslint .`,
+    `npm run build` green.
+  - **Live smoke: 143/143 checks** across seven stages in an isolated Obsidian
+    1.13.7, 0 console errors. New stage (26): Escape clears filled AND empty
+    cell selections with their contour; a background click clears; a cell click
+    still replaces; a title click still only collapses; a category drag produces
+    no click at all for the backdrop listener to act on; a drag starting on the
+    background does not clear; in LOCKED mode an empty and an occupied cell both
+    light up as drop targets, the drop creates and replaces, no dialog opens,
+    the displaced definition is collected (tool count unchanged) and the
+    replacement persists; an internal tool drag is still refused; a tool click
+    still executes; the drop still works in edit mode.
+  - Observed, pre-existing and unchanged: a category REORDER drops the cell
+    selection (a grid-context change per §11). It is not caused by the new
+    background click — the live probe shows a category drag fires no click.
 
 - **Persistent selection contour (2026-09-19) — implemented locally,
   live-smoke-tested, deployed only to the disposable smoke vault. Not pushed,

@@ -913,6 +913,67 @@ piece stops at the cell edge and the contour stays inside the grid frame.
 
 The selection logic is untouched. This is presentation only.
 
+## 2026-09-19 – A selection ends with Escape or with a click on nothing
+
+**Decision:** Besides Escape, a click on empty panel background clears the cell
+selection outright. Both cost nothing: no button, no mode, no new state.
+
+**What counts as background is an EXCLUSION list**, not an allowlist of
+backdrop elements. A backdrop is not something anyone renders; it is what is
+left between the things that are, so naming the leftovers would mean inventing
+a class for every gap in every view and keeping it right forever — and the
+first one forgotten would swallow a click that belonged to a control. Naming
+the CONTROLS is the shorter and more honest list, and a control that forgets to
+appear in it fails loudly (its click also clears) rather than silently (its
+click stops working). Excluded: the grid, its frame and cells, tools, the
+palette, the category title, the variant bar, and every ordinary button, input
+or link.
+
+**The decision is made on the CLICK, never on the press.** In list view that
+same background is the category drag handle, so clearing at pointer-down would
+destroy the selection at the start of every category drag. The press is only
+remembered; the clear waits until the gesture has proved to be a click — at
+most 4px of travel, the threshold shared with every other click check — and an
+activated drag forfeits its click outright, whatever the distance.
+
+This **supersedes** "a click outside the grid has no effect" in
+`cell-selection-colors.md` §4.2. That rule was argued from ambiguity — "outside"
+means different things per view — which does not apply to *empty* background: a
+surface with no action of its own cannot lose one.
+
+## 2026-09-19 – Locked is the working mode: files may be dropped there
+
+**Decision:** Dropping a file from Obsidian onto a grid cell creates a tool
+there in LOCKED mode too, and a drop on an OCCUPIED cell replaces it without a
+confirmation. Locked stops being "read-only" and becomes what its name always
+implied: the mode where the panel is *used*.
+
+**The line is not between the modes, it is between bringing something IN and
+rearranging what is already there.** A drop brings something in. Moving,
+swapping, reordering, resizing, selecting, colouring and the `+` rearrange, and
+all of them stay edit-only.
+
+That line happens to coincide with a technical one, which is what keeps it
+cheap and safe to hold: a file drop is a **native HTML5 drag from outside**,
+while the plugin's own drag is pointer-based (dnd-kit). Only the file-drop gate
+was taken off the mode; `droppableEnabled` — the internal one — still follows
+edit mode exactly as before. Locked mode was NOT made "DnD capable".
+
+**No confirmation on replace.** Aiming a file at a particular cell is already
+the deliberate act; a dialog on top of it would only be a second one. The
+displaced tool is collected by the ORDINARY rule (`gcTools`), so a definition
+still placed in another variant, another category, or marked `library`,
+survives losing this one placement. Replacing is opt-in at the call site
+(`createToolInCategory`'s `replaceOccupied`), because every other entry point —
+the `+`, the modal, a copy — means "put this somewhere" and must keep dodging to
+a free slot.
+
+**One implementation.** The drop path is the same parse → draft → create →
+commit it has always been; only the gate moved. The renderer now also tells the
+hook which variant the drop landed on, because in locked mode there is no
+editing selection and the old fallback ("the first variant") would file the tool
+into a grid nobody was looking at.
+
 ## Open decisions
 
 The following are still open:

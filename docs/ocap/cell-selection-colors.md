@@ -60,6 +60,16 @@ dritte Modus `sort` wurde in Settings-Version 4 in `edit` aufgelöst).
 | Zellfarben sichtbar | **ja** | ja |
 | Selection möglich | nein | ja |
 | `+` auf leerer Zelle | nein | ja |
+| **Datei auf eine Zelle droppen** | **ja** (seit 2026-09-19) | ja |
+
+**Präzisierung 2026-09-19 — Locked ist der ARBEITSMODUS.** Eine Datei aus Obsidian auf eine Zelle
+zu ziehen erzeugt dort auch im Locked Mode ein Tool, ohne Umweg über den Edit Mode; ein Drop auf
+eine **belegte** Zelle ersetzt sie, ohne Rückfrage (das Zielen ist die bewusste Handlung). Was
+Edit-only bleibt, ist alles, was **Vorhandenes umsortiert**: Move, Swap, Category-Reorder, Resize,
+Selection, Zellfarben und das `+`. Ein Drop bringt etwas **herein** — die Unterscheidung verläuft
+zwischen *hinein* und *umräumen*, nicht zwischen den Modi. Technisch fällt sie mit der
+Ereignisart zusammen: Ein Datei-Drop ist ein nativer HTML5-Drag von außen, der plugin-interne Drag
+ist zeigerbasiert und bleibt gesperrt.
 
 **Beschlossene Verhaltensänderung:** Im Edit Mode führt ein Klick ein Tool nicht mehr aus. Bisher
 tat er das (es gibt im Bestand keinerlei Mode-Guard), was ein Unfall des Upstream-Codes war und die
@@ -230,14 +240,12 @@ zum Ausgangspunkt zurückwandert — der anschließende Klick wird dann verworfe
 
 ### 4.2 Abgeleitete Regeln
 
-- **Auswahl leeren:** Escape. Oder jede Zelle einzeln per Strg abwählen. Ein Linksklick kann die
-  Auswahl nie auf leer bringen (er hinterlässt immer genau eine Zelle).
+- **Auswahl leeren:** Escape **oder ein Klick auf leeren Panel-Hintergrund** (Abschnitt 4.4). Oder
+  jede Zelle einzeln per Strg abwählen. Ein Linksklick auf eine ZELLE kann die Auswahl nie auf leer
+  bringen (er hinterlässt immer genau eine Zelle).
 - **Klick in die Lücke zwischen zwei Zellen** (4 px): **keine Wirkung.** Weder Auswahl setzen noch
-  leeren. Die Fläche ist zu klein, um Absicht zu unterstellen.
-- **Klick außerhalb des Grids:** **keine Wirkung.** Kein Leeren. Begründung: In der Folder-View ist
-  „außerhalb“ mehrdeutig mit dem Schließen des Ordners, in der List-View mit dem Bereich einer
-  anderen Kategorie. Ein einheitliches „passiert nichts“ ist vorhersehbarer als eine
-  view-abhängige Regel; Escape ist der explizite Weg.
+  leeren. Die Fläche ist zu klein, um Absicht zu unterstellen — und sie gehört zum Grid, ist also
+  auch kein Hintergrund im Sinne von 4.4.
 - **Höchstens ein Grid trägt eine Auswahl.** Ein Linksklick in das Grid einer anderen Kategorie
   verschiebt die Auswahl dorthin und verwirft die alte — das ist einfach „ersetzen“ über die
   Grid-Grenze hinweg. Shift und Strg wirken **nur innerhalb des Grids, das die Auswahl bereits
@@ -252,6 +260,36 @@ zum Ausgangspunkt zurückwandert — der anschließende Klick wird dann verworfe
 Auf macOS ist Strg+Klick der Sekundärklick und löst ein Kontextmenü aus. Die hier beschriebene
 Semantik bleibt davon unberührt: Auf macOS übernimmt **Cmd** die subtraktive Rolle, und Strg+Klick
 bleibt dort der Sekundärklick. Das ist eine reine Tastenzuordnung, keine Semantikänderung.
+
+### 4.4 Klick auf leeren Hintergrund leert die Auswahl (2026-09-19)
+
+**Dieser Abschnitt hebt die frühere Regel „Klick außerhalb des Grids: keine Wirkung“ auf.** Die
+damalige Begründung — „außerhalb“ sei view-abhängig mehrdeutig — trifft für den *leeren* Hintergrund
+nicht zu: Eine Fläche, die keine eigene Aktion hat, kann keine verlieren.
+
+```
+Klick auf leeren Panel-/Kategorie-Hintergrund → Auswahl komplett leeren
+```
+
+Damit gibt es zwei natürliche Wege hinaus — Tastatur und Maus — und beide kosten weder eine
+Schaltfläche noch einen Modus.
+
+**Was als Hintergrund gilt**, ist als **Ausschlussliste** definiert und nicht als Allowlist: Ein
+Hintergrund ist nichts, was jemand rendert, sondern das, was zwischen den Dingen übrig bleibt. Die
+Kontrollen zu benennen ist die kürzere und ehrlichere Liste — und eine neue Kontrolle, die dort
+vergessen wird, fällt laut auf (ihr Klick leert zusätzlich die Auswahl) statt leise (ihr Klick
+hörte auf zu funktionieren). Ausgenommen sind: Grid, Grid-Rahmen und Zellen, Tools, Farbleiste,
+Kategorietitel, Variant-Bar und jede gewöhnliche Schaltfläche, Eingabe oder Link.
+
+**Entschieden wird beim KLICK, nie beim PointerDown.** In der List-View ist genau dieser Hintergrund
+auch der Griff des Kategorie-Drags; ein Leeren beim Drücken würde die Auswahl zu Beginn jedes
+Kategorie-Drags zerstören. Der Druck wird nur gemerkt; erst wenn feststeht, dass die Geste ein Klick
+war — höchstens 4 px Weg, dieselbe Schwelle wie überall —, wird geleert. Ein Drag, der tatsächlich
+gestartet ist, verwirkt seinen Klick zusätzlich unabhängig von der Distanz.
+
+Gehört zur Selection-Session wie alles andere: `selectionPaintColor` fällt mit der Auswahl
+(Abschnitt 8.2). Ein Klick **außerhalb des Panels** — Editor, Modal, anderes Leaf — bleibt
+wirkungslos.
 
 ---
 
