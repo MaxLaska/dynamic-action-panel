@@ -143,6 +143,28 @@ function readerFilePath(view: LocalReaderView): string | undefined {
     }
 }
 
+/**
+ * Whether the focus of the surrounding document sits inside this leaf.
+ *
+ * Pressing the mouse inside a same-origin iframe focuses the iframe ELEMENT in
+ * the parent document, so during a drag out of a reader this points at the
+ * reader the gesture started in — evidence about this drag rather than about the
+ * session. Uses the leaf's own document so a popout window works too.
+ */
+function holdsFocus(leaf: WorkspaceLeaf): boolean {
+    try {
+        const container = (leaf.view as unknown as LocalReaderView).containerEl;
+        if (!container || typeof container !== 'object') {
+            return false;
+        }
+        const element = container as HTMLElement;
+        const active = element.ownerDocument?.activeElement;
+        return active !== null && active !== undefined && element.contains(active);
+    } catch {
+        return false;
+    }
+}
+
 /** Every open ZotFlow reader leaf; empty when ZotFlow is absent or idle. */
 function localReaderLeaves(app: App): WorkspaceLeaf[] {
     try {
@@ -286,9 +308,18 @@ export function readDraggedLocalAnnotation(
     }
     // Several readers claim a drag, which happens because ZotFlow never clears
     // these ids: every reader the user has ever dragged from still looks busy.
-    // The one the user is actually in is the most recently used leaf; without
-    // that hint there is no way to tell them apart, and taking the first in tree
-    // order would silently capture an annotation from a different document.
+    // Taking the first in tree order would silently capture an annotation from a
+    // different document, so the tie needs actual evidence.
+
+    // Best evidence, and specific to THIS drag: a drag begins with a mousedown
+    // inside the reader's iframe, which moves the surrounding document's focus
+    // to that iframe element.
+    const focused = candidates.filter((candidate) => holdsFocus(candidate.leaf));
+    if (focused.length === 1) {
+        return focused[0]!.ref;
+    }
+
+    // Weaker, session-level evidence: the reader the user last worked in.
     let recent: WorkspaceLeaf | null = null;
     try {
         recent = app.workspace.getMostRecentLeaf();
@@ -296,7 +327,15 @@ export function readDraggedLocalAnnotation(
         recent = null;
     }
     const inRecentLeaf = candidates.filter((candidate) => candidate.leaf === recent);
-    return inRecentLeaf.length === 1 ? inRecentLeaf[0]!.ref : null;
+    if (inRecentLeaf.length === 1) {
+        return inRecentLeaf[0]!.ref;
+    }
+
+    console.warn(
+        '[Dynamic Action Panel] Several ZotFlow readers claim a dragged annotation; ' +
+            'refusing to guess which one it is.'
+    );
+    return null;
 }
 
 /** File name without folders or extension. */

@@ -236,6 +236,8 @@ export interface SlotDropDraft {
     /** Obsidian icon id; the caller resolves it to the stored SVG markup. */
     iconId: string;
     action: ButtonAction;
+    /** Hover text, when the drop knows more than the label says. */
+    tooltip?: string;
     /** i18n key of the notice shown after the tool was created. */
     noticeKey: string;
 }
@@ -300,6 +302,20 @@ function readData(dataTransfer: DataTransfer, mime: string): string {
 function isOnlyPlainText(dataTransfer: DataTransfer): boolean {
     const types = Array.from(dataTransfer.types ?? []);
     return types.length === 1 && types[0] === 'text/plain';
+}
+
+/**
+ * ZotFlow's signature for "an annotation of a file I keep no source note for":
+ * a lone space and nothing else. It says a ZotFlow annotation was dragged
+ * WITHOUT saying which one, so the caller can tell "we could not identify this
+ * annotation" apart from "this was not an annotation at all" and say so instead
+ * of doing nothing visible.
+ */
+export function isUnidentifiedAnnotationDrag(dataTransfer: DataTransfer | null): boolean {
+    if (!dataTransfer) {
+        return false;
+    }
+    return readData(dataTransfer, 'text/plain') === ' ' && isOnlyPlainText(dataTransfer);
 }
 
 /**

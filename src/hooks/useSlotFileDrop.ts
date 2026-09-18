@@ -6,7 +6,11 @@ import { commitToolState, findStoredCategory, toolStateOf } from '@/utils/catego
 import { isDynamicCategory } from '@/utils/categoryVariants';
 import { createToolInCategory } from '@/domain/categoryOps';
 import { createDefaultButtonConfig } from '@/utils/buttonFactory';
-import { canAcceptVaultFileDrag, resolveSlotDropDraft } from '@/utils/obsidianFileDrag';
+import {
+    canAcceptVaultFileDrag,
+    isUnidentifiedAnnotationDrag,
+    resolveSlotDropDraft,
+} from '@/utils/obsidianFileDrag';
 import { t } from '@/utils/i18n';
 import type { ButtonConfig, CategoryConfig } from '@/types';
 
@@ -47,6 +51,12 @@ export function useSlotFileDrop() {
                 scriptFolderPath: plugin.settings.pathConfig?.scriptFolderPath,
             });
             if (!draft) {
+                // Most drops that mean nothing here should stay silent. But a
+                // ZotFlow reader drag that could not be pinned to one annotation
+                // did mean something, so saying nothing would look like a bug.
+                if (isUnidentifiedAnnotationDrag(dataTransfer)) {
+                    new Notice(t('annotation_not_identified'));
+                }
                 return;
             }
 
@@ -62,6 +72,7 @@ export function useSlotFileDrop() {
             const button: ButtonConfig = {
                 ...createDefaultButtonConfig(),
                 name: draft.name,
+                ...(draft.tooltip !== undefined ? { tooltip: draft.tooltip } : {}),
                 // The plugin stores icons as SVG markup (the icon picker resolves
                 // Obsidian icon ids the same way); an unknown id simply leaves
                 // the tool without an icon instead of writing a broken one.

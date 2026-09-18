@@ -39,6 +39,9 @@ export class FileService {
             // (Obsidian's PDF/reader views do) discards the navigation with the
             // duplicate leaf, and the click would appear to do nothing.
             if (subpath) {
+                // A background leaf is deferred: its real view does not exist
+                // yet, so it has nowhere to put the position.
+                await this.loadIfDeferred(existingLeaf);
                 this.applyEphemeralSubpath(existingLeaf, subpath);
             }
             return;
@@ -97,16 +100,55 @@ export class FileService {
     private findOpenLeafForFile(filePath: string): WorkspaceLeaf | null {
         const allLeaves = this.getAllLeaves();
         for (const leaf of allLeaves) {
-            const view = leaf.view as unknown;
-            const fileFromView =
-                view && typeof view === 'object'
-                    ? (view as { file?: { path?: string } }).file
-                    : undefined;
-            if (fileFromView?.path === filePath) {
+            if (this.leafFilePath(leaf) === filePath) {
                 return leaf;
             }
         }
         return null;
+    }
+
+    /**
+     * The file a leaf is showing.
+     *
+     * Two sources, because a leaf in the background is *deferred*: its real view
+     * has not been built yet, so `view.file` does not exist and only the
+     * persisted view state knows the path. Missing that case would treat every
+     * background tab as "not open" and open a duplicate.
+     * @param leaf The leaf to inspect
+     * @returns The vault path, or undefined when the leaf shows no file
+     */
+    private leafFilePath(leaf: WorkspaceLeaf): string | undefined {
+        const view = leaf.view as unknown;
+        const fromView =
+            view && typeof view === 'object'
+                ? (view as { file?: { path?: unknown } }).file?.path
+                : undefined;
+        if (typeof fromView === 'string') {
+            return fromView;
+        }
+        try {
+            const state = leaf.getViewState?.()?.state;
+            const fromState = state?.['file'];
+            return typeof fromState === 'string' ? fromState : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * Builds a deferred leaf's real view before anything is asked of it.
+     * Never fatal: an older Obsidian has no such concept, and a leaf that
+     * refuses to load is still worth activating.
+     * @param leaf The leaf to materialize
+     */
+    private async loadIfDeferred(leaf: WorkspaceLeaf): Promise<void> {
+        try {
+            if (leaf.isDeferred && typeof leaf.loadIfDeferred === 'function') {
+                await leaf.loadIfDeferred();
+            }
+        } catch (error) {
+            console.warn('[Dynamic Action Panel] Could not load a deferred leaf', error);
+        }
     }
 
     /**
@@ -139,6 +181,14 @@ export class FileService {
             // imported template from another vault). Same rule as the already
             // open case: show the file rather than fail the click.
             console.warn('[Dynamic Action Panel] Could not open at the subpath', subpath, error);
+            // The view was built before it rejected the position, so the file is
+            // usually on screen already; opening it again would add a second tab
+            // for the same document.
+            const opened = this.findOpenLeafForFile(filePath);
+            if (opened) {
+                this.activateLeaf(opened);
+                return;
+            }
             await this.app.workspace.openLinkText(filePath, '', true);
         }
     }
