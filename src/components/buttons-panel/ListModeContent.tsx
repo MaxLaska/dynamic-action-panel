@@ -108,18 +108,12 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
         });
     }, [categories, autoCollapseOnMount]);
 
-    React.useEffect(() => {
-        if (!buttonDrag?.enabled) return;
-        buttonDrag.registerCategoryHover((categoryId) => {
-            setOpenByCategoryId((prev) => {
-                if (prev.get(categoryId)) return prev;
-                const next = new Map(prev);
-                next.set(categoryId, true);
-                return next;
-            });
-        });
-        return () => buttonDrag.registerCategoryHover(null);
-    }, [buttonDrag]);
+    // NOTE: `buttonDrag.registerCategoryHover` is deliberately NOT subscribed.
+    // It used to expand a collapsed category the drag hovered over, which is a
+    // state change the user never asked for on the category itself — and it
+    // outlived the drag, so a tool dropped elsewhere still left categories
+    // hanging open. Collapsing is now entirely the user's: a collapsed category
+    // is not a drop target, and expanding it first is the (visible) way in.
 
     React.useEffect(() => {
         categoryDrag?.setListCategoryOpenById(openByCategoryId);
@@ -190,11 +184,19 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
         const orderedButtons = sortableEnabled
             ? buttonDrag!.getOrderedButtons(category)
             : category.buttons;
-        const isButtonDragging = !!buttonDrag?.isDragging;
+        // A collapsed category stays MOUNTED in a management mode so its slot
+        // droppables keep their dnd-kit registration (see GridSlotCell), but it
+        // stays HIDDEN throughout — including while a drag is in flight.
+        //
+        // It used to be revealed for the length of any button drag, which is
+        // the bug: dragging a tool anywhere in the panel unfolded every
+        // collapsed category, moved everything below it, and folded them all
+        // back on release. The collapsed state belongs to the user; nothing
+        // about a drag elsewhere may change it, not even temporarily. As a
+        // bonus this removes a layout change mid-drag, which slot geometry is
+        // better off without.
         const showButtonGrid = isOpen || sortableEnabled;
-        const hideButtonGridWhileCollapsed =
-            sortableEnabled && !isOpen && !isButtonDragging;
-        const isVisuallyOpen = isOpen || (sortableEnabled && isButtonDragging);
+        const hideButtonGridWhileCollapsed = sortableEnabled && !isOpen;
 
         const titleClassName = 'buttons-panel-category-title is-collapsible';
         const bindTitleRef = getTitleRef(category.id);
@@ -235,7 +237,7 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
                     className="category-icon"
                     ref={(el) => {
                         if (el) {
-                            setIcon(el, isVisuallyOpen ? 'chevron-down' : 'chevron-right');
+                            setIcon(el, isOpen ? 'chevron-down' : 'chevron-right');
                         }
                     }}
                 />
@@ -245,7 +247,7 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
         const titleHandlers = {
             role: 'button' as const,
             tabIndex: 0,
-            'aria-expanded': isVisuallyOpen,
+            'aria-expanded': isOpen,
             onClick: (e: React.MouseEvent) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -303,7 +305,7 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
 
         const categoryClassNames = [
             'buttons-panel-category',
-            isVisuallyOpen ? 'list-category-open' : 'list-category-closed',
+            isOpen ? 'list-category-open' : 'list-category-closed',
             contextHiddenCategoryIds.has(category.id) && 'ocap-context-hidden',
         ]
             .filter(Boolean)
