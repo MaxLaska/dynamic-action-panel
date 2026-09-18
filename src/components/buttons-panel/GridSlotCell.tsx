@@ -22,8 +22,16 @@ interface GridSlotCellProps {
     droppableEnabled: boolean;
     /** The pointer currently targets this slot during a drag. */
     isDropTarget: boolean;
-    /** Management modes outline the cells; locked mode keeps them bare. */
-    showOutline: boolean;
+    /**
+     * A management mode is on.
+     *
+     * NOT about the cell's outline any more: the raster is drawn in every mode
+     * (locked and edit must not look like two different panels — see
+     * PaletteGrid.css). What this still gates is the EDITING vocabulary of an
+     * empty cell: its "add a tool here" tooltip and label, and whether it is an
+     * announced surface at all.
+     */
+    managed: boolean;
     /**
      * Edit mode: creates a tool in exactly this slot. Passing it turns an
      * empty cell into an add affordance; a filled cell ignores it.
@@ -147,7 +155,7 @@ export const GridSlotCell: React.FC<GridSlotCellProps> = ({
     columns,
     droppableEnabled,
     isDropTarget,
-    showOutline,
+    managed,
     onCreate,
     fileDrop,
     color,
@@ -209,7 +217,6 @@ export const GridSlotCell: React.FC<GridSlotCellProps> = ({
     const className = [
         'ocap-grid-slot',
         filled ? 'ocap-grid-slot--filled' : 'ocap-grid-slot--empty',
-        !filled && showOutline && 'ocap-grid-slot--outlined',
         color && 'ocap-grid-slot--colored',
         selected && 'ocap-grid-slot--selected',
         isDropTarget && 'ocap-grid-slot--drop-target',
@@ -239,9 +246,9 @@ export const GridSlotCell: React.FC<GridSlotCellProps> = ({
             // A colored EMPTY cell is real content in locked mode (a separator,
             // a reserved place), so it must stop being aria-hidden there — but
             // it stays a surface, never a control.
-            aria-hidden={!filled && !showOutline && !color ? true : undefined}
-            title={!filled && showOutline ? emptyTooltip : undefined}
-            aria-label={!filled && showOutline ? t('grid_slot_empty') : undefined}
+            aria-hidden={!filled && !managed && !color ? true : undefined}
+            title={!filled && managed ? emptyTooltip : undefined}
+            aria-label={!filled && managed ? t('grid_slot_empty') : undefined}
             // Cells are role-less divs, so aria-selected would be invalid here.
             // data-selected keeps the state inspectable (and testable) without
             // claiming a listbox semantics the DOM does not have.

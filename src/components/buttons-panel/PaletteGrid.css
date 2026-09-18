@@ -17,6 +17,10 @@ body .buttons-panel .ocap-palette-grid {
        weak enough to keep the tool on it legible. One token, one line to
        rebalance the whole palette. */
     --ocap-cell-color-alpha: 0.22;
+    /* The raster line. Derived from `--mono-rgb-100` (255,255,255 in a dark
+       theme, 0,0,0 in a light one), so "visible against the background" stays
+       true in both without hard-coding white. */
+    --ocap-grid-line: rgba(var(--mono-rgb-100), 0.28);
 
     display: grid;
     grid-template-columns: repeat(var(--ocap-grid-columns, 4), minmax(0, 1fr));
@@ -31,6 +35,17 @@ body .buttons-panel .ocap-palette-grid {
     width: 100%;
     align-items: stretch;
     justify-items: stretch;
+    /* A Shift-drag across the grid is a rectangle SELECTION, not a text
+       selection. The gesture cannot prevent the default on pointer-down — that
+       would also suppress the click the sub-threshold single-cell fallback
+       relies on — so the text selection is kept away here instead. Same
+       treatment the list and folder views already give their own surfaces. */
+    user-select: none;
+    /* The outer frame of the raster. An `outline` never takes part in layout,
+       so it cannot shrink a cell track. Present in EVERY mode — see the raster
+       block further down for why. */
+    outline: 1px solid var(--ocap-grid-line);
+    outline-offset: 0;
 }
 
 body .buttons-panel .ocap-palette-grid.icon-left {
@@ -63,6 +78,37 @@ body .buttons-panel .ocap-grid-slot > button.buttons-panel-simple-button {
 
 body .buttons-panel .ocap-grid-slot .sortable-button-item button.buttons-panel-simple-button {
     width: 100%;
+}
+
+/* The tool fills its cell in EVERY mode — this is what made locked mode look
+   different from edit mode.
+
+   `.icon-top` and `.icon-left` give the button a FIXED width (56px / 96px) at
+   0-4-2. In edit mode the drag wrapper adds a class, so the rule above reaches
+   0-4-2 as well and wins on source order; in locked mode there is no wrapper
+   (ButtonItem renders the button straight into the cell), the rule above is
+   only 0-3-2 and loses — the tool stayed 56px wide in a much wider cell and
+   was therefore left-aligned, with a hover that covered the button instead of
+   the slot. Naming the layout class here takes the rule to 0-5-2, which wins
+   in both modes regardless of concatenation order and of whether the wrapper
+   is there. Mode parity is the point: switching modes changes what a press
+   MEANS, never how the panel is laid out. */
+body .buttons-panel .ocap-grid-slot button.buttons-panel-simple-button.icon-top,
+body .buttons-panel .ocap-grid-slot button.buttons-panel-simple-button.icon-left {
+    width: 100%;
+}
+
+/* ...and it lights up the whole cell under the pointer, in every mode.
+   `.icon-top` and `.icon-left` set `background-color: transparent` at the same
+   0-4-2 as the base hover rule in Button.css and come later, so a tool on a
+   grid had NO hover ground at all — only a drop shadow, which is what made a
+   locked cell feel like a small label rather than a slot. 0-5-2 settles it.
+
+   It must stay ABOVE the coloured-cell hover further down: that one is also
+   0-5-2 and wins on source order, which is exactly right — an opaque ground
+   over a coloured cell would hide the very colour the user is working on. */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot button.buttons-panel-simple-button:hover {
+    background-color: var(--background-modifier-hover);
 }
 
 body .buttons-panel .ocap-grid-slot .button-drag-grid-placeholder {
@@ -130,6 +176,25 @@ body .buttons-panel .ocap-grid-slot--empty {
 .buttons-panel .ocap-grid-frame-main > .ocap-palette-grid {
     flex: 1 1 auto;
     min-width: 0;
+}
+
+/* Locked mode's stand-in for a resize zone: the same 16px of gutter, empty and
+   untouchable. The handles belong to editing and stay there, but their SPACE
+   does not — without it every cell of a 4-column grid grew by 4px the moment
+   the panel was locked, and the whole raster jumped on a mode switch. */
+.buttons-panel .ocap-grid-gutter {
+    flex: 0 0 var(--ocap-grid-edge-size);
+    pointer-events: none;
+}
+
+.buttons-panel .ocap-grid-gutter--column {
+    width: var(--ocap-grid-edge-size);
+    align-self: stretch;
+}
+
+.buttons-panel .ocap-grid-gutter--row {
+    height: var(--ocap-grid-edge-size);
+    width: 100%;
 }
 
 /* The zone itself is a plain surface: no button chrome, no background, no
@@ -286,40 +351,33 @@ body .buttons-panel .ocap-grid-slot--empty {
     box-shadow: var(--shadow-s);
 }
 
-/* --- Edit-mode grid chrome ---------------------------------------------
-   In edit mode the panel must read as a CONSTRUCTION: where a cell starts,
-   where it ends, which slots exist, where a tool can land. So every cell
-   draws a clearly visible line on all four sides and the grid as a whole gets
-   an outer frame.
+/* --- The raster, in every mode -----------------------------------------
+   The panel reads as a CONSTRUCTION: where a cell starts, where it ends,
+   which slots exist, where a tool can land. Every cell draws a clearly
+   visible line on all four sides and the grid as a whole gets an outer frame
+   (on `.ocap-palette-grid` itself, above).
 
-   The line colour is derived from `--mono-rgb-100` (255,255,255 in a dark
-   theme, 0,0,0 in a light one), so "bright against the background" stays true
-   in both without hard-coding white. Occupied cells differ from empty ones by
-   their FILL, not by a different line — a raster with two kinds of edge reads
-   as noise rather than as a grid.
+   This used to be edit-mode-only (`--managed`), which made the two modes look
+   like two different panels: the same grid lost its slot boundaries the
+   moment it was locked. The mode now changes what a press MEANS — execute vs.
+   select — and nothing about the layout. Occupied cells differ from empty ones
+   by their FILL, not by a different line; a raster with two kinds of edge
+   reads as noise rather than as a grid.
 
    Geometry is untouched by all of this: the 1px cell border exists in every
-   mode already (transparent in locked), so these rules only ever change a
-   COLOUR, and the outer frame is an `outline`, which never takes part in
-   layout. Locked mode keeps the transparent base border and no chrome at all.
+   mode already (transparent by default), so these rules only ever change a
+   COLOUR, and the frame is an `outline`, which never takes part in layout.
    Pinned in tests/paletteGridGeometry.test.ts. */
-.buttons-panel .ocap-palette-grid--managed {
-    --ocap-grid-line: rgba(var(--mono-rgb-100), 0.28);
-
-    outline: 1px solid var(--ocap-grid-line);
-    outline-offset: 0;
-}
-
-.buttons-panel .ocap-palette-grid--managed .ocap-grid-slot {
+.buttons-panel .ocap-palette-grid .ocap-grid-slot {
     border-color: var(--ocap-grid-line);
 }
 
 /* An occupied cell reads as filled, not as differently framed. */
-.buttons-panel .ocap-palette-grid--managed .ocap-grid-slot--filled {
+.buttons-panel .ocap-palette-grid .ocap-grid-slot--filled {
     background-color: var(--background-secondary);
 }
 
-.buttons-panel .ocap-palette-grid--managed .ocap-grid-slot--empty {
+.buttons-panel .ocap-palette-grid .ocap-grid-slot--empty {
     background-color: transparent;
 }
 

@@ -449,15 +449,17 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         );
 
     if (isGrid && gridSlots) {
-        // Empty cells stay in the DOM in every mode so positions never shift;
-        // only their chrome is mode-dependent. There is one management mode
-        // (edit), so one chrome class: `--managed`.
-        const showSlotOutlines = sortableEnabled || enableEditMode;
+        // Empty cells stay in the DOM in every mode so positions never shift,
+        // and the raster is drawn in every mode too (locked and edit must not
+        // look like two different panels). `--managed` is left for the chrome
+        // that genuinely belongs to editing: the empty-cell hover and the grab
+        // cursor. There is one management mode (edit), so one class.
+        const managed = sortableEnabled || enableEditMode;
 
         const gridClassName = [
             contentClass,
             'ocap-palette-grid',
-            showSlotOutlines && 'ocap-palette-grid--managed',
+            managed && 'ocap-palette-grid--managed',
         ]
             .filter(Boolean)
             .join(' ');
@@ -488,7 +490,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                     columns={dimensions.columns}
                     droppableEnabled={sortableEnabled}
                     isDropTarget={dropTargetSlot === slot}
-                    showOutline={showSlotOutlines}
+                    managed={managed}
                     color={color ?? undefined}
                     selected={selectedCells.has(cellKey)}
                     onCreate={
@@ -534,8 +536,14 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
 
         // Edit mode frames the grid with its two graspable EDGES: the whole
         // right border resizes columns, the whole bottom border resizes rows.
-        // Both are siblings of the slot grid, never cells of it, and they are
-        // absent in locked mode, where the panel is pure content.
+        // Both are siblings of the slot grid, never cells of it.
+        //
+        // Locked mode gets the same frame with the same 16px gutters, only
+        // EMPTY. The handles are an editing affordance and stay edit-only, but
+        // the SPACE they occupy must not be: with the gutters gone, every cell
+        // of a 4-column grid grew by 4px the moment the panel was locked, so
+        // the whole raster jumped on a mode switch. A mode change may change
+        // what a press means; it may not relayout the panel.
         //
         // The frame stays MOUNTED while a button drag is in flight and only
         // refuses to act: unmounting it would hand its gutter back to the grid
@@ -552,36 +560,45 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         const gesture = resizeDrag.preview?.committed === false ? resizeDrag.preview : null;
         const resizingEdge = gesture?.edge ?? null;
 
-        const body = enableEditMode ? (
+        const body = (
             <div className="ocap-grid-frame">
                 <div className="ocap-grid-frame-main">
                     {gridEl}
+                    {enableEditMode ? (
+                        <GridResizeEdgeZone
+                            edge="column"
+                            dimensions={dimensions}
+                            availability={availability}
+                            onResize={onResize}
+                            onHandlePointerDown={resizeDrag.onHandlePointerDown}
+                            dragging={resizingEdge === 'column'}
+                        />
+                    ) : (
+                        <div
+                            className="ocap-grid-gutter ocap-grid-gutter--column"
+                            aria-hidden
+                        />
+                    )}
+                </div>
+                {enableEditMode ? (
                     <GridResizeEdgeZone
-                        edge="column"
+                        edge="row"
                         dimensions={dimensions}
                         availability={availability}
                         onResize={onResize}
                         onHandlePointerDown={resizeDrag.onHandlePointerDown}
-                        dragging={resizingEdge === 'column'}
+                        dragging={resizingEdge === 'row'}
                     />
-                </div>
-                <GridResizeEdgeZone
-                    edge="row"
-                    dimensions={dimensions}
-                    availability={availability}
-                    onResize={onResize}
-                    onHandlePointerDown={resizeDrag.onHandlePointerDown}
-                    dragging={resizingEdge === 'row'}
-                />
-                {gesture && (
+                ) : (
+                    <div className="ocap-grid-gutter ocap-grid-gutter--row" aria-hidden />
+                )}
+                {enableEditMode && gesture && (
                     <GridResizeReadout
                         dimensions={gesture.dimensions}
                         edge={gesture.edge}
                     />
                 )}
             </div>
-        ) : (
-            gridEl
         );
 
         const sortableIds = gridSlots

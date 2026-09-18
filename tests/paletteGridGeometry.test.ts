@@ -96,39 +96,122 @@ describe('palette grid geometry', () => {
 });
 
 /**
- * Edit mode must read as a construction — visible cell boundaries — WITHOUT
- * moving a single pixel. The cell border already exists in every mode
- * (transparent in locked), so making the raster visible may only ever change a
- * colour; the outer frame is an `outline`, which never takes part in layout.
+ * The raster must read as a construction — visible cell boundaries — in EVERY
+ * mode and WITHOUT moving a single pixel.
+ *
+ * It used to be edit-only (`--managed`), which made the same grid look like two
+ * different panels: locked lost its slot boundaries, and with them the sense
+ * that a tool sits IN a cell. Switching modes now changes what a press means,
+ * never the layout. The cell border exists in every mode anyway (transparent by
+ * default), so making the raster visible may only ever change a colour; the
+ * outer frame is an `outline`, which never takes part in layout.
  */
-describe('edit-mode raster is colour-only', () => {
-    const managedRules = rules.filter((r) => /\.ocap-palette-grid--managed/.test(r.selector));
-
-    it('has managed-mode rules at all', () => {
-        expect(managedRules.length).toBeGreaterThan(0);
-    });
+describe('the raster is mode-independent and colour-only', () => {
+    const grid = ruleBody(/\.ocap-palette-grid$/);
 
     it('frames the whole grid with an outline, never a border', () => {
-        const frame = managedRules.find((r) => /--managed$/.test(r.selector));
-        expect(frame, 'no rule for the managed grid container').toBeTruthy();
-        expect(frame!.body).toMatch(/outline:\s*1px solid var\(--ocap-grid-line\)/);
+        expect(grid).toMatch(/outline:\s*1px solid var\(--ocap-grid-line\)/);
         // A border (or padding) on the container would shrink the cell tracks.
-        expect(frame!.body).not.toMatch(/(?:^|[;\s])(border|padding)\s*:/);
+        expect(grid).not.toMatch(/(?:^|[;\s])(border|padding)\s*:/);
     });
 
     it('derives the line colour from the theme, not from a hard-coded white', () => {
-        const frame = managedRules.find((r) => /--managed$/.test(r.selector))!;
-        expect(frame.body).toMatch(/--ocap-grid-line:\s*rgba\(var\(--mono-rgb-100\)/);
+        expect(grid).toMatch(/--ocap-grid-line:\s*rgba\(var\(--mono-rgb-100\)/);
+    });
+
+    it('draws the cell border and the cell ground without a mode class', () => {
+        // The three rules that make a grid readable as a grid. None of them may
+        // key on `--managed`, or locked mode loses the raster again.
+        for (const pattern of [
+            /^\.buttons-panel \.ocap-palette-grid \.ocap-grid-slot$/,
+            /^\.buttons-panel \.ocap-palette-grid \.ocap-grid-slot--filled$/,
+            /^\.buttons-panel \.ocap-palette-grid \.ocap-grid-slot--empty$/,
+        ]) {
+            const rule = rules.find((r) => pattern.test(r.selector));
+            expect(rule, `no mode-independent rule matching ${String(pattern)}`).toBeTruthy();
+            expect(rule!.selector).not.toMatch(/--managed/);
+        }
+        expect(ruleBody(/^\.buttons-panel \.ocap-palette-grid \.ocap-grid-slot$/)).toMatch(
+            /border-color:\s*var\(--ocap-grid-line\)/
+        );
+    });
+
+    it('lets the tool fill its cell whatever wrapper the mode gives it', () => {
+        // `.icon-top`/`.icon-left` pin a FIXED button width at 0-4-2. In edit
+        // mode the drag wrapper adds a class and the grid's width rule ties on
+        // specificity; in locked mode there is no wrapper, so without naming
+        // the layout class here the tool stays 56px wide in a wider cell —
+        // left-aligned, with a hover that covers the button instead of the
+        // slot. That was the actual mode mismatch.
+        const fill = rules.find((r) =>
+            /\.ocap-grid-slot button\.buttons-panel-simple-button\.icon-top/.test(r.selector)
+        );
+        expect(fill, 'no mode-independent width rule for the tool').toBeTruthy();
+        expect(fill!.selector).toMatch(/\.icon-left/);
+        expect(fill!.selector).not.toMatch(/sortable-button-item|--managed/);
+        expect(fill!.body).toMatch(/width:\s*100%/);
+    });
+
+    it('gives a tool a hover ground that fills its whole cell', () => {
+        // `.icon-top`/`.icon-left` set `background-color: transparent` at the
+        // same specificity as Button.css' own hover rule and come later, so a
+        // tool on a grid had no hover ground at all — only a drop shadow. That
+        // is what made a locked cell feel like a small label instead of a slot.
+        const hover = rules.find((r) =>
+            /\.ocap-palette-grid \.ocap-grid-slot button\.buttons-panel-simple-button:hover$/.test(
+                r.selector
+            )
+        );
+        expect(hover, 'no slot-wide hover rule for a tool').toBeTruthy();
+        expect(hover!.selector).not.toMatch(/--managed|--colored/);
+        expect(hover!.body).toMatch(/background-color:\s*var\(--background-modifier-hover\)/);
+        // ...and it must lose to the coloured-cell hover, which is the same
+        // specificity and therefore decided by order.
+        const colored = rules.findIndex((r) =>
+            /--colored button\.buttons-panel-simple-button:hover/.test(r.selector)
+        );
+        expect(colored).toBeGreaterThan(rules.indexOf(hover!));
+    });
+
+    it('reserves the resize gutter in locked mode too', () => {
+        // The handles are an editing affordance, but the SPACE they occupy is
+        // not: without it every cell of a 4-column grid grew by 4px the moment
+        // the panel was locked, and the raster jumped on a mode switch.
+        const gutter = ruleBody(/^\.buttons-panel \.ocap-grid-gutter$/);
+        expect(gutter).toMatch(/flex:\s*0 0 var\(--ocap-grid-edge-size\)/);
+        expect(gutter).toMatch(/pointer-events:\s*none/);
+        expect(ruleBody(/\.ocap-grid-gutter--column$/)).toMatch(
+            /width:\s*var\(--ocap-grid-edge-size\)/
+        );
+        expect(ruleBody(/\.ocap-grid-gutter--row$/)).toMatch(
+            /height:\s*var\(--ocap-grid-edge-size\)/
+        );
+    });
+
+    it('keeps the editing-only chrome behind the mode class', () => {
+        // What genuinely belongs to editing stays gated: an empty cell only
+        // lights up under the pointer where it can be acted on, and only a
+        // manageable grid advertises a grab cursor.
+        const managedRules = rules.filter((r) =>
+            /\.ocap-palette-grid--managed/.test(r.selector)
+        );
+        expect(managedRules.length).toBeGreaterThan(0);
+        expect(
+            managedRules.some((r) => /\.ocap-grid-slot--empty:hover$/.test(r.selector))
+        ).toBe(true);
     });
 
     it('only recolours the cell border it already had', () => {
         const sizing = /(?:^|[;\s])((?:min-|max-)?(?:height|width)|padding[a-z-]*|margin[a-z-]*|border(?:-[a-z]+)?-width|border)\s*:\s*([^;]+)/g;
-        for (const rule of managedRules) {
-            // The container rule is covered by the outline test above.
-            if (/--managed$/.test(rule.selector)) continue;
+        const chrome = rules.filter(
+            (r) =>
+                /\.ocap-palette-grid--managed/.test(r.selector) ||
+                /^\.buttons-panel \.ocap-palette-grid \.ocap-grid-slot/.test(r.selector)
+        );
+        for (const rule of chrome) {
             for (const match of rule.body.matchAll(sizing)) {
                 expect.fail(
-                    `${rule.selector} changes ${match[1]} (${String(match[2]).trim()}) — edit chrome must be colour-only`
+                    `${rule.selector} changes ${match[1]} (${String(match[2]).trim()}) — the raster must be colour-only`
                 );
             }
         }
@@ -138,7 +221,7 @@ describe('edit-mode raster is colour-only', () => {
         // `:hover` adds a class level to the selector; if the hover rule also
         // set a border colour it would beat the accent rings that promise
         // where a drop lands.
-        const hover = managedRules.find((r) => /--empty:hover/.test(r.selector));
+        const hover = rules.find((r) => /--managed .ocap-grid-slot--empty:hover/.test(r.selector));
         expect(hover, 'no managed hover rule').toBeTruthy();
         expect(hover!.body).not.toMatch(/border/);
     });
