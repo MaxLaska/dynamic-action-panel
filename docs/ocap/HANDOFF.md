@@ -441,14 +441,38 @@ deployt, nicht gepusht. Normative Spezifikation:
   das Grid unter dem Zeiger weg, und `Strg + Farbfeld` muss ohne bestehende
   Auswahl funktionieren. Sie heißt bewusst nicht wie eine Grid-Edge, sonst zöge
   der Edge-Kontrakt sie in seine Assertions.
+- **Eine Auswahl überlebt ein REMOUNT, nicht aber ein Verschwinden.** Live
+  gefunden: ein Tool-Drag löschte die Auswahl jedes Mal. Die Ursache lag nicht
+  im Selection-Code, sondern in einer bestehenden Baumform —
+  `ListModeContent.tsx` rechnet
+  `categorySortEnabled = … && !buttonDrag.isDragging`, also wechselt der
+  Kategorie-Block während eines Drags seinen Elementtyp und React reißt das
+  ganze Grid ab und baut es neu auf. Ein Unmount allein kann darum nicht
+  „dieses Grid ist weg" bedeuten. Statt eines Unmount-Cleanups **zählt**
+  `PanelContent` jetzt die sichtbaren, interaktiven Renderings pro Grid
+  (`createGridInstanceCounter`) und fragt **einen Tick später**: ein Rebuild
+  meldet sich im selben Commit wieder an, ein echtes Verschwinden nicht.
+  Eine Instanz, die nie `selectable` war (Drag-Vorschau, versteckter
+  Stale-Overlay), registriert sich gar nicht erst und kann deshalb auch nichts
+  beenden.
+- **Ein Schrumpfen entfernt Zellen endgültig aus der Auswahl.** Das Pruning beim
+  Lesen bleibt das Sicherheitsnetz (und ist das, was eine Resize-**Vorschau**
+  braucht, die noch abgebrochen werden kann), aber sobald die kleinere Größe
+  wirklich gespeichert ist, wird die Entfernung committet — sonst brachte ein
+  erneutes Vergrößern die Zellen zurück in die Auswahl, was aussah, als gäbe das
+  Grid eine Auswahl zurück, die es gerade genommen hatte.
+- **Das Gray-Swatch wird bei 0.45 Deckkraft gezeichnet.** `--mono-rgb-100` ist im
+  dunklen Theme reines Weiß; bei voller Stärke war Gray das einzige Swatch,
+  dessen Optik nicht zu der Zelle passte, die es erzeugt. Die Zell-Tönung selbst
+  bleibt bei `--ocap-cell-color-alpha`.
 - **Die Palette ist während einer Resize-Vorschau nicht montiert**
   (`selectionActive`, nicht nur `selectionEnabled`). Die Vorschau überlebt den
   Zeiger bewusst, bis die gespeicherten Dimensionen nachziehen; eine Leiste in
   diesem Fenster durchsuchte ein anderes Grid, als der Nutzer ansieht.
-- Tests: `tests/gridCellSelection.test.ts` (47), `tests/cellColors.test.ts` (41),
+- Tests: `tests/gridCellSelection.test.ts` (55), `tests/cellColors.test.ts` (41),
   `tests/paletteGridGeometry.test.ts` +17 (Spezifitäts- und Reihenfolge-Kontrakt,
   `+`-Geometrie, Palette, plus ein Quelltext-Scan des Escape-Handlers).
-  Gesamt **1012**.
+  Gesamt **1020**.
 - Noch offen (bewusst v1-Nichtziele): Marquee, Range/Rechteck, Multi-Drag,
   Pipette, freier RGB-Picker, Undo, Keyboard-Pfeilauswahl, Delete/Export
   Selected, ZotFlow-Color-Seeding. Ebenfalls zurückgestellt: die Leiste zeigt

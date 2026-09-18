@@ -1,12 +1,14 @@
 # OCAP – Status
 
-Last updated: 2026-09-18 (Cell Selection + Cell Colors v1 — implemented locally,
-awaiting manual/productive validation)
+Last updated: 2026-09-18 (Cell Selection + Cell Colors v1 — implemented locally
+and live-smoke-tested in an isolated Obsidian; awaiting the user's own manual
+and productive validation)
 
 ## Newest work first
 
-- **Cell Selection + Cell Colors v1 (2026-09-18) — implemented locally, NOT yet
-  manually or productively validated.** Not deployed to any vault, not pushed.
+- **Cell Selection + Cell Colors v1 (2026-09-18) — implemented locally and
+  live-smoke-tested; NOT yet validated by the user, and NOT in the productive
+  vault.** Deployed only to the disposable smoke vault, not pushed.
   Normative specification: `docs/ocap/cell-selection-colors.md`; durable
   decisions in `DECISIONS.md` (six entries dated 2026-09-18); technical detail
   in `HANDOFF.md` §2d.
@@ -24,9 +26,23 @@ awaiting manual/productive validation)
   - Palette of six colors plus clear below the grid, permanently mounted in edit
     mode; `Ctrl/Shift + swatch` selects by color and never writes.
   - Colors render in locked mode too (they are content).
-  - Tests: **1012/1012** (36 files; +105 new in `tests/gridCellSelection.test.ts`,
+  - Tests: **1020/1020** (36 files; +113 new in `tests/gridCellSelection.test.ts`,
     `tests/cellColors.test.ts` and the extended `tests/paletteGridGeometry.test.ts`).
     `tsc --noEmit`, `eslint .` and `npm run build` all green.
+  - **Live smoke pass (2026-09-18): 84/84 checks in a real, isolated Obsidian
+    1.13.7**, driven by trusted CDP input (real mouse presses/moves/releases
+    with modifiers, real key events) against a snapshot of the smoke vault in a
+    scratch profile. Verified live: locked-mode execution and Enter/Space,
+    plain/Shift/Ctrl selection on filled AND empty cells, drag move/swap with
+    the selection and colour staying on the coordinate, the corner `+` incl.
+    modifier suppression, colouring/clearing, the palette's active indicator,
+    `Ctrl`/`Shift` + swatch (and that they never write), variant and grid scope,
+    Escape (including that an Obsidian modal still closes while a selection is
+    held), the real resize-edge gesture, persistence across a plugin reload,
+    the vault-file drop, the template export/import roundtrip of `cellStyles`,
+    and the read-only future-settings guard. Console: no errors, no unhandled
+    rejections. Two real defects were found live and fixed (below), plus one
+    visual defect from screenshot review.
   - An independent adversarial review ran against the finished code and found
     one **high-severity** defect plus four smaller ones, all fixed before the
     commits: the Escape handler swallowed the key globally (breaking drag
@@ -37,6 +53,13 @@ awaiting manual/productive validation)
     after a short drag inside it; and the click threshold used a per-axis test
     where the drag sensor uses a euclidean one, leaving a narrow band where a
     press did nothing at all. Detail in `HANDOFF.md` §2d.
+  - Found by the LIVE run, not by the review: (a) a tool drag cleared the cell
+    selection every time, because list view changes the category block’s element
+    type while a drag is in flight and React therefore rebuilds the whole grid —
+    an unmount alone cannot mean “this grid is gone”; (b) growing a grid back after
+    a shrink resurrected the cells the shrink had removed from the selection,
+    because pruning was derived on read only. Found by screenshot review: (c) the
+    Gray swatch rendered pure white in a dark theme.
 
 ## Current state
 
