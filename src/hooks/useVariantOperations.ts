@@ -36,15 +36,22 @@ export function useVariantOperations() {
     const { plugin, app } = usePluginContext();
 
     const replaceCategory = useCallback(
-        (categoryId: string, update: (category: StoredCategory) => StoredCategory) => {
+        async (
+            categoryId: string,
+            update: (category: StoredCategory) => StoredCategory
+        ): Promise<StoredCategory | null> => {
             const stored = findStoredCategory(plugin, categoryId);
             if (!stored) {
                 new Notice(t('category_not_found'));
                 return null;
             }
             const next = update(stored);
-            void commitStoredCategory(plugin, next);
-            return next;
+            // Returning `next` unconditionally told every caller the change had
+            // landed — `createVariant` then selected a variant that does not
+            // exist. The commit is awaited here so the answer is the truth.
+            return commitStoredCategory(plugin, next).then((committed) =>
+                committed ? next : null
+            );
         },
         [plugin]
     );
@@ -64,10 +71,13 @@ export function useVariantOperations() {
                 fallbackTaken: findFallbackVariant(category) !== null,
                 onSubmit: ({ name, trigger, fallback }) => {
                     const variantId = freshId('var');
-                    replaceCategory(categoryId, (stored) =>
+                    void replaceCategory(categoryId, (stored) =>
                         addVariantToCategory(stored, { id: variantId, name, trigger, fallback })
-                    );
-                    onCreated?.(variantId);
+                    ).then((created) => {
+                        // Selecting a variant that was never created would
+                        // leave the editor pointing at nothing.
+                        if (created) onCreated?.(variantId);
+                    });
                 },
             }).open();
         },
@@ -91,7 +101,7 @@ export function useVariantOperations() {
                 fallback: variant.fallback === true,
                 fallbackTaken: fallback !== null && fallback.id !== variantId,
                 onSubmit: ({ name, trigger, fallback: isFallback }) => {
-                    replaceCategory(categoryId, (stored) =>
+                    void replaceCategory(categoryId, (stored) =>
                         updateVariant(stored, variantId, {
                             name,
                             trigger,
@@ -137,8 +147,11 @@ export function useVariantOperations() {
                             { id: copyId, name, trigger, fallback },
                             (index) => freshId(`btn${index}`)
                         )
-                    );
-                    onDuplicated?.(copyId);
+                    ).then((committed) => {
+                        // Same reason as createVariant: do not select a copy
+                        // that does not exist.
+                        if (committed) onDuplicated?.(copyId);
+                    });
                 },
             }).open();
         },
@@ -147,7 +160,7 @@ export function useVariantOperations() {
 
     const moveVariantOp = useCallback(
         (categoryId: string, variantId: string, direction: -1 | 1) => {
-            replaceCategory(categoryId, (stored) =>
+            void replaceCategory(categoryId, (stored) =>
                 moveVariant(stored, variantId, direction)
             );
         },
@@ -176,12 +189,17 @@ export function useVariantOperations() {
                 onConfirm: () => {
                     // Deleting the variant also garbage-collects its tools
                     // (unless referenced elsewhere or kept via `library`).
-                    void commitToolState(
-                        plugin,
-                        removeVariantFromState(toolStateOf(plugin), categoryId, variantId)
-                    );
-                    new Notice(t('variant_deleted'));
-                    onDeleted?.();
+                    void (async () => {
+                        const done = await commitToolState(
+                            plugin,
+                            removeVariantFromState(toolStateOf(plugin), categoryId, variantId)
+                        );
+                        // Saying "variant deleted" after a refused write would
+                        // contradict the notice the funnel just raised.
+                        if (!done) return;
+                        new Notice(t('variant_deleted'));
+                        onDeleted?.();
+                    })();
                 },
             }).open();
         },

@@ -310,7 +310,13 @@ export class ButtonCreateModal extends Modal {
             new Notice(t('variant_grid_full'));
             return;
         }
-        await commitToolState(this.plugin, next);
+        if (!(await commitToolState(this.plugin, next))) {
+            // Refused, because the loaded configuration comes from a newer
+            // build. The commit funnel has already said so; closing without
+            // claiming success is the honest end. See settingsWriteGuard.ts.
+            this.close();
+            return;
+        }
 
         new Notice(t('button_create_success'));
         this.close();

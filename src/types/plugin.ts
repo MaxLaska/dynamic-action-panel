@@ -26,6 +26,20 @@ export interface ButtonsPanelPlugin extends Plugin {
     /** Saves the settings asynchronously */
     saveSettings(): Promise<void>;
 
+    /**
+     * Set while the loaded `data.json` uses a schema version newer than this
+     * build understands, in which case the settings are read-only and nothing
+     * may be written over them. See src/utils/settingsWriteGuard.ts.
+     *
+     * Deliberately per-instance runtime state, re-derived on every load: the
+     * protection belongs to the file that is open, not to the session, so a
+     * reload or a downgraded file lifts it without anything to reset by hand.
+     */
+    futureSettings?: { storedVersion: number | null; supportedVersion: number } | null;
+
+    /** Whether the user has already been told that a change could not be saved. */
+    settingsWriteRefusalNotified?: boolean;
+
     /** Expanded state per category (runtime state, not persisted) */
     categoryOpenState: Record<string, boolean>;
 

@@ -293,10 +293,15 @@ export class ButtonEditModal extends Modal {
         // v5: an edit changes only the TOOL DEFINITION in the registry —
         // the placement (which grid/variant/slot or flow position holds it)
         // is untouched, so this one write covers grid and flow alike.
-        await commitToolState(
+        const saved = await commitToolState(
             this.plugin,
             updateToolDefinition(toolStateOf(this.plugin), updatedButton)
         );
+        if (!saved) {
+            // Refused by the write guard; it has already explained why.
+            this.close();
+            return;
+        }
 
         new Notice(t('button_update_success'));
         this.close();

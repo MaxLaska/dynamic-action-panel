@@ -16,6 +16,7 @@ import {
 } from '@/types';
 import type { ButtonsPanelPlugin as ButtonsPanelPluginType } from '@/types';
 import { migrateSettings } from '@/settings/settingsMigrations';
+import { noteLoadedSettings, persistSettings } from '@/utils/settingsWriteGuard';
 import { WorkspaceContextService } from '@/context/WorkspaceContextService';
 import { t, tWithParams } from '@/utils/i18n';
 import { importTemplateFromLibrary, openTemplateLibraryFolder } from '@/export/templateIo';
@@ -150,16 +151,19 @@ export default class ButtonsPanelPlugin extends Plugin {
         const result = migrateSettings(rawData);
         this.settings = result.settings;
 
-        if (result.status === 'future') {
-            console.warn(
-                `[Dynamic Action Panel] Stored settings use a newer schema version (${result.fromVersion}) ` +
-                    'than this plugin build supports; loading best-effort without rewriting them.'
-            );
-        } else if (result.changed) {
-            // Persist the migrated data once so the migration does not rerun
-            // on every load. Intentionally saveData (not saveSettings) to
-            // avoid re-render side effects during load.
-            await this.saveData(this.settings);
+        // Records whether this file is newer than this build understands, and
+        // says so once. Called on EVERY load — the panel re-reads on open — so
+        // the protection follows the file rather than the session: a document
+        // that is back within a supported version becomes writable again here.
+        const shouldPersist = noteLoadedSettings(this, result);
+
+        if (shouldPersist) {
+            // Persist the migrated data once so the migration does not rerun on
+            // every load. Through the same guard as every other write, rather
+            // than a direct saveData: this branch is unreachable for a future
+            // document today, but only because of a condition in another
+            // function, and that is not a safety property worth relying on.
+            await persistSettings(this);
         }
     }
 
@@ -172,10 +176,15 @@ export default class ButtonsPanelPlugin extends Plugin {
      * legacy out-of-order arrays in memory (see normalizeSettings in
      * settingsMigrations.ts), and every write path keeps `order` consistent
      * with the array order it writes.
+     *
+     * The write itself lives in `persistSettings`, which refuses when the
+     * loaded configuration comes from a newer build. The panels are still
+     * refreshed afterwards either way: the caller has already changed the
+     * settings in memory, and the view must show what is actually there.
      */
     async saveSettings() {
         try {
-            await this.saveData(this.settings);
+            await persistSettings(this);
             this.updatePanels();
         } catch (error) {
             console.error('Error while saving the settings:', error);

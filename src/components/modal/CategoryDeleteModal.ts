@@ -85,10 +85,17 @@ export class CategoryDeleteModal extends Modal {
             if (index > -1) {
                 // Remove + renumber immutably, and garbage-collect the tools
                 // that lived only in this category (library tools survive).
-                await commitToolState(
+                const deleted = await commitToolState(
                     this.plugin,
                     deleteCategoryFromState(toolStateOf(this.plugin), this.category.id)
                 );
+                if (!deleted) {
+                    // Refused: the configuration comes from a newer build and
+                    // the funnel has said so. Nothing was deleted, so nothing
+                    // is announced.
+                    this.close();
+                    return;
+                }
 
                 // Show the success message.
                 const buttonCount = this.category.buttons.length;

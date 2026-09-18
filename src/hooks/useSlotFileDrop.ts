@@ -94,9 +94,14 @@ export function useSlotFileDrop() {
                 new Notice(t('variant_grid_full'));
                 return;
             }
-            void commitToolState(plugin, next);
-
-            new Notice(t(draft.noticeKey));
+            void (async () => {
+                // Only announce the new tool if it was actually committed. A
+                // configuration from a newer build refuses the write, and the
+                // funnel has already explained that.
+                if (await commitToolState(plugin, next)) {
+                    new Notice(t(draft.noticeKey));
+                }
+            })();
         },
         [app, plugin, selection]
     );

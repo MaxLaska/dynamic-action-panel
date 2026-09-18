@@ -402,9 +402,17 @@ export class CategoryEditModal extends Modal {
                           : undefined,
                   }
         );
-        void commitToolState(this.plugin, { tools: state.tools, categories });
-        this.onRename();
-        this.close();
+        void (async () => {
+            // Closing and firing `onRename` are themselves success signals, so
+            // they have to wait for a commit that actually happened. The funnel
+            // has already explained a refusal.
+            if (!(await commitToolState(this.plugin, { tools: state.tools, categories }))) {
+                this.close();
+                return;
+            }
+            this.onRename();
+            this.close();
+        })();
     }
 
     /**

@@ -4,7 +4,8 @@ import { ButtonsPanelPlugin } from '@/types';
 import { FolderInputSuggest } from '@/components/suggest/FolderInputSuggest';
 import { openTemplateLibraryFolder } from '@/export/templateIo';
 import { TEMPLATE_LIBRARY_FOLDER } from '@/export/templateLibrary';
-import { t } from '@/utils/i18n';
+import { t, tWithParams } from '@/utils/i18n';
+import { canMutateSettings, futureSettingsBlock } from '@/utils/settingsWriteGuard';
 
 export class ButtonsPanelSettingTab extends PluginSettingTab {
     plugin: ButtonsPanelPlugin;
@@ -16,7 +17,25 @@ export class ButtonsPanelSettingTab extends PluginSettingTab {
     }
 
     getSettingDefinitions(): SettingDefinitionItem[] {
+        const block = futureSettingsBlock(this.plugin);
         return [
+            // Only present when it applies: a disabled form with no explanation
+            // is worse than no form at all.
+            ...(block
+                ? [
+                      {
+                          name: t('settings_future_heading'),
+                          desc:
+                              block.storedVersion === null
+                                  ? t('settings_unreadable_readonly')
+                                  : tWithParams('settings_future_readonly', {
+                                        stored: block.storedVersion,
+                                        supported: block.supportedVersion,
+                                    }),
+                          render: () => {},
+                      },
+                  ]
+                : []),
             {
                 name: t('show_top_nav_bar'),
                 desc: t('show_top_nav_bar_desc'),
@@ -107,11 +126,26 @@ export class ButtonsPanelSettingTab extends PluginSettingTab {
         ];
     }
 
+    /**
+     * Whether the settings may be changed at all.
+     *
+     * A configuration written by a newer build is read-only, and a settings tab
+     * is the one place where a visibly disabled control is clearer than a
+     * refusal after the fact: it is a form, so a switch that flips back on the
+     * next open is exactly the kind of thing someone discovers ten minutes too
+     * late. `silent` because merely rendering the tab is not an attempt to
+     * change anything.
+     */
+    private get readOnly(): boolean {
+        return !canMutateSettings(this.plugin, { silent: true });
+    }
+
     private renderPanelToggle(setting: Setting, key: string): void {
         const config = this.plugin.settings.panelConfig as unknown as Record<string, unknown>;
         setting.addToggle((toggle) => {
             toggle
                 .setValue((config[key] as boolean) ?? false)
+                .setDisabled(this.readOnly)
                 .onChange(async (value) => {
                     config[key] = value;
                     await this.plugin.saveSettings();
@@ -129,7 +163,8 @@ export class ButtonsPanelSettingTab extends PluginSettingTab {
         setting.addText((text) => {
             input = text
                 .setPlaceholder(placeholder)
-                .setValue(this.plugin.settings.pathConfig[key] ?? '');
+                .setValue(this.plugin.settings.pathConfig[key] ?? '')
+                .setDisabled(this.readOnly);
 
             const suggest = new FolderInputSuggest(this.app, input.inputEl);
             suggest.onSelect((folderPath) => {

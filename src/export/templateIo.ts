@@ -44,6 +44,7 @@ import {
     freeTemplateLibraryPath,
 } from '@/export/templateLibrary';
 import { TemplateSuggestModal } from '@/export/TemplateSuggestModal';
+import { futureSettingsBlock } from '@/utils/settingsWriteGuard';
 
 /**
  * A counted phrase with its own singular form — "1 tool" reads wrong as
@@ -96,13 +97,19 @@ export async function exportCategoryTemplate(
 
         const path = freeTemplateLibraryPath(app, templateFileName(category.name));
         await app.vault.create(path, serializeTemplateDocument(document));
-        new Notice(
-            tWithParams('template_export_done', {
-                file: path.slice(TEMPLATE_LIBRARY_FOLDER.length + 1),
-                folder: TEMPLATE_LIBRARY_FOLDER,
-                tools: counted('template_count_tool', Object.keys(document.tools).length),
-            })
-        );
+        const done = tWithParams('template_export_done', {
+            file: path.slice(TEMPLATE_LIBRARY_FOLDER.length + 1),
+            folder: TEMPLATE_LIBRARY_FOLDER,
+            tools: counted('template_count_tool', Object.keys(document.tools).length),
+        });
+        // Exporting stays allowed when the configuration comes from a newer
+        // build — it only reads, and writes a separate file, so nothing is at
+        // risk. But it is built from what THIS build could read, so it may not
+        // carry everything the newer one stored, and calling that a complete
+        // copy would be the kind of quiet half-truth that costs someone a
+        // configuration later.
+        const partial = futureSettingsBlock(plugin) ? ` ${t('template_export_partial')}` : '';
+        new Notice(`${done}${partial}`);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         new Notice(`${t('template_export_failed')}: ${message}`);
@@ -179,8 +186,14 @@ export async function importTemplateContent(
         importedSuffix: t('template_imported_suffix'),
     });
 
-    // Everything above is pure planning; this is the ONE write.
-    await commitToolState(plugin, plan.state);
+    // Everything above is pure planning; this is the ONE write. It refuses
+    // when the loaded configuration came from a newer build, and then there is
+    // nothing to report as imported — reporting success for a template that
+    // vanishes on the next reload would be worse than refusing plainly. The
+    // commit funnel has already explained why.
+    if (!(await commitToolState(plugin, plan.state))) {
+        return false;
+    }
 
     const missing = countMissingReferences(app, plugin, parsed.document);
     const summary = tWithParams('template_import_done', {

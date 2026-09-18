@@ -565,7 +565,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 return applyFlowIdsToStoredCategory(category, ids, tools, placedIds);
             });
 
-            await commitCategories(pluginInstance, nextCategories);
+            return commitCategories(pluginInstance, nextCategories);
         },
         []
     );
@@ -592,7 +592,7 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
 
             // Renumber immutably: a moved category is a changed category and
             // gets a new object identity; untouched ones keep theirs.
-            await commitCategories(
+            return commitCategories(
                 pluginInstance,
                 reordered.map((cat, idx) =>
                     cat.order === idx ? cat : { ...cat, order: idx }
@@ -839,12 +839,19 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
                 setCategoryListDragOpen(true);
 
                 if (!categoryIdsEqual(baseline, finalIds)) {
-                    try {
-                        await persistCategoryOrder(finalIds, plugin);
-                    } catch (error) {
-                        console.error('Error while saving the category order:', error);
+                    const revert = () => {
                         setCategoryIds(baseline);
                         categoryIdsRef.current = baseline;
+                    };
+                    try {
+                        // As above: a refused write returns false, it does not
+                        // throw.
+                        if (!(await persistCategoryOrder(finalIds, plugin))) {
+                            revert();
+                        }
+                    } catch (error) {
+                        console.error('Error while saving the category order:', error);
+                        revert();
                     }
                 }
                 return;
@@ -949,13 +956,23 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
             resetButtonDragHoverState();
 
             if (changed) {
-                try {
-                    await persistItems(finalItems, plugin);
-                } catch (error) {
-                    console.error('Error while saving the button order:', error);
+                // A refusal RETURNS false rather than throwing — a
+                // configuration from a newer build is read-only — so the revert
+                // has to be driven by the result as well as by the catch.
+                // Otherwise the tool stays visually in its new cell until some
+                // unrelated re-render snaps it back.
+                const revert = () => {
                     committedPropsRef.current = null;
                     itemsRef.current = baseline;
                     setItems(baseline);
+                };
+                try {
+                    if (!(await persistItems(finalItems, plugin))) {
+                        revert();
+                    }
+                } catch (error) {
+                    console.error('Error while saving the button order:', error);
+                    revert();
                 }
             }
         },

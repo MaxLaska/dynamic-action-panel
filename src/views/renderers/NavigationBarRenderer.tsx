@@ -5,6 +5,7 @@ import { ButtonsPanelPlugin } from '@/types/plugin';
 import { PanelConfig } from '@/types';
 import { ReactRoot } from '@/utils/ReactRoot';
 import { NavigationBar } from '@/components/shared/NavigationBar';
+import { canMutateSettings } from '@/utils/settingsWriteGuard';
 
 /**
  * NavigationBarRenderer
@@ -23,6 +24,24 @@ export class NavigationBarRenderer {
     constructor(plugin: ButtonsPanelPlugin, panelConfig: PanelConfig) {
         this.plugin = plugin;
         this.panelConfig = panelConfig;
+    }
+
+    /**
+     * Saves a view preference — which view, which button style, locked or edit.
+     *
+     * These three are deliberately allowed to change even when the loaded
+     * configuration is read-only, because they are how someone LOOKS at a
+     * configuration they cannot edit. The change simply is not saved, and
+     * saying "changes cannot be saved" here would be the wrong message twice
+     * over: the switch did work, and the one-per-session explanation would be
+     * spent on the one action the design permits — leaving the next real edit
+     * with no explanation at all.
+     */
+    private persistViewPreference(): void {
+        if (!canMutateSettings(this.plugin, { silent: true })) {
+            return;
+        }
+        void this.plugin.saveSettings();
     }
 
     /**
@@ -53,17 +72,17 @@ export class NavigationBarRenderer {
                 showTopNavBar={this.panelConfig.showTopNavBar}
                 onChangeView={(viewType) => {
                     this.panelConfig.panelViewType = viewType;
-                    void this.plugin.saveSettings();
+                    this.persistViewPreference();
                     activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
                 }}
                 onChangeStyle={(style) => {
                     this.panelConfig.displayStyle = style;
-                    void this.plugin.saveSettings();
+                    this.persistViewPreference();
                     activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
                 }}
                 onChangeInteractionMode={(mode) => {
                     this.panelConfig.interactionMode = mode;
-                    void this.plugin.saveSettings();
+                    this.persistViewPreference();
                     activeDocument.dispatchEvent(new CustomEvent('buttons-panel-refresh'));
                 }}
                 onOpenSettings={() => {

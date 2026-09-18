@@ -519,6 +519,44 @@ longer matters. `Open template folder` is built only from public API
 mechanism as Obsidian's own "Show in system explorer"), so it needs no Electron
 import; on mobile it names the folder instead of opening it.
 
+## 2026-09-18 – A newer settings schema makes the configuration read-only
+
+**Decision:** a build that cannot interpret a stored `settingsVersion` treats
+that configuration as **read-only and never persists over it**. Two cases fall
+under this: a version *higher* than the one it understands, and a version that
+is present but not a usable number at all. A *missing* key still counts as
+unversioned upstream data and migrates normally. It reads what it can, shows what it can, and refuses every
+write until the plugin is updated. There is deliberately no downgrade path:
+nothing guesses at unknown fields, converts future tools, or lowers a version
+number.
+
+**Reason:** the migration pipeline already declined to migrate such a document,
+precisely so it would not be downgraded — but the decision was taken at load and
+then forgotten, so the next ordinary save wrote anyway. That write is worse than
+it looks: the in-memory settings are a lossy VIEW of the file. Unknown top-level
+keys survive the normalization, but `tools` is coerced to a record, `categories`
+to an array, `panelConfig`/`pathConfig` get this build's defaults merged
+underneath, and an unrecognised `interactionMode` is rewritten to `edit`.
+Persisting that view would keep the higher `settingsVersion`, so no later build
+would ever recognise the file as damaged or repair it. The loss would be silent
+and permanent — the worst shape a data bug can take.
+
+**Consequence:** the write lives in one place (`persistSettings` in
+`src/utils/settingsWriteGuard.ts`) and every path reaches disk through it. The
+three commit funnels refuse BEFORE mutating, so the panel never shows an edit the
+file does not have, and each returns whether it committed so no caller can
+announce a success that did not happen. The block is per plugin instance and
+re-derived on every load — the panel re-reads settings each time it opens — so it
+follows the file rather than the session and lifts by itself once a supported
+document is loaded. The user is told once when the configuration is opened and
+once on the first refused change, not per attempt. Reading, navigating, running
+tools and switching views stay fully available; the settings tab renders disabled
+with an explanation, because a form is the one place a visible read-only state
+beats a refusal after the fact. Export stays enabled — it only reads and writes
+its own file, and it is how someone rescues a category from a configuration this
+build cannot edit — but it says the copy may be incomplete rather than implying
+it is a backup.
+
 ## Open decisions
 
 The following are still open:

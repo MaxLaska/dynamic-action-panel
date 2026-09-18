@@ -347,5 +347,10 @@
     "template_open_folder": "Open template folder",
     "template_open_folder_failed": "Could not open the template folder",
     "template_open_folder_desc": "Exported panel templates are stored here. Copy .ocap.json files into this folder to import them.",
-    "template_open_folder_unsupported": "Opening a folder needs the desktop app. The templates are in {folder}."
+    "template_open_folder_unsupported": "Opening a folder needs the desktop app. The templates are in {folder}.",
+    "settings_future_readonly": "This Dynamic Action Panel is older than your saved configuration (version {stored}; this build understands {supported}). It is shown read-only and changes will not be saved. Update the plugin to edit it.",
+    "settings_future_blocked": "Changes cannot be saved: this configuration was created by a newer Dynamic Action Panel version.",
+    "template_export_partial": "Note: this configuration was created by a newer Dynamic Action Panel version, so the export may not include everything it stored.",
+    "settings_future_heading": "Read-only configuration",
+    "settings_unreadable_readonly": "This configuration has a settings version Dynamic Action Panel cannot interpret, so it is shown read-only and changes will not be saved. Check `settingsVersion` in the plugin's data.json, or update the plugin."
 }

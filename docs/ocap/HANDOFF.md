@@ -55,9 +55,61 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   byte-identisch übernommen (keine Migration, kein Rewrite). Der alte Ordner
   `buttons-panel` ist entfernt, ein vollständiges Backup liegt unter
   `C:\Users\flash\ObsidianTestVaults\ocap-backups\`.
-- Teststand: `npm test` **864/864** (Vitest, node env, `tests/`),
+- Teststand: `npm test` **907/907** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün, `npm run build` grün.
   `npm run verify` macht Typecheck, Lint und Tests in einem Befehl.
+
+## 1b. Future-Settings-Schutz (Stand 2026-09-18)
+
+Lädt dieser Build eine `data.json`, deren `settingsVersion` er nicht
+interpretieren kann, gilt die Konfiguration als **read-only**. Zwei Fälle:
+
+- `settingsVersion` **höher** als `CURRENT_SETTINGS_VERSION` → `status: 'future'`.
+- `settingsVersion` **vorhanden, aber unbrauchbar** (String, Float, negativ,
+  `Infinity`, `null`) → `status: 'unreadable'`. Das war vorher der schlimmere
+  Bug: solche Werte fielen auf `0` zurück, liefen durch die ganze v0→v5-Kette
+  (deren v4→v5-Schritt sucht `category.buttons` und leert dabei jede
+  `placements`-Liste) und wurden **beim Start geschrieben** — Datenverlust ohne
+  jede Benutzeraktion. Ein *fehlender* Schlüssel zählt weiterhin als
+  unversionierte Upstream-Daten und migriert normal.
+
+- **Der eine Schreibpfad** ist `persistSettings` in
+  `src/utils/settingsWriteGuard.ts`; `plugin.saveData` wird sonst nirgends mehr
+  aufgerufen. `main.ts` nutzt ihn sowohl in `saveSettings()` als auch für den
+  Migrations-Write beim Laden.
+- **Die drei Commit-Funnels** (`commitToolState`, `commitCategories`,
+  `commitStoredCategory`) prüfen `canMutateSettings` **vor** der Mutation und
+  liefern jetzt `boolean` statt `void`. Nicht mutieren ist wichtig: sonst zeigt
+  das Panel eine Bearbeitung, die die Datei nicht hat, bis der nächste Reload
+  sie stillschweigend zurücknimmt.
+- **Kein Erfolg ohne Commit.** Alle Aufrufstellen, die danach eine Erfolgsmeldung
+  zeigen, ein Modal schließen oder einen Callback feuern, verzweigen jetzt auf das
+  Ergebnis (ButtonCreate/Edit-Modal, CategoryDelete-Modal, Variant-Delete,
+  Slot-Drop, Template-Import). Ein abgelehnter Drag wird optisch zurückgesetzt —
+  eine Ablehnung liefert `false` und wirft nicht, der bisherige Revert griff nur
+  im `catch`.
+- **Zustand** liegt als `futureSettings` auf der Plugin-**Instanz** und wird bei
+  **jedem** Laden neu abgeleitet (das Panel liest bei jedem Öffnen neu). Damit
+  hängt der Schutz an der Datei, nicht an der Session, und löst sich von selbst,
+  sobald wieder eine unterstützte Version geladen wird. Kein Modul-State.
+- **Notices:** einmal beim Öffnen der Konfiguration (und nur, wenn der Block neu
+  ist — sonst käme sie bei jedem Panel-Open), und einmal bei der ersten
+  abgelehnten Änderung. Reines Lesen meldet nichts.
+- **Weiter nutzbar:** Tools ausführen, Hover/ZotFlow-Seitenabfrage, Suche,
+  Collapse, Variantenauswahl, View-/Style-/Mode-Umschalter (nicht persistiert,
+  aber genau das ist beim Nur-Lesen gewollt). Der Settings-Tab rendert
+  **disabled** mit erklärender Zeile — ein Formular ist die eine Stelle, wo ein
+  sichtbarer Read-only-Zustand besser ist als eine Ablehnung hinterher.
+- **Export bleibt erlaubt** (liest nur, schreibt eine eigene Datei) und weist
+  darauf hin, dass die Kopie unvollständig sein kann. **Import wird abgelehnt**
+  und meldet keinen Erfolg.
+- **Kein Downgrade**, keine Rekonstruktion unbekannter Felder, kein
+  Herabsetzen von `settingsVersion`.
+- **Der eine Schreibpfad ist per Test gepinnt**: `tests/futureSettings.test.ts`
+  liest `src/**` und prüft, dass `saveData(` in genau einer Datei vorkommt.
+  `main.ts` wird von keinem Test importiert, ein wiederhergestellter direkter
+  Aufruf dort wäre sonst unsichtbar geblieben.
+- Tests: `tests/futureSettings.test.ts`. Detail in `DECISIONS.md`.
 
 ## 1a. Build und Deploy (Stand 2026-09-18)
 

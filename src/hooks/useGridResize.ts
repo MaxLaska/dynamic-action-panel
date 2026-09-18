@@ -6,6 +6,7 @@ import {
     findStoredCategory,
     toolStateOf,
 } from '@/utils/categoryStore';
+import { canMutateSettings } from '@/utils/settingsWriteGuard';
 import { GridResizeConfirmModal } from '@/components/modal/GridResizeConfirmModal';
 import { gridDimensionsOf, isDynamicCategory } from '@/utils/categoryVariants';
 import {
@@ -110,6 +111,15 @@ export function useGridResize() {
             next: GridDimensions,
             options?: GridResizeOptions
         ): GridResizeOutcome => {
+            // Asked before the confirmation dialog rather than at the commit:
+            // making someone confirm that tools may be destroyed and THEN
+            // refusing the write is a cruel sequence. Not silent — this is a
+            // deliberate user action and deserves the explanation.
+            if (!canMutateSettings(plugin)) {
+                options?.onSettled?.();
+                return 'none';
+            }
+
             const stored = findStoredCategory(plugin, category.id);
             if (!stored) {
                 return 'none';

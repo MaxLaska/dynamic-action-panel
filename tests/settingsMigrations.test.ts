@@ -180,12 +180,45 @@ describe('migrateSettings', () => {
         expect(result.settings.tools).toBe(current.tools);
     });
 
-    it('treats invalid settingsVersion values as unversioned', () => {
-        for (const version of ['2', -1, 1.5, null]) {
+    it('refuses to interpret a settingsVersion that is present but unusable', () => {
+        // This used to treat every unusable value as "unversioned" and run it
+        // through the whole v0 -> v5 chain. That was destructive: the chain's
+        // v4 -> v5 step looks for `category.buttons`, and a document that does
+        // not have them comes out with every `placements` array emptied — and
+        // the result was then WRITTEN at startup, before the user touched
+        // anything. Refusing to guess costs a read-only session; guessing cost
+        // the user their panel.
+        for (const version of ['2', -1, 1.5, null, Number.POSITIVE_INFINITY, true]) {
             const result = migrateSettings({ ...makeLegacyData(), settingsVersion: version });
-            expect(result.status).toBe('migrated');
-            expect(result.settings.settingsVersion).toBe(CURRENT_SETTINGS_VERSION);
+            expect(result.status).toBe('unreadable');
+            expect(result.changed).toBe(false);
         }
+    });
+
+    it('still treats an ABSENT settingsVersion as unversioned upstream data', () => {
+        // The distinction that makes the above safe: a missing key really is
+        // upstream Buttons Panel data, and really should migrate.
+        const legacy = makeLegacyData();
+        expect('settingsVersion' in legacy).toBe(false);
+
+        const result = migrateSettings(legacy);
+        expect(result.status).toBe('migrated');
+        expect(result.changed).toBe(true);
+        expect(result.settings.settingsVersion).toBe(CURRENT_SETTINGS_VERSION);
+    });
+
+    it('keeps the categories of an unusable-version document intact in memory', () => {
+        // Nothing is migrated, so nothing is emptied.
+        const result = migrateSettings({
+            settingsVersion: '6',
+            tools: { a: { id: 'a', name: 'A', actions: [] } },
+            categories: [
+                { id: 'c', name: 'C', order: 0, layout: 'grid', placements: [{ toolId: 'a' }] },
+            ],
+        });
+        expect(result.status).toBe('unreadable');
+        expect(result.settings.categories[0]).toHaveProperty('placements', [{ toolId: 'a' }]);
+        expect(Object.keys(result.settings.tools)).toEqual(['a']);
     });
 
     it('never downgrades data from an unknown future version', () => {

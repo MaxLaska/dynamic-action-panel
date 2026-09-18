@@ -7,10 +7,18 @@
 // Every write path (modals, menus, hooks) therefore has to look the stored
 // category up by id before mutating, otherwise the edit lands in a throwaway
 // object.
+//
+// All three commit funnels ask `canMutateSettings` BEFORE touching anything.
+// Refusing the mutation rather than only the save is deliberate: a settings
+// object edited in memory but never written would show the user a panel their
+// configuration does not have, right up until the next reload silently undid
+// it. Each returns whether it committed, so a caller cannot report success for
+// something that did not happen.
 
 import type { StoredCategory } from '@/types/settings';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 import type { ToolState } from '@/domain/categoryOps';
+import { canMutateSettings } from '@/utils/settingsWriteGuard';
 
 /** The persisted category with this id, or null when it no longer exists. */
 export function findStoredCategory(
@@ -54,6 +62,9 @@ export async function commitStoredCategory(
     plugin: ButtonsPanelPlugin,
     next: StoredCategory
 ): Promise<boolean> {
+    if (!canMutateSettings(plugin)) {
+        return false;
+    }
     if (!replaceStoredCategory(plugin, next)) {
         return false;
     }
@@ -69,10 +80,14 @@ export async function commitStoredCategory(
 export async function commitCategories(
     plugin: ButtonsPanelPlugin,
     next: StoredCategory[]
-): Promise<void> {
+): Promise<boolean> {
+    if (!canMutateSettings(plugin)) {
+        return false;
+    }
     plugin.settings.categories = next;
     await plugin.saveSettings();
     dispatchPanelRefresh();
+    return true;
 }
 
 /** The current registry+categories slice the domain operations transform. */
@@ -92,9 +107,13 @@ export function toolStateOf(plugin: ButtonsPanelPlugin): ToolState {
 export async function commitToolState(
     plugin: ButtonsPanelPlugin,
     state: ToolState
-): Promise<void> {
+): Promise<boolean> {
+    if (!canMutateSettings(plugin)) {
+        return false;
+    }
     plugin.settings.tools = state.tools;
     plugin.settings.categories = state.categories;
     await plugin.saveSettings();
     dispatchPanelRefresh();
+    return true;
 }

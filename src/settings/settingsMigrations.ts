@@ -44,7 +44,13 @@ export type MigrationStatus =
     /** Data from an older version, migrated through the pipeline. */
     | 'migrated'
     /** Data from an unknown future version, loaded best-effort, not rewritten. */
-    | 'future';
+    | 'future'
+    /**
+     * A `settingsVersion` that is present but not a usable version number.
+     * The document cannot be placed on the version axis at all, so it is
+     * loaded best-effort and, like 'future', never rewritten.
+     */
+    | 'unreadable';
 
 export interface MigrationResult {
     settings: ButtonsPanelPluginSettings;
@@ -68,10 +74,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Read the stored schema version; unversioned/invalid data is version 0. */
-function readStoredVersion(raw: Record<string, unknown>): number {
+/**
+ * Read the stored schema version.
+ *
+ * Three outcomes, and the distinction between the last two is the point:
+ * - a usable positive integer: that version;
+ * - NO `settingsVersion` key at all: `0`, genuine unversioned upstream data,
+ *   which migrates;
+ * - a key that IS there but is not a usable version — a string, a float, a
+ *   negative, `Infinity`, `null`: `null`, meaning "do not guess".
+ *
+ * Collapsing that last case to `0` was silently destructive. It sent a document
+ * this build cannot place on the version axis through the whole v0→v5 chain,
+ * where `migrateV4toV5` looks for `category.buttons`, finds nothing, and empties
+ * every `placements` array — and then the result was written back at startup,
+ * before the user did anything at all. Refusing to interpret it costs a
+ * read-only session; guessing cost the user their panel.
+ */
+function readStoredVersion(raw: Record<string, unknown>): number | null {
+    if (!('settingsVersion' in raw)) {
+        return 0;
+    }
     const v = raw['settingsVersion'];
-    return typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : 0;
+    return typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null;
 }
 
 /** Deep-cloned default settings (DEFAULT_SETTINGS itself must never be shared mutably). */
@@ -631,6 +656,13 @@ export function migrateSettings(raw: unknown): MigrationResult {
     }
 
     const fromVersion = readStoredVersion(raw);
+
+    if (fromVersion === null) {
+        // A version we cannot interpret. Migrating would mean guessing which
+        // schema this is, and guessing wrong empties the document.
+        const settings = normalizeSettings(raw) as unknown as ButtonsPanelPluginSettings;
+        return { settings, changed: false, status: 'unreadable', fromVersion: 0 };
+    }
 
     if (fromVersion > CURRENT_SETTINGS_VERSION) {
         // Unknown future schema: load best-effort, keep the higher version so
