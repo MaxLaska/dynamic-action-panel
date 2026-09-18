@@ -16,7 +16,10 @@ import {
 } from '@/contexts/CategoryVariantContext';
 import { filterCategoryButtonsDeep, isDynamicCategory } from '@/utils/categoryVariants';
 import { isGridCategory } from '@/utils/categoryGrid';
-import { GridCellSelectionProvider } from '@/contexts/GridCellSelectionContext';
+import {
+    GridCellSelectionProvider,
+    type CellPaintColor,
+} from '@/contexts/GridCellSelectionContext';
 import { CellSelectionEscape } from '@/components/buttons-panel/CellSelectionEscape';
 import {
     NO_CELL_SELECTION,
@@ -24,6 +27,7 @@ import {
     applyCellSetGesture,
     clearSelectionOf,
     createGridInstanceCounter,
+    gridContextKey,
     type CellSelectionGesture,
     type GridInstanceCounter,
     type GridCellSelectionState,
@@ -231,6 +235,48 @@ export const PanelContent: React.FC<PanelContentProps> = ({
     }, []);
 
     /**
+     * The colour the current selection SESSION paints with.
+     *
+     * Applying a colour arms it, so extending the selection afterwards carries
+     * it onto the cells the extension brings in — having just painted a block
+     * red, the user adding two more cells means those red too, and should not
+     * have to click red again. It is not a mode and not a tool: there is no
+     * permanently armed brush, only a property of the selection that is alive
+     * right now.
+     *
+     * Ephemeral in the strictest sense: React state, never written to
+     * `data.json`, to the settings or to a template.
+     */
+    const [cellPaint, setCellPaint] = React.useState<CellPaintColor | null>(null);
+
+    /**
+     * A modifier rectangle gesture is running somewhere in the panel.
+     *
+     * Escape then belongs to that gesture (cancel the rectangle, restore the
+     * baseline), so the panel-wide Escape handler stands down — otherwise both
+     * would fire on the same key and the cancel would end in an empty
+     * selection instead of the one the user started from.
+     */
+    const [cellGestureActive, setCellGestureActive] = React.useState(false);
+
+    /**
+     * The paint colour dies with the selection session that armed it.
+     *
+     * One rule covers every case §14 of the spec lists — selection cleared,
+     * Escape, edit mode left, category changed, variant changed, grid context
+     * changed — because all of them end with the selection naming a different
+     * grid or no grid at all. Keyed on the CONTEXT rather than on the state
+     * object: `applyCellGesture` hands back a fresh context object whenever the
+     * cells change, so watching identity would disarm the colour on the very
+     * gesture that is supposed to carry it.
+     */
+    const selectionContextKey =
+        cellSelection.context === null ? null : gridContextKey(cellSelection.context);
+    React.useEffect(() => {
+        setCellPaint(null);
+    }, [selectionContextKey]);
+
+    /**
      * How many VISIBLE, interactive renderings each grid currently has.
      *
      * A selection may only outlive its grid's last such rendering — but an
@@ -364,6 +410,10 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 selectCells={selectCells}
                 clearCellSelection={clearCellSelection}
                 registerSelectableGrid={registerSelectableGrid}
+                paint={cellPaint}
+                armPaint={setCellPaint}
+                cellGestureActive={cellGestureActive}
+                setCellGestureActive={setCellGestureActive}
             >
             <ButtonDragProvider
                 categories={filteredCategories}

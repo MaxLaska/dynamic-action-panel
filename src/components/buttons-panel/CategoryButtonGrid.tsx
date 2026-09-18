@@ -32,12 +32,14 @@ import {
 import {
     gridCellColorOf,
     pruneToDimensions,
+    sameSelectionContext,
     type CellSelectionGesture,
     type GridSelectionContextKey,
 } from '@/utils/gridCellSelection';
 import { gestureOfEvent } from '@/utils/cellSelectionGesture';
 import { resolveGridCellColorCss } from '@/utils/gridCellColor';
 import { useCellColorActions } from '@/hooks/useCellColorActions';
+import { useCellRectangleSelection } from '@/hooks/useCellRectangleSelection';
 import type { GridCellKey } from '@/types/settings';
 import {
     useCategoryVariants,
@@ -177,7 +179,15 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     // clicked cell out of the DOM and covers filled cells (the click bubbles up
     // from the tool button), empty cells and the corner `+` alike. No per-cell
     // pointer handler, and nothing to keep in sync across three code paths.
-    const { selectCell, selectCells, registerSelectableGrid } = useGridCellSelection();
+    const {
+        state: cellSelectionState,
+        selectCell,
+        selectCells,
+        registerSelectableGrid,
+        paint,
+        armPaint,
+        setCellGestureActive,
+    } = useGridCellSelection();
     const { applyCellColor } = useCellColorActions();
 
     /**
@@ -218,6 +228,19 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     const cellStyles = resolution.cellStyles;
 
     /**
+     * Whether THIS grid is the one currently holding the selection.
+     *
+     * Shift and Ctrl only ever edit a selection inside the grid that already
+     * has one (an empty selection belongs to no grid, so anyone may start).
+     * The armed paint colour follows the same ownership: it is reset the moment
+     * the selection moves to another grid, so it can only ever belong here.
+     */
+    const ownsSelection =
+        selectionContext !== null &&
+        (cellSelectionState.context === null ||
+            sameSelectionContext(cellSelectionState.context, selectionContext));
+
+    /**
      * Where the pointer went down, to tell a click from a drag.
      *
      * Captured, because the corner `+` stops pointer-down propagation, and a
@@ -228,7 +251,62 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
      */
     const pressOriginRef = React.useRef<{ x: number; y: number } | null>(null);
 
+    const handleApplyColorToCells = React.useCallback(
+        (cells: GridCellKey[], color: string | null) => {
+            if (selectionContext === null || cells.length === 0) {
+                return Promise.resolve(false);
+            }
+            return applyCellColor(selectionContext, cells, color);
+        },
+        [applyCellColor, selectionContext]
+    );
+
+    /**
+     * Shift-drag adds a rectangle of cells, Ctrl/Cmd-drag removes one.
+     *
+     * The same semantics as the single click, applied to an area — which is why
+     * it hangs off the very same press: the gesture only becomes a rectangle
+     * once the pointer has travelled past the drag threshold, and below that
+     * the ordinary click path still produces the existing one-cell add/remove.
+     */
+    const rectangle = useCellRectangleSelection({
+        gridRef,
+        dimensions,
+        enabled: selectionActive,
+        owns: ownsSelection,
+        selectedCells,
+        onPreview: (cells) => {
+            if (selectionContext === null) {
+                return;
+            }
+            selectCells(selectionContext, cells, 'replace');
+        },
+        onActivate: () => {
+            pressOriginRef.current = null;
+        },
+        onActiveChange: setCellGestureActive,
+        paint,
+        onPaint: (cells) => handleApplyColorToCells(cells, paint?.color ?? null),
+        cellStyles,
+    });
+
     const handleGridPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+        // A modifier press is a selection gesture and nothing else: claimed
+        // here, in the capture phase, so it can never reach the tool's drag
+        // activator below or the category-drag handle above. The press origin
+        // is recorded either way — a claimed press that never travels is still
+        // a click, and still means "add/remove this one cell".
+        if (
+            rectangle.onPointerDownCapture(event) &&
+            isDynamic &&
+            selectionContext?.variantId != null
+        ) {
+            // Same reason the click path pins the variant: without an explicit
+            // pick the shown variant follows the Obsidian context, so switching
+            // notes mid-gesture would swap the grid under the pointer and drop
+            // the selection for a reason the user cannot see.
+            selectVariant(category.id, selectionContext.variantId);
+        }
         pressOriginRef.current =
             event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
     };
@@ -323,13 +401,32 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         if (isDynamic && selectionContext.variantId !== null) {
             selectVariant(category.id, selectionContext.variantId);
         }
-        selectCell(selectionContext, gridCellKeyOfSlot(slot, dimensions.columns), gesture);
+        const cellKey = gridCellKeyOfSlot(slot, dimensions.columns);
+        selectCell(selectionContext, cellKey, gesture);
+        // An armed paint colour follows an ADD gesture onto the cell it brings
+        // in — the one-cell case of the rectangle rule, and for the same
+        // reason: having just painted the selection red, the user extending it
+        // means the new cell red too. Only a cell that was NOT already
+        // selected is painted, and `remove` never paints at all.
+        if (
+            gesture === 'add' &&
+            paint !== null &&
+            ownsSelection &&
+            !selectedCells.has(cellKey)
+        ) {
+            void handleApplyColorToCells([cellKey], paint.color);
+        }
     };
 
     const handleApplyColor = (color: string | null) => {
         if (selectionContext === null || selectedCells.size === 0) {
             return;
         }
+        // Applying a colour also ARMS it for this selection session: the next
+        // additive gesture carries it onto whatever it brings in, until the
+        // selection is cleared or moves to another grid. "No colour" is just as
+        // deliberate a choice, so it arms too.
+        armPaint({ color });
         void applyCellColor(selectionContext, [...selectedCells], color);
     };
 
@@ -481,7 +578,13 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
             // on the coordinate, which is why they survive a tool being dragged
             // away and a grid being resized.
             const cellKey = gridCellKeyOfSlot(slot, dimensions.columns);
-            const color = resolveGridCellColorCss(gridCellColorOf(cellStyles, cellKey));
+            // A running ADD rectangle shows what the release will write, in the
+            // armed colour, before anything is persisted. Nothing is saved
+            // during the gesture; this is purely what the cell RENDERS.
+            const storedColor = rectangle.paintPreview.has(cellKey)
+                ? (paint?.color ?? null)
+                : gridCellColorOf(cellStyles, cellKey);
+            const color = resolveGridCellColorCss(storedColor);
             return (
                 <GridSlotCell
                     key={`slot-${slot}`}

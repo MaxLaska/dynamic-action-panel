@@ -3,6 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { categorySortableId } from '@/utils/categoryDragItems';
 import { useCategoryDragOptional } from '@/contexts/ButtonDragContext';
+import { suppressDragOnSelectionModifier } from '@/utils/dragSelectionGuard';
 
 interface SortableCategoryBlockProps {
     categoryId: string;
@@ -47,6 +48,15 @@ export const SortableCategoryBlock: React.FC<SortableCategoryBlockProps> = ({
         ...(isDragSource ? { visibility: 'visible' } : {}),
     };
 
+    /**
+     * A press carrying Shift or Ctrl/Cmd is a cell-selection gesture and must
+     * not reorder the category. Presses inside a grid never reach here (the
+     * grid claims them in the capture phase); this covers the header and the
+     * block's own surface, where there is no cell to select either — the
+     * modifier simply suppresses the drag.
+     */
+    const dragListeners = suppressDragOnSelectionModifier(listeners);
+
     const blockClassName = [
         ...(isDragSource ? [] : [className]),
         'sortable-category-item',
@@ -64,7 +74,7 @@ export const SortableCategoryBlock: React.FC<SortableCategoryBlockProps> = ({
             data-category-drag-source={isDragSource || undefined}
             onClick={onClick}
             {...(isDragSource ? {} : attributes)}
-            {...(isDragSource ? {} : listeners)}
+            {...(isDragSource ? {} : dragListeners)}
         >
             {isDragSource ? (
                 renderDragPreview ? (

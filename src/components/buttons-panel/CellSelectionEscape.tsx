@@ -25,7 +25,12 @@ interface CellSelectionEscapeProps {
  *   menus are not document-capture listeners either. Clearing a selection must
  *   not be able to trap a user inside a dialog.
  * - **A drag wins.** While a tool is being dragged, Escape means "cancel this
- *   drag" — the same precedence the folder overlay already applies.
+ *   drag" — the same precedence the folder overlay already applies. A running
+ *   modifier RECTANGLE counts as a drag here for exactly the same reason:
+ *   Escape then means "cancel the rectangle and put the selection back where
+ *   it started", which the gesture itself does. Without standing down, both
+ *   handlers would fire on the one key and the cancel would end in an empty
+ *   selection instead of the baseline the user began from.
  * - **Only from inside the panel.** An Escape aimed at a modal, a suggester or
  *   the editor is none of our business.
  *
@@ -35,10 +40,10 @@ interface CellSelectionEscapeProps {
  * the same phase, where `stopPropagation` would do nothing between them anyway.
  */
 export const CellSelectionEscape: React.FC<CellSelectionEscapeProps> = ({ panelRef }) => {
-    const { state, clearCellSelection } = useGridCellSelection();
+    const { state, clearCellSelection, cellGestureActive } = useGridCellSelection();
     const buttonDrag = useButtonDragOptional();
     const hasSelection = state.cells.size > 0;
-    const isDragging = buttonDrag?.isDragging ?? false;
+    const isDragging = (buttonDrag?.isDragging ?? false) || cellGestureActive;
 
     React.useEffect(() => {
         if (!hasSelection) {

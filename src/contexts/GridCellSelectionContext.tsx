@@ -23,6 +23,19 @@ import {
     type GridSelectionContextKey,
 } from '@/utils/gridCellSelection';
 
+/**
+ * The colour the current selection session paints with, or null when none is
+ * armed.
+ *
+ * A wrapper object rather than a bare `string | null`, because "no colour" is
+ * itself a deliberate, armable choice: `{ color: null }` means "cells I add
+ * from now on become uncoloured", while `null` means nothing is armed at all
+ * and an additive gesture leaves the colours alone.
+ */
+export interface CellPaintColor {
+    color: string | null;
+}
+
 interface GridCellSelectionValue {
     state: GridCellSelectionState;
     /** One gesture on one cell (plain click / Shift / Ctrl). */
@@ -53,6 +66,27 @@ interface GridCellSelectionValue {
      * "this grid is gone".
      */
     registerSelectableGrid: (context: GridSelectionContextKey) => () => void;
+    /**
+     * The colour armed for this selection session (see CellPaintColor).
+     *
+     * Ephemeral like the selection itself and scoped to it: applying a colour
+     * arms it, and it is dropped the moment the selection is cleared or moves
+     * to another grid. It is never persisted — not in `data.json`, not in the
+     * settings, not in a template. There is deliberately no permanent "paint
+     * tool" mode; this is a property of one selection, not of the panel.
+     */
+    paint: CellPaintColor | null;
+    /** Arm (or, with null, disarm) the session's paint colour. */
+    armPaint: (paint: CellPaintColor | null) => void;
+    /**
+     * A modifier rectangle gesture is running.
+     *
+     * Escape then means "cancel this rectangle and go back to the baseline",
+     * which is the gesture's own business — so the panel's Escape handler
+     * stands down while this is true, the same way it stands down for a drag.
+     */
+    cellGestureActive: boolean;
+    setCellGestureActive: (active: boolean) => void;
 }
 
 const DEFAULT_VALUE: GridCellSelectionValue = {
@@ -61,6 +95,10 @@ const DEFAULT_VALUE: GridCellSelectionValue = {
     selectCells: () => {},
     clearCellSelection: () => {},
     registerSelectableGrid: () => () => {},
+    paint: null,
+    armPaint: () => {},
+    cellGestureActive: false,
+    setCellGestureActive: () => {},
 };
 
 const GridCellSelectionContext = createContext<GridCellSelectionValue>(DEFAULT_VALUE);
@@ -73,6 +111,10 @@ export const GridCellSelectionProvider: React.FC<
     selectCells,
     clearCellSelection,
     registerSelectableGrid,
+    paint,
+    armPaint,
+    cellGestureActive,
+    setCellGestureActive,
     children,
 }) => {
     const value = React.useMemo(
@@ -82,8 +124,22 @@ export const GridCellSelectionProvider: React.FC<
             selectCells,
             clearCellSelection,
             registerSelectableGrid,
+            paint,
+            armPaint,
+            cellGestureActive,
+            setCellGestureActive,
         }),
-        [state, selectCell, selectCells, clearCellSelection, registerSelectableGrid]
+        [
+            state,
+            selectCell,
+            selectCells,
+            clearCellSelection,
+            registerSelectableGrid,
+            paint,
+            armPaint,
+            cellGestureActive,
+            setCellGestureActive,
+        ]
     );
     return (
         <GridCellSelectionContext.Provider value={value}>
