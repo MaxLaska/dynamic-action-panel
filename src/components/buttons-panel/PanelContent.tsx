@@ -21,6 +21,7 @@ import {
     type CellPaintColor,
 } from '@/contexts/GridCellSelectionContext';
 import { CellSelectionEscape } from '@/components/buttons-panel/CellSelectionEscape';
+import { CellSelectionBackdrop } from '@/components/buttons-panel/CellSelectionBackdrop';
 import {
     NO_CELL_SELECTION,
     applyCellGesture,
@@ -437,6 +438,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 folderShowBtnCount={panelConfig.folderShowBtnCount ?? true}
             >
                 <CellSelectionEscape panelRef={panelContentRef} />
+                <CellSelectionBackdrop panelRef={panelContentRef} />
                 {panelContent}
             </ButtonDragProvider>
             </GridCellSelectionProvider>
