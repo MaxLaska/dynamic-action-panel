@@ -967,6 +967,57 @@ describe('a file action carries its optional subpath through the format', () => 
     });
 });
 
+// --- Tool tooltip -----------------------------------------------------------------------
+
+describe('a tool carries its optional hover text through the format', () => {
+    const TOOLTIP = 'Bieker, Westerholt 2021 · S. 43';
+
+    const sourceWith = (tooltip?: string) =>
+        stateOf(
+            registryOf(
+                tool('a', {
+                    name: 'Eine der wichtigsten Lernaufgaben',
+                    ...(tooltip !== undefined ? { tooltip } : {}),
+                    actions: [
+                        { type: 'file' as const, parameters: { filePath: 'Literatur/Bieker.pdf' } },
+                    ],
+                })
+            ),
+            storedGrid([p('a', 0)], { id: 'cat', name: 'Research' })
+        );
+
+    it('survives export and import unchanged', () => {
+        const { state, document } = roundtrip(sourceWith(TOOLTIP), 'cat');
+
+        expect(document.tools['a']?.tooltip).toBe(TOOLTIP);
+        expect(Object.values(state.tools)[0]?.tooltip).toBe(TOOLTIP);
+        // The name is independent of it, as it is for the user.
+        expect(Object.values(state.tools)[0]?.name).toBe('Eine der wichtigsten Lernaufgaben');
+    });
+
+    it('adds no key when the tool has none', () => {
+        const { state, document } = roundtrip(sourceWith(), 'cat');
+
+        expect('tooltip' in (document.tools['a'] ?? {})).toBe(false);
+        expect('tooltip' in (Object.values(state.tools)[0] ?? {})).toBe(false);
+    });
+
+    it('rejects a non-string tooltip instead of coercing it', () => {
+        for (const bad of [42, null, { a: 1 }, ['x']]) {
+            const parsed = parseTemplateDocument(
+                JSON.stringify({
+                    format: OCAP_TEMPLATE_FORMAT,
+                    formatVersion: 1,
+                    categories: [{ id: 'c', name: 'C', placements: [{ toolId: 't' }] }],
+                    tools: { t: { id: 't', name: 'T', tooltip: bad, actions: [] } },
+                })
+            );
+            expect(parsed.ok).toBe(false);
+            if (!parsed.ok) expect(parsed.error.kind).toBe('invalid_structure');
+        }
+    });
+});
+
 // --- Serialization ----------------------------------------------------------------------
 
 describe('serialization', () => {

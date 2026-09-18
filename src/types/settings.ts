@@ -66,6 +66,11 @@ export interface ButtonConfig {
     name: string;
     /** Button icon (SVG markup or a single character) */
     icon?: string;
+    /**
+     * Hover text, when it should say more than the label does. Absent means the
+     * label is the hover text, which is the historical behaviour.
+     */
+    tooltip?: string;
     /** Action sequence run on click */
     actions: ButtonAction[];
     /** Sort value of the button inside its category */
@@ -124,6 +129,13 @@ export interface ToolDefinition {
     name: string;
     /** Stored SVG markup (same convention as ButtonConfig.icon). */
     icon?: string;
+    /**
+     * Hover text, when the label alone does not say enough. A dropped PDF
+     * annotation records its source and page here, captured ONCE — it is a
+     * presentation snapshot, not a live view of the annotation's metadata.
+     * Absent means the label is the hover text.
+     */
+    tooltip?: string;
     actions: ButtonAction[];
     executionMode?: 'sequential' | 'parallel';
     stopOnError?: boolean;

@@ -203,6 +203,7 @@ function importToolDefinition(tool: TemplateTool, id: string): ToolDefinition {
         id,
         name: tool.name,
         ...(tool.icon !== undefined ? { icon: tool.icon } : {}),
+        ...(tool.tooltip !== undefined ? { tooltip: tool.tooltip } : {}),
         actions: tool.actions,
         ...(tool.executionMode !== undefined ? { executionMode: tool.executionMode } : {}),
         ...(tool.stopOnError !== undefined ? { stopOnError: tool.stopOnError } : {}),

@@ -90,11 +90,14 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
     const isContextual = status === 'contextual';
     const showStatusBadge = status !== 'none' && (isManagementMode || isContextual);
 
-    // Show the full button name on hover, using the native Obsidian tooltip.
+    // Hover text: what the tool cannot fit on its face. A tool may carry its own
+    // (a dropped annotation records its source and page there); otherwise it is
+    // the full name, which is what a cell truncates.
+    const hoverText = button.tooltip?.trim() || button.name;
     React.useEffect(() => {
         const el = buttonRef.current;
-        if (el && button.name && plugin.settings.panelConfig.showButtonTooltip) {
-            setTooltip(el, button.name);
+        if (el && hoverText && plugin.settings.panelConfig.showButtonTooltip) {
+            setTooltip(el, hoverText);
         }
         return () => {
             if (el) {
@@ -102,7 +105,7 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
                 setTooltip(el, '');
             }
         };
-    }, [button.name, plugin.settings.panelConfig.showButtonTooltip]);
+    }, [hoverText, plugin.settings.panelConfig.showButtonTooltip]);
 
     // Bind the context menu.
     React.useEffect(() => {

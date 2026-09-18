@@ -104,6 +104,7 @@ export function exportToolDefinition(definition: ToolDefinition): TemplateTool {
         id: definition.id,
         name: definition.name,
         ...(definition.icon !== undefined ? { icon: definition.icon } : {}),
+        ...(definition.tooltip !== undefined ? { tooltip: definition.tooltip } : {}),
         actions: detach(definition.actions ?? []),
         ...(definition.executionMode !== undefined
             ? { executionMode: definition.executionMode }

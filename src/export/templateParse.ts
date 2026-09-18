@@ -461,6 +461,7 @@ function readTool(value: unknown, key: string, path: string): TemplateTool {
         0
     );
     const icon = readOptionalString(own(node, 'icon'), `${path}.icon`, MAX_TEXT_LENGTH);
+    const tooltip = readOptionalString(own(node, 'tooltip'), `${path}.tooltip`, MAX_TEXT_LENGTH);
     const customCss = readOptionalString(
         own(node, 'customCss'),
         `${path}.customCss`,
@@ -472,6 +473,7 @@ function readTool(value: unknown, key: string, path: string): TemplateTool {
         id: key,
         name: readString(own(node, 'name') ?? '', `${path}.name`, MAX_NAME_LENGTH),
         ...(icon !== undefined ? { icon } : {}),
+        ...(tooltip !== undefined ? { tooltip } : {}),
         actions,
         ...(executionMode !== undefined
             ? { executionMode }

@@ -57,6 +57,8 @@ export interface TemplateTool {
     id: string;
     name: string;
     icon?: string;
+    /** Hover text captured with the tool; absent means the name is the hover text. */
+    tooltip?: string;
     actions: ButtonAction[];
     executionMode?: 'sequential' | 'parallel';
     stopOnError?: boolean;

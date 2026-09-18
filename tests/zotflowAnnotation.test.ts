@@ -438,24 +438,33 @@ describe('the tool a captured annotation becomes', () => {
             },
         });
         expect(draft.iconId).toBe('highlighter');
-        // The printed page leads, so a narrow cell still says which one it is.
-        expect(draft.name).toBe('p.111 · Tripelmandat');
+        // The label is what the highlight SAYS…
+        expect(draft.name).toBe('Tripelmandat');
+        // …and the source and page are the hover text, where there is room.
+        expect(draft.tooltip).toBe('Salomon 2004 · S. 111');
     });
 
-    it('falls back to the physical page when the label is unknown', () => {
-        expect(buildAnnotationButtonDraft(local({ pageIndex: 42, text: 'x' })).name).toBe(
-            'p.43 · x'
-        );
+    it('never shows the physical page as if it were the printed one', () => {
+        // pageLabel is regularly not pageIndex + 1, so a missing label means the
+        // page is simply left out instead of being invented.
+        const draft = buildAnnotationButtonDraft(local({ pageIndex: 42, text: 'x' }));
+        expect(draft.name).toBe('x');
+        expect(draft.tooltip).toBe('Salomon 2004');
+        expect(draft.tooltip).not.toContain('43');
     });
 
     it('uses the comment when there is no highlighted text', () => {
-        expect(
-            buildAnnotationButtonDraft(local({ pageLabel: '9', comment: 'my thought' })).name
-        ).toBe('p.9 · my thought');
+        const draft = buildAnnotationButtonDraft(local({ pageLabel: '9', comment: 'my thought' }));
+        expect(draft.name).toBe('my thought');
+        expect(draft.tooltip).toBe('Salomon 2004 · S. 9');
     });
 
-    it('names itself after the file when it has neither text nor page', () => {
-        expect(buildAnnotationButtonDraft(local()).name).toBe('Annotation · Salomon-Grundlagen');
+    it('names itself after the file when there is nothing to quote', () => {
+        // An image or ink region: no text, no comment.
+        expect(buildAnnotationButtonDraft(local()).name).toBe('Salomon-Grundlagen');
+        expect(buildAnnotationButtonDraft(local({ pageLabel: '7' })).name).toBe(
+            'Salomon-Grundlagen · S. 7'
+        );
     });
 
     it('condenses a long quote to one short line', () => {
@@ -464,16 +473,16 @@ describe('the tool a captured annotation becomes', () => {
             'wissenschaftliche Erkenntnisse auf die Praxis zu beziehen';
         const name = buildAnnotationButtonDraft(local({ pageLabel: '43', text: long })).name;
 
-        expect(name.startsWith('p.43 · Eine der wichtigsten')).toBe(true);
+        expect(name.startsWith('Eine der wichtigsten')).toBe(true);
         expect(name.endsWith('…')).toBe(true);
-        expect(name.length).toBeLessThanOrEqual(70);
+        expect(name.length).toBeLessThanOrEqual(62);
         expect(name.includes('\n')).toBe(false);
     });
 
     it('collapses newlines inside the quote', () => {
         expect(
             buildAnnotationButtonDraft(local({ pageLabel: '1', text: 'a\n\nb   c' })).name
-        ).toBe('p.1 · a b c');
+        ).toBe('a b c');
     });
 
     it('picks an icon per annotation kind', () => {
@@ -506,7 +515,7 @@ describe('the tool a captured annotation becomes', () => {
             text: 'quote',
         };
         expect(buildAnnotationButtonDraft(ref)).toEqual({
-            name: 'p.5 · quote',
+            name: 'quote',
             iconId: 'highlighter',
             action: {
                 type: 'url',
@@ -514,6 +523,8 @@ describe('the tool a captured annotation becomes', () => {
                     url: `obsidian://zotflow?type=open-annotation&libraryID=7&key=${KEY}`,
                 },
             },
+            // No vault file, so no folder names a source — the page alone.
+            tooltip: 'S. 5',
         });
     });
 });
@@ -764,7 +775,10 @@ describe('classifying a drop', () => {
             fileBasename: 'Salomon-Grundlagen',
             annotationId: KEY,
         });
-        expect(buildAnnotationButtonDraft(ref!).name).toBe('Annotation · Salomon-Grundlagen');
+        const draft = buildAnnotationButtonDraft(ref!);
+        expect(draft.name).toBe('Salomon-Grundlagen');
+        // The source still comes from the path, which needs no reader at all.
+        expect(draft.tooltip).toBe('Salomon 2004');
     });
 
     it('reads the reader when ZotFlow sends only a space', () => {
@@ -896,12 +910,13 @@ describe('the draft a drop produces', () => {
         const draft = resolveSlotDropDraft(app, transfer({ 'text/plain': embedPayload() }));
 
         expect(draft).toEqual({
-            name: 'p.111 · quote',
+            name: 'quote',
             iconId: 'highlighter',
             action: {
                 type: 'file',
                 parameters: { filePath: PDF, subpath: buildAnnotationSubpath(KEY, 110) },
             },
+            tooltip: 'Salomon 2004 · S. 111',
             noticeKey: 'slot_annotation_created',
         });
     });
@@ -960,7 +975,8 @@ describe('an annotation tool obeys the v5 registry rules', () => {
 
     const annotationTool = (id: string) =>
         tool(id, {
-            name: 'p.111 · quote',
+            name: 'quote',
+            tooltip: 'Salomon 2004 · S. 111',
             icon: '<svg />',
             actions: [
                 { type: 'file' as const, parameters: { filePath: PDF, subpath: SUBPATH } },
@@ -987,6 +1003,8 @@ describe('an annotation tool obeys the v5 registry rules', () => {
             type: 'file',
             parameters: { filePath: PDF, subpath: SUBPATH },
         });
+        // The presentation snapshot travels with the copy.
+        expect(next.tools['a2']?.tooltip).toBe('Salomon 2004 · S. 111');
     });
 
     it('is duplicated with a variant, under a fresh tool id', () => {

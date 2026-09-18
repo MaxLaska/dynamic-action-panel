@@ -14,15 +14,24 @@ import {
     buildLibraryAnnotationUrl,
     type ZotflowAnnotationRef,
 } from '@/utils/zotflowAnnotationDrop';
+import { annotationTooltip, shortSourceLabel } from '@/utils/sourceLabel';
 
 /** How long a label may get before it is cut; the cell shows far less. */
 const MAX_LABEL_TEXT = 60;
+
+/** Matches the hover text's page notation, for the rare label that needs a page. */
+const PAGE_LABEL_PREFIX = 'S.';
 
 export interface AnnotationButtonDraft {
     name: string;
     /** Obsidian icon id; the caller resolves it to the stored SVG markup. */
     iconId: string;
     action: ButtonAction;
+    /**
+     * Hover text: which source and which page. Captured once, as a snapshot —
+     * the bookmark is not a live view of ZotFlow's metadata.
+     */
+    tooltip?: string;
 }
 
 /** Icon per annotation kind; an unknown kind is still a highlight to the user. */
@@ -60,40 +69,25 @@ function condense(value: string | undefined): string {
 }
 
 /**
- * The page as the user sees it printed, falling back to the physical page.
- * `pageLabel` is what the document itself shows and need not be `pageIndex + 1`.
- */
-function pageText(ref: ZotflowAnnotationRef): string | null {
-    if (ref.pageLabel) {
-        return ref.pageLabel;
-    }
-    return typeof ref.pageIndex === 'number' ? String(ref.pageIndex + 1) : null;
-}
-
-/**
- * The tool label.
+ * The tool label: what the highlight SAYS.
  *
- * The page goes FIRST because a grid cell shows one short line with an ellipsis:
- * leading with the quote would truncate away the one piece that says which
- * annotation this is. The full label is still the tooltip, and renaming is the
- * ordinary edit path.
+ * Deliberately just the quote. A grid cell shows one short line, and the quote
+ * is what the user recognises the bookmark by; which source and page it is lives
+ * in the hover text, where there is room for it. Renaming stays the ordinary
+ * edit path, and nothing later overwrites a name the user chose.
  */
 function annotationName(ref: ZotflowAnnotationRef): string {
     const body = condense(ref.text) || condense(ref.comment);
-    const page = pageText(ref);
-    if (page && body) {
-        return `p.${page} · ${body}`;
-    }
     if (body) {
         return body;
     }
-    if (page) {
-        return `p.${page}`;
+    // A highlight with neither text nor comment (an image or ink region): name it
+    // after what it points at, since there is nothing to quote.
+    const page = ref.pageLabel?.trim();
+    if (ref.kind === 'local' && ref.fileBasename) {
+        return page ? `${ref.fileBasename} · ${PAGE_LABEL_PREFIX} ${page}` : ref.fileBasename;
     }
-    // Nothing but the identity: name it after what it points at.
-    return ref.kind === 'local' && ref.fileBasename
-        ? `Annotation · ${ref.fileBasename}`
-        : 'Annotation';
+    return page ? `Annotation · ${PAGE_LABEL_PREFIX} ${page}` : 'Annotation';
 }
 
 /** The action that reopens the annotation. */
@@ -112,9 +106,14 @@ function annotationAction(ref: ZotflowAnnotationRef): ButtonAction {
 
 /** The tool a dropped ZotFlow annotation becomes. */
 export function buildAnnotationButtonDraft(ref: ZotflowAnnotationRef): AnnotationButtonDraft {
+    // Only a local annotation has a file whose folder names the source; a library
+    // one has no vault path at all, so it gets the page alone.
+    const source = ref.kind === 'local' ? shortSourceLabel(ref.filePath) : null;
+    const tooltip = annotationTooltip(source, ref.pageLabel);
     return {
         name: annotationName(ref),
         iconId: annotationIconId(ref.annotationType),
         action: annotationAction(ref),
+        ...(tooltip !== undefined ? { tooltip } : {}),
     };
 }
