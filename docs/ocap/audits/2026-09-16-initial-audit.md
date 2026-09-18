@@ -41,7 +41,7 @@ Wichtige Querschnitte:
 - **Modals & Inputs** (`components/modal/*`, `components/input/*`, `components/suggest/*`) sind komplett **imperativ** (Obsidian `Modal`/`Setting`), nicht React. Rückmeldung an React erfolgt über ein dokumentweites `CustomEvent('buttons-panel-refresh')` – an ~10 Stellen handverstreut statt zentral.
 - **DnD:** Ein einziger 869-Zeilen-Provider `contexts/ButtonDragContext.tsx` bedient Button- UND Kategorie-Drag über String-Präfix-IDs (`cat-sort:`, `container:`, `tab:`, `title:`), mit eigenen Sensoren (`src/sensors/*`), die dnd-kit-Interna zur Laufzeit patchen.
 - **Settings-Persistenz:** `loadData/saveData` (data.json), Shallow-Merge über `DEFAULT_SETTINGS` in `src/main.ts:112-122` – **keine Versionierung, keine Migrationslogik**.
-- **Build/Release:** esbuild (CJS-Bundle nach `dist/`), CSS wird aus allen `src/**/*.css` konkateniert; `scripts/deploy.mjs` (dev = Symlink/Junction in den Vault, build = Kopie); GitHub Actions: Lint-Workflow (npm ci, build, lint) + Release-Workflow mit **SLSA-Provenance-Attestation** – für ein Community-Plugin ungewöhnlich professionell.
+- **Build/Release:** esbuild (CJS-Bundle nach `dist/`), CSS wird aus allen `src/**/*.css` konkateniert; `scripts/deploy.mjs` (dev = Symlink/Junction in den Vault, build = Kopie) — *überholt am 2026-09-18, siehe Hinweis unten und `HANDOFF.md` §1a*; GitHub Actions: Lint-Workflow (npm ci, build, lint) + Release-Workflow mit **SLSA-Provenance-Attestation** – für ein Community-Plugin ungewöhnlich professionell.
 - **i18n:** en/zh/ru, je 187 Keys, vollständig synchron.
 
 ## 3. Reifegrad
@@ -102,6 +102,12 @@ Hinweis: Ein Agentenbefund „keine Schema-Validierung bei window.open" hat sich
 ## 8. Dependency-/Supply-Chain-Befund
 
 **Sauber.** Runtime-Dependencies nur `@dnd-kit/{core,sortable,utilities}`; React ist devDependency und wird gebundelt. Lockfile: **349 Pakete, alle von `registry.npmjs.org`, keine git-/http-Quellen, keine `preinstall`/`postinstall`/`prepare`-Hooks** im gesamten Baum. `.npmrc` enthält nur `tag-version-prefix=""`. Keine externen Downloads in Build-Skripten. `obsidian: "latest"` ist unpinned (Reproduzierbarkeits-, kein Sicherheitsthema); dnd-kit sollte wegen des Monkey-Patchings exakt gepinnt werden.
+
+> **Überholt am 2026-09-18.** Der unten beschriebene Build-/Deploy-Ablauf existiert
+> nicht mehr: `npm run build` deployt nicht mehr, die Dev-Junction ist entfernt,
+> `VAULT_PATH` wird nicht mehr gelesen, und Deploy fasst `data.json` nicht an.
+> Aktueller Stand in `docs/ocap/HANDOFF.md` §1a. Der Abschnitt bleibt als
+> Fundstand stehen — er dokumentiert, womit der Refactor begründet wurde.
 
 **Ausführbarkeit der Befehle (nach Inspektion aller Skripte):**
 - `npm install` / `npm ci`: gefahrlos (keine Hooks); schreibt nur `node_modules/`. Vorher nichts nötig.

@@ -122,15 +122,31 @@ Not in the community plugin directory yet, so install manually or via BRAT.
 
 ```bash
 npm install
-npm run build      # production build (also deploys to VAULT_PATH from .env)
-npm run dev        # watch mode
+npm run build      # production build into dist/ — touches no vault
+npm run dev        # watch build — touches no vault
 npm test           # unit tests
 npm run lint
+npm run verify     # typecheck + lint + tests
 ```
 
-Node 18 or newer. To deploy into a vault of your choice, put
-`VAULT_PATH=/path/to/your/vault` into a `.env` file in the project root.
-See [`docs/contributing/contributing.md`](docs/contributing/contributing.md).
+Node 18 or newer. Building never writes into a vault: it produces `dist/main.js`,
+`dist/styles.css` and `dist/manifest.json`, and that is all. Copy those three
+files into `YourVault/.obsidian/plugins/dynamic-action-panel/` to install.
+
+Installing is a separate, explicit command, and it will only write to a target
+named in `DEPLOY_TARGETS` in [`scripts/deployCore.mjs`](scripts/deployCore.mjs):
+
+```bash
+npm run deploy:smoke   # the disposable test vault
+npm run deploy:prod    # the productive vault, and only with its own flag
+npm run dev:smoke      # watch build that also installs into the test vault
+```
+
+A deployment installs those three files and nothing else. It never touches
+`data.json` — your settings belong to the vault — and it never removes the
+plugin folder. Change a target by editing `DEPLOY_TARGETS`; there is
+deliberately no environment variable for it, so the destination is always
+visible in the repository rather than in an untracked file.
 
 ## Settings
 

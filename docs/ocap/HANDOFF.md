@@ -55,12 +55,57 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   byte-identisch übernommen (keine Migration, kein Rewrite). Der alte Ordner
   `buttons-panel` ist entfernt, ein vollständiges Backup liegt unter
   `C:\Users\flash\ObsidianTestVaults\ocap-backups\`.
-- Teststand: `npm test` **602/602** (Vitest, node env, `tests/`),
-  `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
-  `node esbuild.config.mjs production` grün.
-- Achtung: `npm run build` deployt zusätzlich nach `VAULT_PATH` aus `.env`
-  (aktuell der Smoke-Vault `ocap-smoke`). Für reine Verifikation
-  `node esbuild.config.mjs production` direkt verwenden.
+- Teststand: `npm test` **864/864** (Vitest, node env, `tests/`),
+  `npm run lint` 0 Probleme, `npx tsc --noEmit` grün, `npm run build` grün.
+  `npm run verify` macht Typecheck, Lint und Tests in einem Befehl.
+
+## 1a. Build und Deploy (Stand 2026-09-18)
+
+**Build baut, Deploy deployt.** Die Trennung ist erzwungen, nicht nur
+vereinbart.
+
+- `npm run build` = `tsc` + esbuild. Schreibt ausschließlich `dist/main.js`,
+  `dist/styles.css`, `dist/manifest.json`. Kein Vault, kein `.env`, kein
+  `data.json`. Immer gefahrlos ausführbar — die alte Warnung an dieser Stelle
+  ist damit gegenstandslos.
+- `npm run dev` = Watch-Build ohne Vault-Nebenwirkung.
+  `npm run dev:smoke` = Watch-Build, der nach jedem Rebuild zusätzlich in den
+  Smoke-Vault installiert (`esbuild.config.mjs`, Argument `watch-smoke`).
+- `npm run deploy:smoke` / `npm run deploy:prod` sind die einzigen Befehle, die
+  einen Vault beschreiben. Prod trägt zusätzlich `--confirm-production`, das
+  sonst nirgends vorkommt.
+- **Deploy schreibt `data.json` nie** — kein Überschreiben, kein Löschen, kein
+  Zurückspielen. *Gelesen* wird sie an genau zwei Stellen: zum Hashen vor und
+  nach dem Deploy (Integritätsnachweis) und für die Backup-Kopie vor einem
+  Prod-Deploy. Beides sind Lesezugriffe; einen Schreibpfad gibt es nicht.
+  Installiert werden genau `main.js`, `styles.css`, `manifest.json`. Der
+  Plugin-Ordner wird nie gelöscht, und Dateien, die das Deploy nicht selbst
+  geschrieben hat, bleiben unangetastet.
+- **Schreibstrategie:** Staging-Datei im Zielordner (gleiches Volume, deshalb
+  dort und nicht in `dist/` — Repo auf `H:`, Smoke-Vault auf `C:`), mit
+  `fsync`, dann Rename. Rename ist auf Windows die lock-anfälligste Operation
+  (EPERM bei jedem offenen Handle, auch mit vollem Sharing), deshalb zwei
+  komplementäre Fallbacks: Ziel beiseiteschieben und hineinschieben (deckt
+  `FILE_SHARE_DELETE`), und als Letztes `copyFile` (deckt `FILE_SHARE_WRITE`,
+  ist aber **nicht** atomar — die Fehlermeldung dort behauptet deshalb
+  ausdrücklich *nicht*, die Zieldatei sei unverändert). Retry exponentiell bis
+  ~4 s, plus ein `chmod`-Versuch, weil EPERM auch aus dem Read-only-Attribut
+  kommen kann. Ein Verzeichnis am Zielpfad wird abgelehnt statt verschoben.
+- **Keine Transaktion, und das steht so im Code:** scheitert ein Rename nach
+  einem gelungenen, kann ein neues `main.js` neben einem alten `styles.css`
+  stehen. Erneut ausführen repariert das. Die Alternative wäre ein
+  Verzeichnistausch gewesen — also wieder „Ordner zuerst löschen".
+- **Ziel-Allowlist** in `scripts/deployCore.mjs` (`DEPLOY_TARGETS`). Verglichen
+  wird kanonisch und auf Gleichheit, nicht per Prefix; ein Link als Ziel wird
+  abgelehnt. Kein `VAULT_PATH` mehr, kein Environment-Einfluss auf das Ziel.
+- Die alte Junction (`deploy.mjs dev`) ist ersatzlos entfallen. Sie war der
+  Grund, warum `dist/data.json` überhaupt existierte: Obsidian schrieb die
+  Settings des Vaults durch den Link in das Build-Verzeichnis.
+- Reine Logik liegt in `scripts/deployCore.mjs`, `scripts/deploy.mjs` ist nur
+  die CLI. Invarianten in `tests/deploySafety.test.ts` (59 Tests, echte
+  Dateisystem-Operationen ausschließlich in `os.tmpdir()`).
+- Deploy beendet **nie** Obsidian. Ein Reload ist nach dem Deploy nötig und
+  wird nur berichtet.
 
 ## 2a. Persistenzmodell v5: Tool-Registry + Placements
 

@@ -43,6 +43,10 @@ export default tseslint.config(
 			'obsidianmd/no-global-this': 'off',
 			'obsidianmd/no-tfile-tfolder-cast': 'off',
 			'obsidianmd/no-nodejs-modules': 'off',
+			// The deploy tests build fake vaults on disk, where `.obsidian` is
+			// a literal directory name and not something a Vault API could be
+			// asked about.
+			'obsidianmd/hardcoded-config-path': 'off',
 		},
 	},
 );

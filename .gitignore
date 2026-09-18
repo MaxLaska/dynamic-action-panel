@@ -9,8 +9,10 @@
 node_modules
 
 # Build output directory
-# Contains compiled plugin files (main.js, styles.css, manifest.json).
-# These files should be uploaded to GitHub releases, not committed to the repository.
+# Contains exactly the compiled plugin files (main.js, styles.css, manifest.json),
+# and nothing else: the build writes only those three and deployment no longer
+# stages anything here. These files are uploaded to GitHub releases rather than
+# committed. If a data.json ever reappears in dist, something has regressed.
 dist
 
 # Exclude sourcemaps
@@ -18,6 +20,11 @@ dist
 
 # obsidian
 data.json
+
+# Deployment backups. They live outside the repository (see BACKUP_ROOT in
+# scripts/deployCore.mjs) precisely because they contain a vault's data.json;
+# this entry is here so that pointing them back inside cannot publish it.
+ocap-backups
 
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store

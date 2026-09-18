@@ -53,15 +53,31 @@ cd dynamic-action-panel
 # Install dependencies
 npm install
 
-# Start development mode
+# Start development mode (watch build, writes only to dist/)
 npm run dev
 
-# Build for production
+# Build for production (writes only to dist/)
 npm run build
 
-# Run tests (if available)
+# Run tests
 npm test
+
+# Typecheck + lint + tests in one go
+npm run verify
 ```
+
+Neither `dev` nor `build` writes into an Obsidian vault. To try the plugin out,
+copy `dist/main.js`, `dist/styles.css` and `dist/manifest.json` into
+`YourVault/.obsidian/plugins/dynamic-action-panel/`.
+
+`npm run deploy:smoke` and `npm run deploy:prod` exist for the maintainer's two
+machines and are hard-wired to those vaults in `DEPLOY_TARGETS`
+(`scripts/deployCore.mjs`); a path that is not one of them is refused. If you
+want a one-command install for your own vault, add a **new** entry rather than
+editing `smoke` — replacing `smoke` would point the maintainer's test command at
+your vault, and an entry with `productive: false` deploys with no confirmation
+step and no backup. Deployment installs those three files and never writes
+`data.json`.
 
 ### 📝 Commit Message Guidelines
 

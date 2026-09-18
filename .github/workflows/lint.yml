@@ -25,4 +25,10 @@ jobs:
             - run: npm ci
             - run: npm run build --if-present
             - run: npm run lint
+            # The suite includes the deploy-safety invariants — that data.json is
+            # never written, that only the three build files are installed, and
+            # the static guards against a recursive delete or an environment-derived
+            # target coming back. Without this step a regression in any of them
+            # merges green.
+            - run: npm test
 

@@ -36,6 +36,9 @@ SOFTWARE.
 `;
 
 const prod = process.argv[2] === 'production';
+// Opt-in watch mode that also installs into the disposable smoke vault. The
+// plain watch build touches nothing outside `dist/`.
+const smokeSync = process.argv[2] === 'watch-smoke';
 const outDir = "dist";
 
 
@@ -148,6 +151,9 @@ function watchManifest() {
 				if (newContent !== lastContent) {
 					lastContent = newContent;
 					copyManifest();
+					// esbuild's onEnd does not fire for this file, so the
+					// smoke sync has to be triggered here as well.
+					if (smokeSync) void syncToSmoke();
 				}
 			} catch (e) {
 				console.error('⚠ Failed to read manifest.json:', e.message);
@@ -216,7 +222,73 @@ const context = await esbuild.context({
     outdir: "dist",
 	minify: prod,
     // ...(prod ? { drop: ['console'] } : {}),
+	plugins: smokeSync
+		? [
+				{
+					// Fires after every rebuild, which is what makes the smoke
+					// vault track the watch loop without a junction.
+					name: 'sync-to-smoke',
+					setup(build) {
+						build.onEnd((result) => {
+							if (result.errors.length === 0) {
+								void syncToSmoke();
+							}
+						});
+					},
+				},
+			]
+		: [],
 });
+
+// ==================== Smoke sync ====================
+// The watch loop can keep ONE vault up to date: the disposable smoke vault,
+// named explicitly, never taken from the environment. It is opt-in through the
+// `watch-smoke` argument, so the plain watch build stays free of side effects.
+//
+// This replaces the old dev mode, which pointed a junction from the vault at
+// `dist/`. That was convenient and wrong: Obsidian then wrote the vault's
+// `data.json` INTO the build directory, where a rebuild or a `git clean` could
+// take it — and a mistyped path in `.env` aimed the same junction at the
+// productive vault. Copying three named files leaves the vault's own state
+// where it belongs.
+
+/**
+ * Copies the built artifacts into the smoke vault, and reports rather than
+ * throws: a watch session must survive a locked file or a half-written build
+ * and try again on the next save.
+ */
+async function syncToSmoke() {
+	const { deployToTarget } = await import('./scripts/deployCore.mjs');
+	try {
+		const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'manifest.json'), 'utf8'));
+		// The same entry point the deploy CLI uses, not a second copy of the
+		// sequence: every check, in the same order, including the post-write
+		// proof that data.json is unchanged.
+		const { pluginDir, written } = deployToTarget({
+			targetName: 'smoke',
+			distDir: path.join(process.cwd(), 'dist'),
+			pluginId: manifest.id,
+		});
+		// The marker the Hot Reload plugin looks for. It goes in the vault, not
+		// in dist, so nothing has to be copied out of a build directory. It is a
+		// fourth file, and the only one a deployment writes that is not part of
+		// the build — which is why only this watch mode writes it.
+		const marker = path.join(pluginDir, '.hotreload');
+		if (!fs.existsSync(marker)) fs.writeFileSync(marker, '');
+		console.log(`✓ synced to smoke vault: ${written.join(', ')}`);
+	} catch (error) {
+		// A watch session has to survive a locked file and try again on the next
+		// save, so this cannot be fatal. But a refusal is not a transient
+		// failure — it means the configuration is wrong and every later sync
+		// will fail the same way — so it is shouted rather than mentioned.
+		const configProblem = /not an allowed target|is a link|plugin id/.test(error.message);
+		console.error(
+			configProblem
+				? `\n⛔ SMOKE SYNC REFUSED — fix this, it will not resolve itself:\n${error.message}\n`
+				: `⚠ smoke sync skipped (will retry on the next rebuild): ${error.message}`
+		);
+	}
+}
 
 // ==================== Main ====================
 async function main() {
@@ -232,6 +304,8 @@ async function main() {
 		// Dev: start watching.
 		watchManifest();
 		watchCSS();
+		// The first watch build fires `onEnd` like any other, so the initial
+		// sync needs no separate call.
 		await context.watch();
 	}
 }
