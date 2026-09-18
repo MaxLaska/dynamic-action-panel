@@ -304,7 +304,10 @@ describe('the colour resolver', () => {
 
     it('fills a swatch at full strength, so the legend stays readable', () => {
         expect(resolveGridCellSwatchCss('ocap:red')).toBe('rgb(var(--color-red-rgb))');
-        expect(resolveGridCellSwatchCss('ocap:gray')).toBe('rgb(var(--mono-rgb-100))');
+        // Gray is the exception: a mono channel is pure white in a dark theme
+        // and pure black in a light one, so a full-strength swatch would be the
+        // one whose legend does not match the cell it produces.
+        expect(resolveGridCellSwatchCss('ocap:gray')).toBe('rgba(var(--mono-rgb-100), 0.45)');
         expect(resolveGridCellSwatchCss('#ff8800')).toBe('rgb(255, 136, 0)');
         expect(resolveGridCellSwatchCss(null)).toBeNull();
     });

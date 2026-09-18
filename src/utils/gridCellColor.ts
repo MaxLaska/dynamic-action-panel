@@ -53,6 +53,9 @@ const MONO_COLOR_NAMES = ['gray'] as const;
 /** The custom property carrying the tint strength of a colored cell. */
 const CELL_ALPHA_VAR = 'var(--ocap-cell-color-alpha)';
 
+/** Strength of a mono-derived SWATCH, so gray reads as gray in both themes. */
+const MONO_SWATCH_ALPHA = '0.45';
+
 /** Prefix of a namespaced palette value. */
 const OCAP_COLOR_PREFIX = 'ocap:';
 
@@ -120,17 +123,26 @@ function readHexChannels(
  */
 function resolveColorSource(
     value: string | null | undefined
-): { channels: string; alpha: string | null } | null {
+): { channels: string; alpha: string | null; swatchAlpha: string | null } | null {
     if (typeof value !== 'string' || !isGridCellColor(value)) {
         return null;
     }
     const name = paletteName(value);
     if (name !== null) {
         if ((OBSIDIAN_COLOR_NAMES as readonly string[]).includes(name)) {
-            return { channels: `var(--color-${name}-rgb)`, alpha: null };
+            return { channels: `var(--color-${name}-rgb)`, alpha: null, swatchAlpha: null };
         }
         if ((MONO_COLOR_NAMES as readonly string[]).includes(name)) {
-            return { channels: 'var(--mono-rgb-100)', alpha: null };
+            // A mono channel is pure white in a dark theme and pure black in a
+            // light one, so at full strength the SWATCH would read as "white"
+            // (or "black") next to a colour the user picked as gray — and it
+            // would be the one swatch whose legend does not match the cell it
+            // produces. Half strength lands on grey against either background.
+            return {
+                channels: 'var(--mono-rgb-100)',
+                alpha: null,
+                swatchAlpha: MONO_SWATCH_ALPHA,
+            };
         }
         // A valid but unknown palette name: keep the data, draw nothing.
         return null;
@@ -139,7 +151,7 @@ function resolveColorSource(
     if (hex === null) {
         return null;
     }
-    return { channels: `${hex.r}, ${hex.g}, ${hex.b}`, alpha: hex.a };
+    return { channels: `${hex.r}, ${hex.g}, ${hex.b}`, alpha: hex.a, swatchAlpha: null };
 }
 
 /**
@@ -163,16 +175,19 @@ export function resolveGridCellColorCss(value: string | null | undefined): strin
  * CSS fill for a palette SWATCH, or null when the value does not resolve.
  *
  * Full strength: a swatch is a legend, not a cell, and a row of tints at cell
- * opacity would be hard to tell apart in a narrow sidebar.
+ * opacity would be hard to tell apart in a narrow sidebar. The one exception is
+ * a mono-derived colour, which would otherwise be pure white or pure black —
+ * see `resolveColorSource`.
  */
 export function resolveGridCellSwatchCss(value: string | null | undefined): string | null {
     const source = resolveColorSource(value);
     if (source === null) {
         return null;
     }
-    return source.alpha === null
+    const alpha = source.swatchAlpha ?? source.alpha;
+    return alpha === null
         ? `rgb(${source.channels})`
-        : `rgba(${source.channels}, ${source.alpha})`;
+        : `rgba(${source.channels}, ${alpha})`;
 }
 
 /** Whether a stored value is one this build can draw. */
