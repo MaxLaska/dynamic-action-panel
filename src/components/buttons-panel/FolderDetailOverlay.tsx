@@ -9,6 +9,7 @@ import { AddButton } from '@/components/shared/AddButton';
 import { createCategoryMenuHandler } from '@/utils/categoryMenuUtils';
 import { titleDroppableId } from '@/utils/buttonDragItems';
 import { useButtonDragOptional } from '@/contexts/ButtonDragContext';
+import { useHasCellSelection } from '@/contexts/GridCellSelectionContext';
 import { t } from '@/utils/i18n';
 
 interface FolderDetailOverlayProps {
@@ -59,6 +60,7 @@ export const FolderDetailOverlay: React.FC<FolderDetailOverlayProps> = ({
     const [isEditingName, setIsEditingName] = React.useState(false);
     const [editName, setEditName] = React.useState(category.name);
     const buttonDrag = useButtonDragOptional();
+    const hasCellSelection = useHasCellSelection();
 
     // The header is a drop target: dropping here appends the button to the end of this category.
     const { setNodeRef: setTitleDroppableRef } = useDroppable({
@@ -100,13 +102,21 @@ export const FolderDetailOverlay: React.FC<FolderDetailOverlayProps> = ({
             if (buttonDrag?.isDragging) {
                 return;
             }
+            // A cell selection consumes the first Escape. Both listeners sit on
+            // the same node in the capture phase and their registration order
+            // is not stable, so the precedence is stated HERE rather than left
+            // to whichever effect happened to run first: clearing a selection
+            // must never also close the folder the user is working in.
+            if (hasCellSelection) {
+                return;
+            }
             e.preventDefault();
             e.stopPropagation();
             onClose();
         };
         activeDocument.addEventListener('keydown', handleKeyDown, true);
         return () => activeDocument.removeEventListener('keydown', handleKeyDown, true);
-    }, [onClose, isEditingName, locked, buttonDrag?.isDragging]);
+    }, [onClose, isEditingName, locked, buttonDrag?.isDragging, hasCellSelection]);
 
     // Context menu.
     React.useEffect(() => {

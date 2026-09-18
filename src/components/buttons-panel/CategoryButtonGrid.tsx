@@ -19,7 +19,26 @@ import {
     GridResizeReadout,
 } from '@/components/buttons-panel/GridResizeControls';
 import { VariantSelector } from '@/components/buttons-panel/VariantSelector';
-import { isGridCategory } from '@/utils/categoryGrid';
+import { CellColorPalette } from '@/components/buttons-panel/CellColorPalette';
+import {
+    RESIZE_DRAG_THRESHOLD_PX,
+    gridCellKeyOfSlot,
+    isGridCategory,
+} from '@/utils/categoryGrid';
+import {
+    useGridCellSelection,
+    useSelectedCellsOf,
+} from '@/contexts/GridCellSelectionContext';
+import {
+    gridCellColorOf,
+    pruneToDimensions,
+    type CellSelectionGesture,
+    type GridSelectionContextKey,
+} from '@/utils/gridCellSelection';
+import { gestureOfEvent } from '@/utils/cellSelectionGesture';
+import { resolveGridCellColorCss } from '@/utils/gridCellColor';
+import { useCellColorActions } from '@/hooks/useCellColorActions';
+import type { GridCellKey } from '@/types/settings';
 import {
     useCategoryVariants,
     useGridViewResolution,
@@ -55,6 +74,17 @@ interface CategoryButtonGridProps {
     plugin: ButtonsPanelPlugin;
     app: App;
     sortableEnabled: boolean;
+    /**
+     * Whether THIS instance is the visible, interactive rendering of its grid.
+     *
+     * The same category is rendered more than once at times — a drag preview
+     * twice over, a hidden stale folder overlay — and hidden-but-mounted in
+     * others (a collapsed list category, an inactive tab, both `display:none`).
+     * Only the one instance a user can actually point at may own a cell
+     * selection or show a palette. Defaults to true so the flag is opt-OUT for
+     * the call sites that know they are not it.
+     */
+    selectable?: boolean;
     children?: React.ReactNode;
 }
 
@@ -68,6 +98,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     plugin,
     app,
     sortableEnabled,
+    selectable = true,
     children,
 }) => {
     const buttonDrag = useButtonDragOptional();
@@ -138,6 +169,211 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
 
     /** What the grid renders right now: the preview while resizing, else stored. */
     const dimensions = resizeDrag.preview?.dimensions ?? storedDimensions;
+
+    // --- Cell selection & colors -------------------------------------------
+    //
+    // The grid — not the cell — owns the selection gesture. Every cell already
+    // carries `data-slot`, so one pair of handlers on the container reads the
+    // clicked cell out of the DOM and covers filled cells (the click bubbles up
+    // from the tool button), empty cells and the corner `+` alike. No per-cell
+    // pointer handler, and nothing to keep in sync across three code paths.
+    const { selectCell, selectCells, exitCellSelectionOf } = useGridCellSelection();
+    const { applyCellColor } = useCellColorActions();
+
+    /**
+     * The grid this instance addresses, or null when it addresses none.
+     *
+     * The strict reading of I-KEY: a static grid is `variantId === null`, a
+     * dynamic one is a variant that exists. A dynamic category with no variants
+     * resolves to `variantId === null` and therefore has no selectable grid at
+     * all — which is right, because every write to it would be refused anyway.
+     */
+    const selectionContext = React.useMemo<GridSelectionContextKey | null>(() => {
+        if (!isGrid || isDynamic !== (resolution.variantId !== null)) {
+            return null;
+        }
+        return { categoryId: category.id, variantId: resolution.variantId };
+    }, [isGrid, isDynamic, resolution.variantId, category.id]);
+
+    // A resize preview renumbers cells for the length of the gesture, so no
+    // selection click is accepted while one is on screen.
+    const selectionEnabled =
+        selectable && enableEditMode && sortableEnabled && selectionContext !== null;
+    const selectionActive = selectionEnabled && !resizeDrag.preview;
+
+    const rawSelectedCells = useSelectedCellsOf(category.id, resolution.variantId);
+    /**
+     * Only ever the cells the grid actually HAS. Derived on read rather than
+     * maintained: the grid can shrink from outside this panel (a second leaf, a
+     * sync, an import), and a pruning that must be remembered can be forgotten.
+     */
+    const selectedCells = React.useMemo(
+        () =>
+            selectionEnabled
+                ? pruneToDimensions(rawSelectedCells, dimensions)
+                : (new Set<GridCellKey>() as ReadonlySet<GridCellKey>),
+        [selectionEnabled, rawSelectedCells, dimensions]
+    );
+
+    const cellStyles = resolution.cellStyles;
+
+    /**
+     * Where the pointer went down, to tell a click from a drag.
+     *
+     * Captured, because the corner `+` stops pointer-down propagation, and a
+     * press that starts there must still be measurable. The rule is the
+     * project's existing one: 4 px of travel makes it a drag, and a drag never
+     * also selects — which is exactly the guarantee "a successful drag must not
+     * produce a selection click" needs, without asking the drag layer anything.
+     */
+    const pressOriginRef = React.useRef<{ x: number; y: number } | null>(null);
+
+    const handleGridPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+        pressOriginRef.current =
+            event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+    };
+
+    /**
+     * A drag that actually started forfeits its click, whatever the pointer did
+     * afterwards.
+     *
+     * The travel check alone is not enough: a drag that wanders off and comes
+     * back drops on its own cell with a total travel near zero, and the browser
+     * then fires an ordinary click on the tool. Dropping the origin the moment
+     * dnd-kit activates makes every such click unresolvable, which is exactly
+     * the guarantee "a successful drag never also selects" needs — and it needs
+     * nothing from the drag layer but the flag it already publishes.
+     */
+    React.useEffect(() => {
+        if (isDragging) {
+            pressOriginRef.current = null;
+        }
+    }, [isDragging]);
+
+    /**
+     * A press on bare CELL surface must not reach the category-drag listeners
+     * of the list view. This is exactly what the full-size `+` used to do for
+     * empty cells; now that the `+` is a corner target, the surface it vacated
+     * needs the same treatment.
+     *
+     * Scoped to presses that land on an actual cell, and on a tool not at all:
+     * - a press on a tool keeps bubbling, so the button drag and the existing
+     *   category-drag paths are untouched;
+     * - a press in the 4px GUTTER between cells (or on the grid background)
+     *   also keeps bubbling, so the gutters stay a category-drag handle exactly
+     *   as they are today. They are not a selection target either (a click
+     *   there changes nothing), so there is nothing here to protect.
+     */
+    const handleGridPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (!selectionActive) {
+            return;
+        }
+        const target = event.target as HTMLElement | null;
+        if (target?.closest('[data-slot]') == null) {
+            return;
+        }
+        if (target.closest('.sortable-button-item, button') != null) {
+            return;
+        }
+        event.stopPropagation();
+    };
+
+    const handleGridClick = (event: React.MouseEvent<HTMLDivElement>) => {
+        if (!selectionActive || selectionContext === null) {
+            return;
+        }
+        const origin = pressOriginRef.current;
+        pressOriginRef.current = null;
+        // A keyboard activation (Enter/Space on a focused tool) reports detail 0
+        // and has no travel at all, so it means exactly what a plain click on
+        // that cell means. Everything else has to prove it was a click:
+        // the SAME euclidean distance the drag sensor uses, so the two are
+        // exact complements and no press can fall between them and do nothing.
+        if (event.detail !== 0) {
+            if (origin === null) {
+                return;
+            }
+            const dx = event.clientX - origin.x;
+            const dy = event.clientY - origin.y;
+            if (Math.sqrt(dx * dx + dy * dy) > RESIZE_DRAG_THRESHOLD_PX) {
+                return;
+            }
+        }
+        const target = event.target as HTMLElement | null;
+        const cellEl = target?.closest('[data-slot]');
+        if (!cellEl) {
+            // The 4 px gutter between two cells, or the grid background: too
+            // small to be intentional, so it changes nothing at all.
+            return;
+        }
+        const slot = Number(cellEl.getAttribute('data-slot'));
+        if (!Number.isInteger(slot) || slot < 0) {
+            return;
+        }
+        const gesture = gestureOfEvent(event);
+        if (gesture === null) {
+            return;
+        }
+        // Pin the variant the moment a selection starts in a dynamic category.
+        // Without an explicit pick the shown variant is derived from the
+        // Obsidian context, so switching notes would swap the grid under the
+        // pointer — and the selection, which names a variant, would be dropped
+        // for a reason the user cannot see. Re-selecting what is already shown
+        // only makes it explicit and keeps the A/B flip target.
+        if (isDynamic && selectionContext.variantId !== null) {
+            selectVariant(category.id, selectionContext.variantId);
+        }
+        selectCell(selectionContext, gridCellKeyOfSlot(slot, dimensions.columns), gesture);
+    };
+
+    const handleApplyColor = (color: string | null) => {
+        if (selectionContext === null || selectedCells.size === 0) {
+            return;
+        }
+        void applyCellColor(selectionContext, [...selectedCells], color);
+    };
+
+    const handleSelectByColor = (cells: GridCellKey[], gesture: CellSelectionGesture) => {
+        if (selectionContext === null) {
+            return;
+        }
+        selectCells(selectionContext, cells, gesture);
+    };
+
+    /**
+     * A selection may not outlive the instance that could be pointed at.
+     *
+     * Only an instance that WAS selectable is allowed to clean up. Without that
+     * rule a drag preview — which renders the same category, twice, with the
+     * identical context key — would end the real selection the moment it
+     * unmounted. Hidden-but-mounted cases (a collapsed list category, an
+     * inactive tab) never unmount at all and are caught by the first branch,
+     * where `selectable` has flipped to false.
+     */
+    const wasSelectableRef = React.useRef(false);
+    const selectionContextRef = React.useRef(selectionContext);
+    selectionContextRef.current = selectionContext;
+
+    React.useEffect(() => {
+        if (selectionEnabled) {
+            wasSelectableRef.current = true;
+            return;
+        }
+        if (wasSelectableRef.current && selectionContext !== null) {
+            wasSelectableRef.current = false;
+            exitCellSelectionOf(selectionContext);
+        }
+    }, [selectionEnabled, selectionContext, exitCellSelectionOf]);
+
+    React.useEffect(
+        () => () => {
+            const context = selectionContextRef.current;
+            if (wasSelectableRef.current && context !== null) {
+                exitCellSelectionOf(context);
+            }
+        },
+        [exitCellSelectionOf]
+    );
 
     /**
      * Grid layout: slot occupancy of every cell. Three sources, in priority:
@@ -234,33 +470,42 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         // the droppable cell nodes survive variant switches (see
         // GridSlotCell). The target cell keeps its ring even when the live
         // preview already fills it — "this is where it lands" stays explicit.
-        const cells = gridSlots.map((button, slot) => (
-            <GridSlotCell
-                key={`slot-${slot}`}
-                categoryId={category.id}
-                slot={slot}
-                columns={dimensions.columns}
-                droppableEnabled={sortableEnabled}
-                isDropTarget={dropTargetSlot === slot}
-                showOutline={showSlotOutlines}
-                onCreate={
-                    creationEnabled
-                        ? () => createButton(category, undefined, slot)
-                        : undefined
-                }
-                fileDrop={
-                    creationEnabled
-                        ? {
-                              canAccept: canAcceptFileDrag,
-                              onDrop: (dataTransfer) =>
-                                  dropFileOnSlot(category, slot, dataTransfer),
-                          }
-                        : undefined
-                }
-            >
-                {button ? renderButton(button, slot, 'none') : null}
-            </GridSlotCell>
-        ));
+        const cells = gridSlots.map((button, slot) => {
+            // The cell key is the storage key: colors and selection both live
+            // on the coordinate, which is why they survive a tool being dragged
+            // away and a grid being resized.
+            const cellKey = gridCellKeyOfSlot(slot, dimensions.columns);
+            const color = resolveGridCellColorCss(gridCellColorOf(cellStyles, cellKey));
+            return (
+                <GridSlotCell
+                    key={`slot-${slot}`}
+                    categoryId={category.id}
+                    slot={slot}
+                    columns={dimensions.columns}
+                    droppableEnabled={sortableEnabled}
+                    isDropTarget={dropTargetSlot === slot}
+                    showOutline={showSlotOutlines}
+                    color={color ?? undefined}
+                    selected={selectedCells.has(cellKey)}
+                    onCreate={
+                        creationEnabled
+                            ? () => createButton(category, undefined, slot)
+                            : undefined
+                    }
+                    fileDrop={
+                        creationEnabled
+                            ? {
+                                  canAccept: canAcceptFileDrag,
+                                  onDrop: (dataTransfer) =>
+                                      dropFileOnSlot(category, slot, dataTransfer),
+                              }
+                            : undefined
+                    }
+                >
+                    {button ? renderButton(button, slot, 'none') : null}
+                </GridSlotCell>
+            );
+        });
 
         const overflowSection = gridOverflow.length > 0 && (
             <div className="ocap-palette-grid-overflow">
@@ -273,6 +518,11 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                 ref={setRefs}
                 className={gridClassName}
                 style={{ '--ocap-grid-columns': dimensions.columns } as React.CSSProperties}
+                onPointerDownCapture={
+                    selectionActive ? handleGridPointerDownCapture : undefined
+                }
+                onPointerDown={selectionActive ? handleGridPointerDown : undefined}
+                onClick={selectionActive ? handleGridClick : undefined}
             >
                 {cells}
             </div>
@@ -356,6 +606,20 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                     </SortableContext>
                 ) : (
                     body
+                )}
+                {/* Gated on selectionActive, not merely selectionEnabled: a
+                    resize preview renders a grid the stored data does not have
+                    yet, and it outlives the pointer by design (it is held until
+                    the saved dimensions catch up). A palette live in that window
+                    would search one grid while the user looks at another. */}
+                {selectionActive && selectionContext !== null && (
+                    <CellColorPalette
+                        cellStyles={cellStyles}
+                        dimensions={dimensions}
+                        selectedCells={selectedCells}
+                        onApply={handleApplyColor}
+                        onSelectByColor={handleSelectByColor}
+                    />
                 )}
                 {overflowSection}
                 {/* No global "Add button" entry under a grid: the position is

@@ -64,6 +64,10 @@ export const CategoryListDragPreview: React.FC<CategoryListDragPreviewProps> = (
                     plugin={plugin}
                     app={app}
                     sortableEnabled={false}
+                    // A drag preview renders the same category a second (and
+                    // third) time with the identical grid context key; it must
+                    // never own or end the real selection.
+                    selectable={false}
                 />
             )}
         </div>

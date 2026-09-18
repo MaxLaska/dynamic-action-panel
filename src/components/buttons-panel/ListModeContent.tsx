@@ -287,6 +287,10 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
                             plugin={plugin}
                             app={app}
                             sortableEnabled={sortableEnabled}
+                            // A collapsed category stays MOUNTED (display:none)
+                            // while sorting, so it must not keep a cell
+                            // selection nobody can see.
+                            selectable={isOpen}
                         >
                             {enableEditMode && (
                                 <AddButton onClick={() => createButton(category)} />

@@ -188,6 +188,8 @@ export const TabsModeContent: React.FC<TabsModeContentProps> = ({
                 plugin={plugin}
                 app={app}
                 sortableEnabled={sortableEnabled}
+                // Inactive tabs stay mounted behind display:none in edit mode.
+                selectable={visible}
             >
                 {enableEditMode && visible && (
                     <AddButton onClick={() => createButton(category)} />

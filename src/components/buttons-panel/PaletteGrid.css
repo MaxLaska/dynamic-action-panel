@@ -13,6 +13,10 @@ body .buttons-panel .ocap-palette-grid {
        content, plus the constant 1px cell border on both sides (see below). */
     --ocap-grid-slot-min-height: 56px;
     --ocap-grid-row-height: calc(var(--ocap-grid-slot-min-height) + 2px);
+    /* Tint strength of a coloured cell: strong enough to read at a glance,
+       weak enough to keep the tool on it legible. One token, one line to
+       rebalance the whole palette. */
+    --ocap-cell-color-alpha: 0.22;
 
     display: grid;
     grid-template-columns: repeat(var(--ocap-grid-columns, 4), minmax(0, 1fr));
@@ -44,6 +48,9 @@ body .buttons-panel .ocap-palette-grid.icon-left {
     box-sizing: border-box;
     border: 1px solid transparent;
     border-radius: var(--radius-s);
+    /* Anchors the corner `+`. No offsets, so it takes no part in layout and the
+       cell rects stay byte-identical across modes. */
+    position: relative;
 }
 
 /* The button fills its cell so the grid stays perfectly regular. The
@@ -325,25 +332,38 @@ body .buttons-panel .ocap-grid-slot--empty {
 }
 
 /* --- Creating a tool in the cell itself ---------------------------------
-   The `+` of an empty cell in edit mode. It fills its cell with RELATIVE
-   sizes only: the row track is definite, so nothing here can change the grid
-   geometry (pinned in tests/paletteGridGeometry.test.ts, which is why these
-   rules must never key on an occupancy/target state class). Quiet until the
-   pointer is near, so a mostly empty grid is not a wall of plus signs. */
+   The `+` of an empty cell in edit mode.
+
+   It used to fill the whole cell, which was fine while a cell had exactly one
+   meaning. Now the cell SURFACE belongs to the selection, so the `+` is a small
+   corner target instead: absolutely positioned top-right and inset from the
+   edge, so the cell's outer band always selects and the `+` targets of two
+   neighbouring cells never touch.
+
+   The size is fixed rather than relative — at four columns in a 150px sidebar a
+   cell is about 33px wide, and a `+` that scaled with the cell would eat a
+   quarter of it. It is absolutely positioned and therefore out of flow, so the
+   definite row track still decides the geometry (pinned in
+   tests/paletteGridGeometry.test.ts, which is why these rules must never key on
+   an occupancy/target state class). Quiet until the pointer is near, so a
+   mostly empty grid is not a wall of plus signs. */
 .buttons-panel button.ocap-slot-add {
+    position: absolute;
+    top: 2px;
+    right: 2px;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    height: 100%;
+    width: 18px;
+    height: 18px;
     padding: 0;
     border: none;
-    border-radius: inherit;
+    border-radius: var(--radius-s);
     background-color: transparent;
     box-shadow: none;
     color: var(--text-faint);
     cursor: pointer;
-    opacity: 0.45;
+    opacity: 0.35;
     transition: opacity 80ms ease-in-out, color 80ms ease-in-out;
 }
 
@@ -376,6 +396,73 @@ body .buttons-panel .ocap-palette-grid .ocap-grid-slot--file-target {
 body .buttons-panel .ocap-grid-slot--file-target button.ocap-slot-add {
     opacity: 1;
     color: var(--text-accent);
+}
+
+/* The `+` steps forward once the pointer is on its cell, so it is findable
+   without being a permanent wall of plus signs. Only opacity and colour change
+   here — the rule keys on `--empty`, so the geometry contract forbids anything
+   that could resize it. */
+body .buttons-panel .ocap-grid-slot--empty:hover button.ocap-slot-add {
+    opacity: 0.85;
+}
+
+/* --- Cell colours -------------------------------------------------------
+   A cell colour is CONTENT, not edit chrome: it renders in locked mode too, so
+   a coloured empty cell can serve as a separator or a reserved place. The fill
+   covers the whole cell rather than the tool inside it — that is what teaches
+   the model, because the colour belongs to the coordinate and therefore stays
+   behind when the tool is dragged away.
+
+   Specificity is a contract here, not a coincidence:
+   - it must BEAT `--managed .ocap-grid-slot--filled` and `--empty`
+     (both 0-3-0) and the managed empty hover (0-4-0), which paint the managed
+     ground. Doubling the slot class gives 0-4-1, the smallest selector that
+     clears all three;
+   - it must LOSE to the drop-target and file-target rings, which promise where
+     a drop lands. Those are only 0-3-1, so they are restored explicitly below
+     instead of being left to the cascade.
+   The tint strength is one token (`--ocap-cell-color-alpha`, on the grid), so
+   the whole palette can be rebalanced in one line. */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot.ocap-grid-slot--colored {
+    background-color: var(--ocap-cell-color);
+}
+
+/* Restores the two drop promises over a coloured cell (same 0-4-1, later). */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot--colored.ocap-grid-slot--drop-target,
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot--colored.ocap-grid-slot--file-target {
+    background-color: var(--background-modifier-hover);
+}
+
+/* Hovering an empty cell in edit mode normally greys it (0-4-0). On a coloured
+   cell that would hide the very thing the user is managing, so the colour holds
+   (0-5-1, later in the file). */
+body .buttons-panel .ocap-palette-grid--managed .ocap-grid-slot--empty.ocap-grid-slot--colored:hover {
+    background-color: var(--ocap-cell-color);
+}
+
+/* The same problem on an OCCUPIED coloured cell, from the other direction: the
+   tool button is transparent at rest (so the cell colour shows through the
+   whole cell), but its own hover paints an OPAQUE ground over it — hiding the
+   colour of exactly the cell the pointer is on, which is the one the user is
+   about to recolour. A translucent overlay keeps both readable: the colour
+   stays, and the cell still lights up under the pointer. */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot--colored button.buttons-panel-simple-button:hover {
+    background-color: rgba(var(--mono-rgb-100), 0.08);
+}
+
+/* --- Cell selection -----------------------------------------------------
+   Selection is temporary and must stay readable ON a cell colour, so it takes
+   the one visual channel the grid has left: `outline`. Everything else is
+   spoken for — `border-color` carries the drop rings, `border-width` is frozen
+   by the geometry contract, `1px dashed var(--text-faint)` means
+   "hidden by its context", and `opacity` is used by the target states.
+
+   An outline never takes part in layout, so the cell rects do not move, and
+   2px inset is unmistakably different from the 1px accent BORDER of a drop
+   target even when both are on the same cell. */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot--selected {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: -2px;
 }
 
 /* --- Dynamic category variants ------------------------------------------ */
@@ -733,4 +820,88 @@ body .buttons-panel button.buttons-panel-simple-button {
    Accent color so it reads as "this one reacts", not as decoration. */
 .buttons-panel .ocap-category-icon--dynamic {
     color: var(--text-accent);
+}
+
+/* --- Cell colour palette ------------------------------------------------
+   Sits BELOW the grid and is mounted for the whole of edit mode, never
+   conjured up by the first selection. Two reasons, both about not moving
+   things under the pointer:
+
+   - a bar that appears on the first click pushes the grid down, so the next
+     Shift-click lands on the wrong cell;
+   - `Ctrl + swatch` is a selection tool and has to work with nothing selected
+     yet, which a bar that only exists alongside a selection cannot offer.
+
+   Deliberately NOT part of the `.ocap-grid-frame`: the frame owns the resize
+   gutter, and anything named like a grid edge would be swept into the geometry
+   contract in tests/paletteGridGeometry.test.ts. This bar sits where the
+   overflow row already sits — outside the grid box, full panel width. */
+.buttons-panel .ocap-cell-palette {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    min-width: 0;
+}
+
+/* Without a selection a plain click has no target, so the bar says so by
+   fading — while staying fully usable for the modifier gestures, which is
+   exactly when a user has nothing selected yet. */
+.buttons-panel .ocap-cell-palette--idle {
+    opacity: 0.65;
+}
+
+.buttons-panel .ocap-cell-palette-count {
+    font-size: var(--font-smallest);
+    color: var(--text-muted);
+    min-width: 0;
+}
+
+.buttons-panel .ocap-cell-palette-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+/* Deliberately much smaller than a grid cell: the palette is a legend, and a
+   row of cell-sized squares under the grid would read as another grid row. */
+.buttons-panel button.ocap-cell-swatch {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    flex: 0 0 auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 50%;
+    background-color: var(--ocap-swatch-color, transparent);
+    box-shadow: none;
+    cursor: pointer;
+}
+
+.buttons-panel button.ocap-cell-swatch:hover {
+    border-color: var(--text-muted);
+}
+
+/* "No colour" is the same kind of action and lives in the same row, drawn as
+   an empty chip with a diagonal stroke rather than as a text button. */
+.buttons-panel button.ocap-cell-swatch--none {
+    background-color: transparent;
+    background-image: linear-gradient(
+        to top right,
+        transparent calc(50% - 1px),
+        var(--text-muted) calc(50% - 1px),
+        var(--text-muted) calc(50% + 1px),
+        transparent calc(50% + 1px)
+    );
+}
+
+/* The active marker is a ring OUTSIDE the swatch, so it never covers the very
+   colour it is marking. Shown only when every selected cell shares one value —
+   including a value this build has no swatch for, which simply marks nothing
+   rather than promoting a look-alike. */
+.buttons-panel button.ocap-cell-swatch--active {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
 }

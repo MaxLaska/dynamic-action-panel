@@ -16,6 +16,18 @@ import {
 } from '@/contexts/CategoryVariantContext';
 import { filterCategoryButtonsDeep, isDynamicCategory } from '@/utils/categoryVariants';
 import { isGridCategory } from '@/utils/categoryGrid';
+import { GridCellSelectionProvider } from '@/contexts/GridCellSelectionContext';
+import { CellSelectionEscape } from '@/components/buttons-panel/CellSelectionEscape';
+import {
+    NO_CELL_SELECTION,
+    applyCellGesture,
+    applyCellSetGesture,
+    clearSelectionOf,
+    type CellSelectionGesture,
+    type GridCellSelectionState,
+    type GridSelectionContextKey,
+} from '@/utils/gridCellSelection';
+import type { GridCellKey } from '@/types/settings';
 import { TabsModeContent } from '@/components/buttons-panel/TabsModeContent';
 import { ListModeContent } from '@/components/buttons-panel/ListModeContent';
 import { FolderModeContent } from '@/components/buttons-panel/FolderModeContent';
@@ -181,6 +193,84 @@ export const PanelContent: React.FC<PanelContentProps> = ({
 
     const panelContentRef = React.useRef<HTMLDivElement>(null);
 
+    // --- Cell selection ----------------------------------------------------
+    // Ephemeral, never persisted, at most one grid at a time. It lives here for
+    // the same reason the variant selection does: PanelContent survives every
+    // commit (renderPanel re-renders the same component type), so a selection
+    // outlives applying a color — which is the point, the user usually tries a
+    // second one right after.
+    const [cellSelection, setCellSelection] =
+        React.useState<GridCellSelectionState>(NO_CELL_SELECTION);
+
+    const selectCell = React.useCallback(
+        (
+            context: GridSelectionContextKey,
+            cell: GridCellKey,
+            gesture: CellSelectionGesture
+        ) => {
+            setCellSelection((prev) => applyCellGesture(prev, context, cell, gesture));
+        },
+        []
+    );
+
+    const selectCells = React.useCallback(
+        (
+            context: GridSelectionContextKey,
+            cells: readonly GridCellKey[],
+            gesture: CellSelectionGesture
+        ) => {
+            setCellSelection((prev) => applyCellSetGesture(prev, context, cells, gesture));
+        },
+        []
+    );
+
+    const clearCellSelection = React.useCallback(() => {
+        setCellSelection((prev) => (prev.context === null ? prev : NO_CELL_SELECTION));
+    }, []);
+
+    const exitCellSelectionOf = React.useCallback((context: GridSelectionContextKey) => {
+        setCellSelection((prev) => clearSelectionOf(prev, context));
+    }, []);
+
+    /**
+     * The selection may only exist while the grid it names is the one actually
+     * on screen. Checked here, against the very state the panel renders from,
+     * instead of by scattered exit() calls in every mode switch, collapse
+     * handler and variant action:
+     *
+     * - edit mode only (locked has no selection, and no palette to use it);
+     * - not while a search filters the panel (the grid then shows a filtered
+     *   occupancy and dragging is off too);
+     * - the category still exists, is still a grid, and is still visible;
+     * - the variant on screen is still exactly the one the selection names —
+     *   this is what catches a context switch in Obsidian swapping the grid of
+     *   a dynamic category under the pointer.
+     */
+    React.useEffect(() => {
+        const context = cellSelection.context;
+        if (context === null) {
+            return;
+        }
+        if (!enableEditMode || normalizedQuery.length > 0) {
+            setCellSelection(NO_CELL_SELECTION);
+            return;
+        }
+        const category = filteredCategories.find((entry) => entry.id === context.categoryId);
+        if (!category || !isGridCategory(category)) {
+            setCellSelection(NO_CELL_SELECTION);
+            return;
+        }
+        const shownVariantId = normalizedSelection[category.id]?.current ?? null;
+        if (shownVariantId !== context.variantId) {
+            setCellSelection(NO_CELL_SELECTION);
+        }
+    }, [cellSelection.context, enableEditMode, normalizedQuery, filteredCategories, normalizedSelection]);
+
+    // Escape clears the selection. The handler lives in CellSelectionEscape,
+    // mounted inside the drag provider below, because the rule has to yield to
+    // an active drag — and because it must never stop the event (see the
+    // component's own doc comment).
+
     React.useEffect(() => {
         const viewContent = panelContentRef.current?.closest('.view-content.buttons-panel');
         if (!viewContent) {
@@ -237,6 +327,13 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 selectVariant={selectVariant}
                 manageable={interactionMode !== 'locked'}
             >
+            <GridCellSelectionProvider
+                state={cellSelection}
+                selectCell={selectCell}
+                selectCells={selectCells}
+                clearCellSelection={clearCellSelection}
+                exitCellSelectionOf={exitCellSelectionOf}
+            >
             <ButtonDragProvider
                 categories={filteredCategories}
                 gridViews={projection.gridViews}
@@ -258,8 +355,10 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 }
                 folderShowBtnCount={panelConfig.folderShowBtnCount ?? true}
             >
+                <CellSelectionEscape panelRef={panelContentRef} />
                 {panelContent}
             </ButtonDragProvider>
+            </GridCellSelectionProvider>
             </CategoryVariantProvider>
             </PanelVisibilityProvider>
         </div>

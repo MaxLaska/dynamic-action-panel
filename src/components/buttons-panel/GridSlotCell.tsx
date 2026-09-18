@@ -2,7 +2,8 @@ import React from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { setIcon } from 'obsidian';
 import { slotDroppableId } from '@/utils/buttonDragItems';
-import { slotColumn, slotRow } from '@/utils/categoryGrid';
+import { RESIZE_DRAG_THRESHOLD_PX, slotColumn, slotRow } from '@/utils/categoryGrid';
+import { hasSelectionModifier } from '@/utils/cellSelectionGesture';
 import { t, tWithParams } from '@/utils/i18n';
 
 /** Vault-file drop handling of ONE empty slot (edit mode only). */
@@ -30,22 +31,42 @@ interface GridSlotCellProps {
     onCreate?: () => void;
     /** Edit mode: a vault file dropped on this empty cell becomes a tool. */
     fileDrop?: GridSlotFileDrop;
+    /**
+     * Already resolved CSS background of this cell, if it carries a color.
+     * Content, not chrome: it renders in locked mode too.
+     */
+    color?: string;
+    /** Edit mode: this cell is part of the current selection. */
+    selected?: boolean;
     /** The button occupying the slot, if any. */
     children?: React.ReactNode;
 }
 
 /**
- * The `+` of an empty cell.
+ * The `+` of an empty cell — a small corner affordance, not the cell.
+ *
+ * It used to fill the whole cell, which made the cell surface unclickable for
+ * anything else. Now the cell surface belongs to the selection and the `+` is a
+ * corner target, inset from the edge so the cell's outer band always selects
+ * and two neighbouring `+` targets never touch.
  *
  * It must swallow its own press: in list view the whole category block carries
  * the category-drag listeners (upstream behaviour), so a press that bubbles
- * would start dragging the category instead of opening the tool modal.
+ * would start dragging the category instead of opening the tool modal. That
+ * stays true with a modifier held — only the CLICK changes meaning.
+ *
+ * Modifier priority: with Shift or Ctrl/Cmd down the user is building a
+ * selection, so a stray hit on the corner must not open a modal. The click is
+ * then not handled here at all and bubbles to the grid, which treats it as an
+ * ordinary click on this cell.
  */
 const SlotAddButton: React.FC<{ label: string; onClick: () => void }> = ({
     label,
     onClick,
 }) => {
     const iconRef = React.useRef<HTMLSpanElement>(null);
+    /** Where the press started, so a drag inside the `+` is not a click. */
+    const originRef = React.useRef<{ x: number; y: number } | null>(null);
 
     React.useEffect(() => {
         if (iconRef.current) {
@@ -62,10 +83,33 @@ const SlotAddButton: React.FC<{ label: string; onClick: () => void }> = ({
             type="button"
             className="ocap-slot-add"
             aria-label={label}
-            onPointerDown={swallow}
+            onPointerDown={(event) => {
+                originRef.current =
+                    event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+                swallow(event);
+            }}
             onMouseDown={swallow}
             onTouchStart={swallow}
             onClick={(event) => {
+                const origin = originRef.current;
+                originRef.current = null;
+                if (hasSelectionModifier(event)) {
+                    // Let the grid read it as a cell click.
+                    return;
+                }
+                // Same rule as everywhere else in the grid: past the drag
+                // threshold it was a drag, not a click. The `+` is only 18px,
+                // so a press that travels and still ends inside it would
+                // otherwise open the modal.
+                if (event.detail !== 0 && origin !== null) {
+                    const dx = event.clientX - origin.x;
+                    const dy = event.clientY - origin.y;
+                    if (Math.sqrt(dx * dx + dy * dy) > RESIZE_DRAG_THRESHOLD_PX) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return;
+                    }
+                }
                 event.preventDefault();
                 event.stopPropagation();
                 onClick();
@@ -106,6 +150,8 @@ export const GridSlotCell: React.FC<GridSlotCellProps> = ({
     showOutline,
     onCreate,
     fileDrop,
+    color,
+    selected = false,
     children,
 }) => {
     const filled = children !== null && children !== undefined;
@@ -164,6 +210,8 @@ export const GridSlotCell: React.FC<GridSlotCellProps> = ({
         'ocap-grid-slot',
         filled ? 'ocap-grid-slot--filled' : 'ocap-grid-slot--empty',
         !filled && showOutline && 'ocap-grid-slot--outlined',
+        color && 'ocap-grid-slot--colored',
+        selected && 'ocap-grid-slot--selected',
         isDropTarget && 'ocap-grid-slot--drop-target',
         fileDragOver && acceptsFiles && 'ocap-grid-slot--file-target',
     ]
@@ -185,9 +233,19 @@ export const GridSlotCell: React.FC<GridSlotCellProps> = ({
             ref={setNodeRef}
             className={className}
             data-slot={slot}
-            aria-hidden={!filled && !showOutline ? true : undefined}
+            style={
+                color ? ({ '--ocap-cell-color': color } as React.CSSProperties) : undefined
+            }
+            // A colored EMPTY cell is real content in locked mode (a separator,
+            // a reserved place), so it must stop being aria-hidden there — but
+            // it stays a surface, never a control.
+            aria-hidden={!filled && !showOutline && !color ? true : undefined}
             title={!filled && showOutline ? emptyTooltip : undefined}
             aria-label={!filled && showOutline ? t('grid_slot_empty') : undefined}
+            // Cells are role-less divs, so aria-selected would be invalid here.
+            // data-selected keeps the state inspectable (and testable) without
+            // claiming a listbox semantics the DOM does not have.
+            data-selected={selected ? 'true' : undefined}
             onDragEnter={acceptsFiles ? handleDragOver : undefined}
             onDragOver={acceptsFiles ? handleDragOver : undefined}
             onDragLeave={acceptsFiles ? handleDragLeave : undefined}
