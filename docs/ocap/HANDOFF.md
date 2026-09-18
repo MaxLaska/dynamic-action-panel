@@ -561,6 +561,50 @@ Tests: `tests/gridRectangleSelection.test.ts` (31),
 Quelltext-Scans nach dem Muster des Escape-Kontrakts),
 `tests/paletteGridGeometry.test.ts` +4. Gesamt **1081**.
 
+### 2e.1 Lesbarkeit: Zustand vs. Geste (Nachtrag 2026-09-18, dritte Runde)
+
+Spezifikation: `docs/ocap/cell-selection-colors.md` §9 und §9.1.
+
+- **Ausgewählt = Tönung.** `.ocap-grid-slot--selected` trägt
+  `box-shadow: inset 0 0 0 999px var(--ocap-cell-selected-tint)` statt der
+  früheren `outline`. Ein inset Schatten malt über den Hintergrund und **unter**
+  den Inhalt und ist auf die Padding-Box geclippt — Zellfarbe bleibt sichtbar,
+  Tool bleibt lesbar, die 1-px-Border (Raster, Drop-Ringe) bleibt unberührt.
+  Der Kanal war frei: `box-shadow` wird auf dem Slot sonst nirgends benutzt.
+- **Geste = ein Rahmen.** `GridRectanglePreview` rendert **ein** absolut
+  positioniertes `div` im Grid, platziert aus vier Ganzzahlen
+  (`--ocap-rect-row/-column/-rows/-columns`) gegen `--ocap-grid-row-height` und
+  `--ocap-grid-gap`. Absolut positioniert, weil ein Grid-**Item** Tracks belegen
+  und die automatisch platzierten Zellen verschieben würde; `pointer-events:
+  none`, damit es die eigene Geste nicht schluckt. Deshalb trägt
+  `.ocap-palette-grid` jetzt `position: relative` und der Gap ist ein Token.
+- **Entfernen sichtbar machen.** `cellsRemovedByRectangle` (pur) liefert
+  `baseline ∩ rechteck`; die Zellen bekommen `--deselecting` und damit dieselbe
+  Kanal-Tönung in der Fehlerfarbe. Reine Darstellung — was ausgewählt ist,
+  entscheidet weiterhin `rectangleSelectionCells`.
+- `rectangleBounds` und `rectangleCellKeys` sind **eine** Rechnung (letzteres
+  ruft ersteres), damit Rahmen und Auswahl nie über die Lage des Rechtecks
+  uneins sein können.
+- Beide Tints referenzieren Obsidian-Variablen **mit Fallback**
+  (`var(--accent-h, 254)` usw.): Ein undefiniertes `var()` in einer Farbe macht
+  die ganze Deklaration ungültig, die Tönung fiele sonst ersatzlos aus.
+
+### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
+
+`ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&
+isButtonDragging)` und `hideButtonGridWhileCollapsed = … && !isButtonDragging`.
+Damit klappte **jede** eingeklappte Kategorie für die Dauer **jedes**
+Button-Drags auf und beim Loslassen wieder zu — ein Drag unten im Panel
+verschob also den Inhalt oben. Jetzt bleibt eine eingeklappte Kategorie
+durchgehend verborgen (weiterhin **gemountet**, damit ihre Slot-Droppables
+registriert bleiben), und die 0.4-s-Hover-Expansion
+(`buttonDrag.registerCategoryHover`) ist nicht mehr abonniert. Folge, bewusst:
+Eine eingeklappte Kategorie ist kein Drop-Ziel. Nebeneffekt: eine
+Layout-Änderung weniger mitten im Drag.
+
+`registerCategoryHover` bleibt vorerst als Context-API bestehen, hat aber keinen
+Konsumenten mehr — Aufräumkandidat.
+
 ## 2. Produktmodell
 
 - Eine Grid-Kategorie ist **statisch** (ein volles Grid, gespeichert als

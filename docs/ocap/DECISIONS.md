@@ -816,6 +816,60 @@ selection stays red — selection and cell colour remain different concepts.
 be a second mode with invisible state, which this project has already retired
 once (Phase 4b).
 
+## 2026-09-18 – Selection is a STATE, the gesture is a SHAPE
+
+**Decision:** A selected cell is **washed** with a translucent accent tint; the
+running rectangle gesture draws **one continuous outline** around the whole
+block, gaps included. Two signals, two questions: which cells are chosen, and
+what is the hand doing right now.
+
+**Reason:** the first version answered both with the same per-cell accent ring,
+and it answered neither well. At four or five columns the rings tiled and the
+4px gutters cut the block into pieces, so a selection read as "these cells" and
+never as an area. Worse, `Ctrl`-removal had nothing to show at all: its cells
+merely stopped being ringed, so the user could see selection disappearing
+without seeing which block was doing it. Splitting state from shape is what the
+feature was missing.
+
+**Consequences, all deliberate:**
+
+- the wash is an **inset `box-shadow`**, the one channel still free. It paints
+  above the cell's background and below its contents, so a coloured cell stays
+  recognisably coloured and the tool on it stays legible; the 1px border — the
+  raster and the drop promises — is outside the padding box it is clipped to;
+- the outline is placed from **four integers** (row, column, rows, columns)
+  against the grid's own track sizes, so it is exact at any panel width and
+  nothing measures pixels. It is absolutely positioned (an in-flow grid item
+  would occupy tracks and displace the auto-placed cells) and
+  pointer-transparent (it must never swallow the gesture it draws);
+- a removal additionally marks the cells it is dropping, in the same channel and
+  in the error colour, so they change **in place** from "selected" to "leaving";
+- the tints derive from Obsidian's own accent components, each `var()` carrying
+  a fallback — an undefined variable inside a colour invalidates the whole
+  declaration, and the wash would silently not render.
+
+None of this touches what is selected. The selection logic is unchanged.
+
+## 2026-09-18 – A drag never changes a category's collapse state
+
+**Decision:** Collapsing and expanding a category in list view is the user's
+alone, through the category's own title. No drag — of a tool, of a category, of
+anything — may change that state, not even for the length of the gesture. A
+collapsed category is consequently **not a drop target**; expanding it first is
+the way in, and it is visible.
+
+**Reason:** the previous behaviour revealed *every* collapsed category for the
+duration of *any* button drag and folded them all back on release. Dragging a
+tool at the bottom of the panel therefore unfolded a category at the top, moved
+everything below it mid-gesture, and put it back afterwards. The state looked
+like it had changed by itself, because it had. The companion mechanism — a 0.4s
+drag-hover that expanded a collapsed category — was removed with it: it changed
+the same state without being asked on the category itself, and it did not even
+undo itself afterwards.
+
+**Bonus:** one fewer layout change while a drag is in flight, which slot
+geometry is better off without (the same reasoning as the definite row track).
+
 ## Open decisions
 
 The following are still open:

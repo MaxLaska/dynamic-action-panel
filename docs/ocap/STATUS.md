@@ -1,10 +1,48 @@
 # OCAP – Status
 
-Last updated: 2026-09-18 (Rectangle cell selection + locked/edit visual parity —
-implemented locally and live-smoke-tested in an isolated Obsidian; awaiting the
-user's own manual UX acceptance)
+Last updated: 2026-09-18 (Selection readability follow-up + collapsed-category
+drag fix — implemented locally and live-smoke-tested in an isolated Obsidian;
+awaiting the user's own manual UX acceptance)
 
 ## Newest work first
+
+- **Selection readability + the collapsed-category drag bug (2026-09-18, third
+  round) — implemented locally, live-smoke-tested, deployed only to the
+  disposable smoke vault. Not pushed, not in the productive vault.** Both came
+  out of the user's manual test of the rectangle feature: it worked, but it was
+  not readable. Specification: `docs/ocap/cell-selection-colors.md` §9 and §9.1;
+  two new entries in `DECISIONS.md`.
+  - **Selection is a STATE, the gesture is a SHAPE.** A selected cell is now
+    *washed* with a translucent accent tint (inset `box-shadow`, the one free
+    channel — it paints above the cell background and below its contents, so a
+    coloured cell stays coloured and the tool stays legible). The running
+    gesture draws **one continuous outline** around the whole block, gutters
+    included, placed from four integers against the grid's own tracks. Before,
+    both questions were answered by the same per-cell accent ring: at four or
+    five columns the rings tiled, the gaps cut the block apart, and a
+    `Ctrl`-removal had nothing to show at all — its cells just stopped being
+    ringed. A removal now also marks the cells it is dropping, in the error
+    colour and in the same channel, so they change **in place** from "selected"
+    to "leaving". The selection LOGIC is untouched.
+  - **A drag no longer touches a collapse state.** `ListModeContent` revealed
+    *every* collapsed category for the duration of *any* button drag and folded
+    them back on release, so dragging a tool at the bottom of the panel unfolded
+    a category at the top and moved everything in between mid-gesture. The
+    collapsed grid now stays hidden throughout (still MOUNTED, so its droppables
+    keep their registration), and the 0.4s drag-hover that expanded a collapsed
+    category was removed with it. Consequence, accepted: a collapsed category is
+    not a drop target; expanding it first is the visible way in.
+  - Tests: **1104/1104** (38 files; +23). `tsc --noEmit`, `eslint .` and
+    `npm run build` green.
+  - **Live smoke: 95/95 checks** across five stages in an isolated Obsidian
+    1.13.7 (parity 18, new visuals 26, rectangle 19, paint 18, regression 14),
+    0 console errors. Verified live: the wash is an inset shadow and not an
+    outline, it moves no cell, it survives on a coloured cell; exactly one
+    preview box exists during a gesture and it spans the whole block including
+    gaps; it is out of flow and pointer-transparent, and the 16 cells are not
+    displaced; a removal marks the right cells and colours the outline
+    differently; Escape clears both; a collapsed category stays collapsed
+    before, during and after a drag in another category, chevron included.
 
 - **Locked/Edit visual parity + modifier rectangle selection + ephemeral paint
   colour (2026-09-18, second round) — implemented locally, live-smoke-tested,

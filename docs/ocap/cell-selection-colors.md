@@ -162,10 +162,17 @@ Dadurch gibt es keine toten Zonen, auch nicht am Kreuz zwischen vier Zellen.
 
 ### 4a.3 Live-Vorschau
 
-Während des Ziehens aktualisiert sich **die bestehende Auswahl-Darstellung der betroffenen Zellen**.
-Es wird ausdrücklich **kein** freies Pixel-Rechteck gezeichnet (kein Overlay, kein Canvas, kein
-SVG): Das Rechteck „snappt" sichtbar auf ganze Zellen, was genau die Einheit ist, in der es rechnet.
-Ein freies Preview-Rechteck bleibt eine spätere Option, falls sich das Snapping klobig anfühlt.
+Während des Ziehens aktualisiert sich **die Auswahl-Darstellung der betroffenen Zellen**, und
+zusätzlich zeichnet die Geste **einen durchgehenden Rahmen** um den Block (Abschnitt 9.1).
+
+Das Rechteck bleibt zellengerastert: Der Rahmen springt auf ganze Zellen, weil das die Einheit ist,
+in der die Geste rechnet. Er ist ausdrücklich **kein** freies Pixel-Marquee — nicht zwischen
+exaktem Pointer-Start und Pointer-Position aufgezogen, sondern um genau die Zellen gelegt, die
+tatsächlich betroffen sind, Lücken eingeschlossen. Ein freies Marquee bleibt Nichtziel
+(Abschnitt 15).
+
+*Nachtrag 2026-09-18 (zweite Runde):* Ursprünglich stand hier, es werde gar kein Rahmen gezeichnet
+und die Geste zeige sich allein über die Auswahl der Zellen. Das reichte nicht — siehe Abschnitt 9.
 
 ### 4a.4 Baseline
 
@@ -465,15 +472,33 @@ getrennte visuelle Kanäle:
 | Zustand | Kanal |
 |---|---|
 | **Zellfarbe** | `background-color` der Zelle |
-| **Auswahl** | `outline` in der Akzentfarbe, nach innen versetzt |
+| **Auswahl (Zustand)** | `box-shadow: inset` — eine Akzent-Tönung über die ganze Zelle |
+| **Laufende Geste (Form)** | **ein** durchgehender Rahmen um den ganzen Block (Abschnitt 9.1) |
 
 Eine rote ausgewählte Zelle ist damit gleichzeitig eindeutig rot **und** eindeutig ausgewählt.
 
-Warum ausgerechnet `outline`: `border-color` ist im Bestand für Drop-Ziele und File-Drop-Ziele
-vergeben (diese Ringe versprechen, wo ein Drop landet, und dürfen nicht überschrieben werden),
-`border-width` ist durch die Geometrie-Invariante des Grids gesperrt, eine gestrichelte Outline
-bedeutet bereits „vom Kontext ausgeblendet“, und `opacity` ist ebenfalls belegt. `outline` ist der
-einzige freie Kanal und nimmt nie am Layout teil — die Zellgeometrie bleibt in jedem Modus identisch.
+**Präzisierung 2026-09-18 (zweite Runde):** Ursprünglich stand hier `outline` in der Akzentfarbe,
+nach innen versetzt — also ein Rahmen **pro Zelle**. Das war am laufenden Panel nicht lesbar: Bei
+vier oder fünf Spalten kachelten die Rahmen, die 4-px-Lücken zerschnitten den Block in Einzelteile,
+und die Auswahl las sich als „diese Zellen“ statt als eine Fläche. Für `Strg`-Entfernen gab es
+überhaupt nichts zu zeigen — die betroffenen Zellen verloren einfach ihren Rahmen, sodass nicht zu
+sehen war, *welcher* Block gerade abgewählt wird.
+
+Die Auswahl ist deshalb jetzt eine **Tönung** (Zustand), und die Geste bekommt ihren **eigenen,
+durchgehenden Rahmen** (Form). Genau diese Trennung fehlte.
+
+Warum ein **inset `box-shadow`** für die Tönung: `background-color` ist die Zellfarbe und muss
+sichtbar bleiben, `border-color` ist für Drop-Ziele und File-Drop-Ziele vergeben (diese Ringe
+versprechen, wo ein Drop landet), `border-width` ist durch die Geometrie-Invariante gesperrt, eine
+gestrichelte Outline bedeutet bereits „vom Kontext ausgeblendet“, und `opacity` ist ebenfalls belegt.
+Ein inset `box-shadow` malt **über den Hintergrund und unter den Inhalt** der Zelle: Die Zellfarbe
+bleibt erkennbar, das Tool darauf bleibt lesbar, und die 1-px-Border — Raster und Drop-Versprechen —
+liegt außerhalb der Padding-Box, auf die der Schatten geclippt ist. Am Layout nimmt er nicht teil.
+
+Die Tönung wird aus Obsidians eigenen Akzent-Komponenten abgeleitet (`--accent-h/s/l`), folgt also
+dem Akzent des Nutzers und beiden Themes. Jede `var()`-Referenz trägt einen Fallback: Ein
+undefiniertes `var()` in einer Farbe macht die ganze Deklaration ungültig, die Tönung fiele also
+ersatzlos aus.
 
 **Die Zellfarbe füllt die Zelle bis an ihre Kante, sichtbar über die Tool-Schaltfläche hinaus.** Das
 ist nicht bloß Ästhetik: Es ist die einzige Möglichkeit, dem Nutzer beizubringen, dass die Farbe der
@@ -481,6 +506,29 @@ ist nicht bloß Ästhetik: Es ist die einzige Möglichkeit, dem Nutzer beizubrin
 Verschieben nicht mit“ nicht als Fehler gelesen wird.
 
 Die Auswahl wird **nicht persistiert**. Sie existiert nur zur Laufzeit.
+
+### 9.1 Die laufende Geste zeichnet sich selbst (2026-09-18)
+
+Während eine Rechteck-Geste läuft, zeigt das Grid zusätzlich **genau einen** Rahmen um den ganzen
+Block — **nicht** einen Rahmen pro Zelle:
+
+- er spannt die Lücken zwischen den Zellen mit über, damit die Geste als **eine Fläche** liest.
+  Dass die Auswahl darunter zellengerastert ist, bleibt davon unberührt;
+- er ist **absolut positioniert** und damit außerhalb des Flusses: ein Grid-Item würde Tracks
+  belegen und die automatisch platzierten Zellen verschieben;
+- er ist **zeigerdurchlässig** und kann die Geste, die er zeichnet, deshalb nie schlucken;
+- platziert wird er aus **vier ganzen Zahlen** (Zeile, Spalte, Zeilen, Spalten), die die Geste
+  veröffentlicht, gegen die Track-Größen des Grids selbst. Kein Pixel wird gemessen, und der Rahmen
+  bleibt bei jeder Panelbreite exakt;
+- **Hinzufügen** zeichnet ihn in der Akzentfarbe, **Entfernen** in der Fehlerfarbe.
+
+Und weil ein Entfernen sonst unsichtbar bleibt, bekommen die Zellen, die es fallen lässt, für die
+Dauer der Geste eine eigene Tönung im selben Kanal: Sie wechseln **an Ort und Stelle** von
+„ausgewählt“ auf „wird entfernt“, statt nur zu verschwinden. Das ist reine Darstellung — was
+ausgewählt *ist*, entscheidet weiterhin allein Abschnitt 4a.4.
+
+Der Rahmen und diese Markierung gehören ausschließlich der Geste: Loslassen, Escape,
+`pointercancel` und ein Abbau der Komponente beenden beide sofort.
 
 ---
 
