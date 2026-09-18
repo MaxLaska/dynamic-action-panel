@@ -729,6 +729,93 @@ in the swatch tooltip rather than left to intuition.
 many cells at once. Making every modifier gesture read-only turns it into a
 surface the user can explore without risk.
 
+## 2026-09-18 – A mode change changes what a press means, never the layout
+
+**Decision:** Locked and edit mode render the **same panel**. The grid raster —
+the visible border of every cell and the frame around the field — is drawn in
+both, occupied cells carry the same ground in both, the tool fills its cell in
+both, and the 16px resize gutter is reserved in both (empty and pointer-through
+in locked). Only the *affordances* are mode-specific: the selection outline, the
+corner `+`, the colour palette, the resize handles and the variant selector
+belong to edit; executing a tool belongs to locked.
+
+**Reason:** the previous split made the same grid look like two different panels,
+and the manual test named exactly that as the problem — the design "jumped" on a
+mode switch. Three of the four differences turned out to be accidents rather than
+intent (two CSS specificity collisions with the upstream `.icon-top`/`.icon-left`
+rules, plus the raster being gated on `--managed`); the fourth, the resize
+gutter, was real but is space, not affordance, and space can be reserved.
+
+**Consequence for new chrome:** anything that is only *usable* in one mode may be
+hidden in the other, but it may not change a single cell rect when it goes. If it
+occupies layout, its space stays reserved. Pinned in
+`tests/paletteGridGeometry.test.ts`.
+
+## 2026-09-18 – The rectangle is a modifier DRAG, not a Shift-click range
+
+**Decision:** Shift-drag adds a rectangular block of cells to the selection,
+Ctrl/Cmd-drag removes one. It is the existing click semantics applied to an area:
+`Shift click = add one cell` / `Shift drag = add a rectangle`. Below the 4px drag
+threshold the gesture *is* the click and behaves exactly as before. There is no
+new mode — the panel still knows only `locked` and `edit`, and a modifier is a
+temporary gesture.
+
+This **supersedes** the v1 non-goal "no rectangle/marquee" in
+`docs/ocap/cell-selection-colors.md` §4.1 and §15.
+
+**Three things it deliberately is not:**
+
+- **not a Windows-Explorer range.** `click r1c1` then `Shift-click r1c5` still
+  adds exactly one cell. A drag expresses the same intent more flexibly and
+  without an invisible anchor;
+- **not a brush.** The path between anchor and pointer is irrelevant; only the
+  rectangle between them counts;
+- **not a free pixel marquee.** The unit is the cell, so there is no overlap
+  percentage and never a half-selected button. The live preview is the existing
+  selection rendering snapping to whole cells; a free preview rectangle stays a
+  later option if the snapping turns out to feel coarse.
+
+**Two invariants carry it:**
+
+1. **A modifier press reserves the selection.** Decided at pointer-down and never
+   revised: no tool move, no swap, no category reorder, on filled and empty cells
+   alike. Enforced in the capture phase inside a grid and by wrapping dnd-kit's
+   activator outside it — no global switch that a key-up could leave stuck.
+2. **Every step derives from the baseline** captured at pointer-down, never from
+   the previous step, so growing and shrinking within one gesture always lands on
+   `baseline ± rectangle`.
+
+**Reason:** selecting a dozen cells is the most common action in this surface and
+was the most tedious. The gesture had to be added without introducing a mode, a
+second interaction framework, or a second meaning for an ordinary drag.
+
+## 2026-09-18 – The paint colour belongs to the selection, not to the panel
+
+**Decision:** Applying a colour to a selection also **arms** that colour for the
+rest of that selection session. An additive gesture — Shift-click or Shift
+rectangle — then paints exactly the cells it newly adds. "No colour" is armed the
+same way, because choosing it is just as deliberate. A modifier click on a swatch
+never arms anything (it still never writes), and with nothing selected nothing is
+armed at all.
+
+The armed colour is **ephemeral**: React state in `PanelContent`, dropped the
+moment the selection names a different grid or no grid — which covers cleared,
+Escape, mode change, category change, variant change in one rule. It is never
+written to `data.json`, the settings or a template.
+
+**Write behaviour:** nothing is saved during a drag; the cells show the colour as
+a preview. Pointer-up produces exactly **one** bundled persistence operation for
+the newly added cells. The preview is held until the stored colours actually
+carry it, for the same reason the resize preview holds its geometry.
+
+**Explicitly separate:** `Ctrl` removal never paints. A red cell removed from the
+selection stays red — selection and cell colour remain different concepts.
+
+**Reason:** having just painted a block red, extending it almost always means
+"these too". The alternative — a persistent paint tool or an armed brush — would
+be a second mode with invisible state, which this project has already retired
+once (Phase 4b).
+
 ## Open decisions
 
 The following are still open:

@@ -1,7 +1,7 @@
 # Dynamic Action Panel – Cell Selection & Cell Colors (Produktspezifikation v1)
 
-- **Datum:** 2026-09-18
-- **Status:** Produktspezifikation. **Nichts implementiert.** Kein Implementierungsplan, keine
+- **Datum:** 2026-09-18 (zweite Runde am selben Tag: Abschnitte 4a, 8.2 und 19)
+- **Status:** Produktspezifikation, **implementiert** (Umsetzungsstand: Abschnitt 18). Keine
   Datei-/Format-Änderung, kein `settingsVersion`-Bump.
 - **Grundlage:** Nutzerentscheidungen vom 2026-09-18 (hier als beschlossen geführt) plus die
   Code-Befunde aus `docs/ocap/audits/2026-09-18-selection-color-architecture.md`.
@@ -109,8 +109,117 @@ Das ist das klassische Selection-Modell aus Desktop- und DCC-Anwendungen. Ausdr�
 - **Es gibt kein Toggle.** Ein zweiter Linksklick auf die einzige ausgewählte Zelle lässt sie
   ausgewählt — er ersetzt die Auswahl durch sich selbst. Diese Regel ist ausdrücklich festgehalten,
   damit sich später kein Toggle-Verhalten einschleicht.
-- **Es gibt keine Rechteck- oder Range-Auswahl.** Shift hat auf dem Grid keine geometrische
-  Bedeutung.
+- **Ein Modifier-KLICK betrifft genau eine Zelle.** Die geometrische Bedeutung von Shift/Strg
+  entsteht ausschließlich durch Ziehen (Abschnitt 4a); ein Shift-Klick ist nie eine
+  Von-bis-Auswahl.
+
+---
+
+## 4a. Rechteck-Auswahl per Modifier-Drag (beschlossen 2026-09-18, ersetzt das frühere Nichtziel)
+
+**Diese Entscheidung hebt den ursprünglichen Punkt „keine Rechteck-Auswahl" in Abschnitt 4.1 und
+das Nichtziel „Marquee-/Rahmenauswahl" in Abschnitt 15 bewusst auf.** Der Grund ist Erfahrung am
+laufenden Panel: Zwölf Zellen einzeln per Shift anzuklicken ist die häufigste Aktion und zugleich
+die mühsamste.
+
+Die Semantik ist **dieselbe wie beim Klick**, nur auf eine Fläche statt auf eine Zelle angewandt:
+
+```
+Shift + Klick = eine Zelle hinzufügen      Shift + Ziehen = Rechteck hinzufügen
+Strg  + Klick = eine Zelle entfernen       Strg  + Ziehen = Rechteck entfernen
+```
+
+Es gibt **keinen zusätzlichen Modus**. Das Panel kennt weiterhin genau `locked` und `edit`; ein
+Modifier ist eine temporäre Geste, kein Zustand.
+
+### 4a.1 Geometrie
+
+Das Rechteck wird zwischen der Zelle beim PointerDown (**Anker**) und der aktuell adressierten
+Zielzelle aufgespannt, **inklusiv auf beiden Seiten**:
+
+```
+min(row)…max(row)  ×  min(column)…max(column)
+```
+
+Richtungsfrei: `r2c3 → r1c1` liefert denselben Block wie `r1c1 → r2c3`. Der Weg zwischen Anfang und
+Ende ist bedeutungslos — es ist kein Pinsel (Abschnitt 15).
+
+**Die Einheit ist die Zelle, nie das Pixel.** Es gibt keinen Überlappungsanteil, keine 50-%-Schwelle
+und damit nie die Frage „ist dieser Button halb ausgewählt?".
+
+### 4a.2 Zielzelle, Lücken und Ränder
+
+Der Zeiger adressiert **immer genau eine Zelle, nie keine**. Gemessen wird gegen die Mitten der
+Grid-Tracks:
+
+- innerhalb einer Zelle → diese Zelle;
+- in der 4-px-Lücke → der nähere der beiden Nachbarn; exakt auf der Mitte gewinnt der spätere Track
+  (ein willkürlicher, aber *fester* Tiebreak — Hauptsache die Geste flackert nicht);
+- außerhalb des Grids → der Rand-Track. Über den Rand hinauszuziehen erweitert das Rechteck weiter,
+  statt die Geste abzubrechen.
+
+Dadurch gibt es keine toten Zonen, auch nicht am Kreuz zwischen vier Zellen.
+
+### 4a.3 Live-Vorschau
+
+Während des Ziehens aktualisiert sich **die bestehende Auswahl-Darstellung der betroffenen Zellen**.
+Es wird ausdrücklich **kein** freies Pixel-Rechteck gezeichnet (kein Overlay, kein Canvas, kein
+SVG): Das Rechteck „snappt" sichtbar auf ganze Zellen, was genau die Einheit ist, in der es rechnet.
+Ein freies Preview-Rechteck bleibt eine spätere Option, falls sich das Snapping klobig anfühlt.
+
+### 4a.4 Baseline
+
+Beim PointerDown wird die bestehende Auswahl als **Baseline** festgehalten; jeder Schritt der Geste
+wird daraus neu abgeleitet:
+
+```
+Shift: preview = baseline ∪ rechteck
+Strg:  preview = baseline − rechteck
+```
+
+Niemals inkrementell pro PointerMove. Nur so führt Aufziehen-und-wieder-Zusammenziehen innerhalb
+*derselben* Geste zuverlässig auf `baseline ± aktuelles Rechteck` zurück.
+
+### 4a.5 Modifier reserviert die Auswahl — nicht Drag-and-Drop
+
+Sobald ein PointerDown Shift oder Strg/Cmd trägt, gehört die Geste der Auswahl, und zwar
+vollständig: **kein Tool-Move, kein Swap, kein Category-Reorder** — auf belegten wie auf leeren
+Zellen. Die Geste wird **beim PointerDown** entschieden; ein später gedrücktes Shift verwandelt
+einen laufenden Drag nicht nachträglich, und ein losgelassener Modifier macht aus einer
+Auswahl-Geste keinen Drag.
+
+Umgesetzt an zwei Stellen, ohne globalen Schalter, der nach einem KeyUp hängen bleiben könnte:
+
+- **im Grid** fängt `CategoryButtonGrid` den Druck in der **Capture-Phase** ab, bevor er den
+  dnd-kit-Aktivator des Tools darunter oder den Kategorie-Drag darüber erreicht;
+- **außerhalb** (Kategorie-Header der List-View, Tabs, Folder-Kacheln) umhüllt
+  `suppressDragOnSelectionModifier` die dnd-kit-Listener. Dort gibt es keine Zelle, also startet
+  auch kein Rechteck — der Modifier unterdrückt schlicht den Drag.
+
+Ohne Modifier bleibt alles unverändert: Move/Swap, Category-Reorder, File-Drop, Grid-Resize.
+
+### 4a.6 Klick-Fallback und Abbruch
+
+Unterhalb der bestehenden Drag-Schwelle (4 px, dieselbe euklidische Distanz wie der Drag-Sensor)
+ist die Geste ein **Klick** und bedeutet exakt das Bisherige: Shift fügt eine Zelle hinzu, Strg
+entfernt eine. Oberhalb der Schwelle rastet sie ein und bleibt ein Rechteck, auch wenn der Zeiger
+zum Ausgangspunkt zurückwandert — der anschließende Klick wird dann verworfen.
+
+- **Escape** während der Geste bricht das Rechteck ab: die Auswahl kehrt auf die Baseline zurück,
+  nichts wird geschrieben. Das panelweite Escape (Auswahl leeren) tritt dafür zurück, solange eine
+  Geste läuft — sonst feuerten beide auf dieselbe Taste und der Abbruch endete in einer leeren
+  statt in der ursprünglichen Auswahl.
+- **`pointercancel`** (verlorener Zeiger) wird wie Escape behandelt: sauberer Abbruch auf die
+  Baseline, kein Schreibvorgang, keine hängende Interaktion.
+
+### 4a.7 Ausdrücklich nicht gebaut
+
+- **Kein Explorer-Range.** `Klick r1c1`, dann `Shift-Klick r1c5` wählt **nicht** r1c1–r1c5 aus.
+  Shift-Klick bleibt „genau eine Zelle hinzufügen"; das Rechteck-Ziehen deckt den Fall flexibler ab.
+- **Kein Pinselmodus.** Mit gehaltenem Shift über Zellen zu fahren malt keine Auswahl; relevant ist
+  nur das Gebiet zwischen Anker und aktueller Zelle.
+- **Kein freies Pixel-Marquee**, siehe 4a.3.
+- **Keine Tastatur-Range** (Pfeiltasten, Ctrl+A) — unverändert, siehe Abschnitt 15.
 
 ### 4.2 Abgeleitete Regeln
 
@@ -309,6 +418,43 @@ bräche die Regel *Modifier schreibt nie*.
 derselben Prioritätsregel auf wie auf einer Zelle — Shift gewinnt, die Geste ist also `hinzufügen`.
 Die Lesart „alle dieser Farbe aus der Auswahl entfernen“ bleibt für später reserviert.
 
+### 8.2 Ephemere Auswahlfarbe (beschlossen 2026-09-18)
+
+Wer eben Rot auf seine Auswahl angewendet hat und sie danach per Shift erweitert, meint fast immer:
+**die neuen Zellen bitte auch rot.** Dafür gibt es keinen Pinsel und keinen Modus, sondern eine
+Eigenschaft der *laufenden Auswahl*:
+
+```
+Auswahl vorhanden + normaler Klick auf ein Farbfeld
+→ Farbe anwenden (unverändert)
+→ zusätzlich: diese Farbe ist ab jetzt die Auswahlfarbe
+```
+
+- **„Keine Farbe“ ist eine ebenso bewusste Wahl** und wird genauso scharf gestellt: danach
+  hinzugefügte Zellen werden ungefärbt.
+- **Modifier-Klicks auf Farbfeldern ändern sie nie** — sie schreiben nicht, und sie stellen nichts
+  scharf. Die Regel „ein Modifier auf einem Farbfeld schreibt nie“ bleibt vollständig gültig.
+- **Ohne Auswahl passiert nichts**, insbesondere wird nichts scharf gestellt. Es gibt keinen
+  dauerhaft „bewaffneten“ Farbpinsel.
+
+**Wirkung:** Eine additive Geste — Shift-Klick wie Shift-Rechteck — färbt **genau die Zellen, die
+sie neu hinzufügt**. Bereits ausgewählte Zellen werden nicht erneut angefasst, und ein
+Strg-Entfernen färbt grundsätzlich nichts: Eine rote Zelle, die aus der Auswahl entfernt wird,
+bleibt rot. Auswahl und Zellfarbe bleiben getrennte Konzepte.
+
+**Lebensdauer:** Die Auswahlfarbe gehört der Auswahl-Session und stirbt mit ihr — Auswahl geleert,
+Escape, Edit-Mode verlassen, Kategorie oder Variant gewechselt, Grid-Kontext gewechselt. Eine Regel
+deckt alle diese Fälle ab, weil sie alle damit enden, dass die Auswahl ein anderes Grid oder gar
+keines mehr benennt. Sie wird **nicht persistiert**: nicht in `data.json`, nicht in den Settings,
+nicht in einem Template.
+
+**Schreibverhalten:** Während des Ziehens wird **nichts** gespeichert; die Zellen zeigen die Farbe
+nur als Vorschau. Beim Loslassen fällt **genau eine** gebündelte Persistenzoperation für alle neu
+hinzugekommenen Zellen an. Die Vorschau bleibt stehen, bis der Schreibvorgang wirklich in den
+gespeicherten Farben angekommen ist — sonst blitzte für ein paar Frames die alte Farbe auf, während
+die Settings nachziehen (dasselbe Problem, für das die Resize-Vorschau ihre Geometrie hält). Ein
+abgebrochener oder abgelehnter Schreibvorgang lässt die Vorschau sofort fallen.
+
 ---
 
 ## 9. Darstellung
@@ -466,10 +612,15 @@ wird es **nicht** gebaut.
 
 ## 15. Nichtziele v1
 
-- Marquee-/Rahmenauswahl, Aufziehen eines Rechtecks
-- Shift-Rechteckauswahl, Range Selection
+> **Zwei Punkte dieser Liste sind am 2026-09-18 bewusst überholt worden:** die Rechteck-Auswahl per
+> Modifier-Drag (Abschnitt 4a) und die „aktuelle Farbe“ in Gestalt der ephemeren Auswahlfarbe
+> (Abschnitt 8.2). Alles Übrige gilt weiter — insbesondere bleibt das **freie Pixel-Marquee** ein
+> Nichtziel, ebenso die Explorer-artige Range-Auswahl per Shift-Klick und der Pinselmodus.
+
+- freies Pixel-Marquee: Rahmen aufziehen, Auswahl über Überlappungsanteil, 50-%-Schwelle
+- Range Selection per Shift-Klick (Anker → Ziel)
 - Toggle-Selection, zusätzlicher „Select cells“-Sub-Mode
-- Multi-Drag, Drag Painting, Paint-/Pinsel-Modus, „aktuelle Farbe“
+- Multi-Drag, Drag Painting, Paint-/Pinsel-Modus, dauerhaft bewaffneter Farbpinsel
 - Pipette
 - freier RGB-Colorpicker, gespeicherte oder editierbare Palette
 - gespeicherte Auswahl
@@ -493,10 +644,10 @@ wird es **nicht** gebaut.
 | 3 Selection Domain Model (Zelle als Einheit, Kontextschlüssel, I-KEY) | gültig |
 | 4 State Ownership (ephemer, React-State, eigener Context) | gültig |
 | **5 Interaction Model (Sub-Mode, Overlay, Toggle)** | **ersetzt durch Abschnitte 3–6 dieses Dokuments** |
-| **5.5 Click-Semantik (Toggle, Shift-Rechteck)** | **ersetzt durch Abschnitt 4** |
+| **5.5 Click-Semantik (Toggle, Shift-Rechteck)** | **ersetzt durch Abschnitt 4**; das Rechteck kehrt als Modifier-DRAG zurück (Abschnitt 4a), nicht als Shift-Klick |
 | 5.6 Escape / Klick außerhalb | gültig, siehe Abschnitt 4.2 |
 | 5.7 Ort der Bedienelemente | gültig in der Begründung; Platzierung präzisiert in Abschnitt 10 |
-| **6 Marquee** | **entfällt** (Nichtziel) |
+| **6 Marquee** | freies Pixel-Marquee bleibt Nichtziel; zellengerastertes Rechteck per Modifier-Drag ist gebaut (Abschnitt 4a) |
 | 7 Dynamic-Variant-Semantik, I-CTX, Variant-Pin | gültig, siehe Abschnitt 11 |
 | 8 Grid Resize, I-DIM | gültig, siehe Abschnitt 13 |
 | 9 Cell Color Consumer, Farbwertmodell, Rendering, Spezifitätskontrakt | gültig; Palette und Grau-Sonderfall präzisiert in Abschnitt 7.1 |
@@ -527,3 +678,50 @@ Technische Details in `docs/ocap/HANDOFF.md` §2d, Begründungen in `DECISIONS.m
 Abweichungen von diesem Dokument, jeweils als Präzisierung markiert: Tastaturaktivierung wählt aus,
 statt wirkungslos zu sein (§3); die Modifier-Vorschau der Leiste ist zurückgestellt (§10); Shift auf
 einem Farbfeld ist entschieden (§8.1).
+
+**Nachtrag 2026-09-18 (zweite Runde, nach der manuellen Abnahme im Smoke-Vault):**
+
+- **Rechteck-Auswahl per Modifier-Drag** implementiert (§4a). Pure Kernlogik in
+  `src/utils/gridRectangleSelection.ts`, Zeigerschicht in
+  `src/hooks/useCellRectangleSelection.ts`, DnD-Guard in `src/utils/dragSelectionGuard.ts`.
+- **Ephemere Auswahlfarbe** implementiert (§8.2), Zustand in `PanelContent`, verteilt über
+  `GridCellSelectionContext`. Nichts davon erreicht Settings oder Template.
+- **Locked und Edit sind visuell angeglichen** (§19). Kein `settingsVersion`-Bump, kein
+  Template-Format-Bump, keine Datenänderung.
+
+---
+
+## 19. Locked und Edit sehen gleich aus (2026-09-18)
+
+> Der Moduswechsel ändert das Bedienverhalten, nicht das Layout des Panels.
+
+Die manuelle Abnahme zeigte drei Stellen, an denen derselbe Grid nach dem Sperren wie ein anderes
+Panel aussah. Alle drei waren Unfälle der Spezifität bzw. des Layouts, keine Absicht:
+
+1. **Der Tool-Inhalt saß links statt im Slot.** `.icon-top` / `.icon-left` geben der Schaltfläche
+   eine *feste* Breite (56 px / 96 px) mit Spezifität 0-4-2. Im Edit-Mode fügt der Drag-Wrapper
+   (`.sortable-button-item`) eine Klasse hinzu, wodurch die `width: 100%`-Regel des Grids ebenfalls
+   0-4-2 erreicht und per Quellreihenfolge gewinnt. Im Locked-Mode gibt es diesen Wrapper nicht
+   (`ButtonItem` rendert die Schaltfläche direkt in die Zelle), die Regel blieb bei 0-3-2 und verlor
+   — das Tool war 56 px breit in einer viel breiteren Zelle, also linksbündig. Behoben, indem die
+   Layout-Klasse mitbenannt wird (0-5-2), wodurch die Regel in beiden Modi und unabhängig von der
+   Konkatenationsreihenfolge gewinnt.
+2. **Der Hover war ein Button-Hover.** Dieselbe Kollision: `.icon-top`/`.icon-left` setzen
+   `background-color: transparent` und überstimmen den Basis-Hover aus `Button.css`, sodass ein
+   Tool im Grid **in keinem Modus** einen Hover-Grund hatte — sichtbar war nur ein Schlagschatten,
+   dessen Größe wegen (1) zwischen den Modi sprang. Der Grid gibt dem Tool jetzt einen eigenen
+   Hover-Grund (0-5-2), der die ganze Zelle füllt und der Regel für **gefärbte** Zellen (gleiche
+   Spezifität, später) weiterhin unterliegt — eine deckende Fläche über einer gefärbten Zelle
+   verdeckte genau die Farbe, die der Nutzer bearbeitet.
+3. **Die Grid-Grenzen fehlten.** Raster und äußerer Rahmen hingen an `--managed`, also am Edit-Mode.
+   Sie gelten jetzt in jedem Modus; `--managed` behält nur noch, was wirklich zum Bearbeiten gehört
+   (Hover einer leeren Zelle, Greif-Cursor). Geometrie bleibt unberührt: die 1-px-Zellborder
+   existiert ohnehin in jedem Modus (transparent), der Rahmen ist ein `outline`.
+
+Dazu kam ein vierter Punkt, den erst die Messung im laufenden Obsidian zeigte: **die 16 px breite
+Resize-Rinne gibt es nur im Edit-Mode**, wodurch bei vier Spalten jede Zelle beim Sperren um 4 px
+wuchs — das ganze Raster sprang. Die Griffe bleiben eine Edit-Affordanz, ihr **Platz** wird im
+Locked-Mode aber als leere, zeigerdurchlässige Rinne reserviert.
+
+Edit-only bleiben: Auswahlrahmen, die `+`-Ecken, die Farbleiste, die Resize-Griffe und der
+Variant-Selektor. Locked-only bleibt: das Tool ausführen.

@@ -473,11 +473,93 @@ deployt, nicht gepusht. Normative Spezifikation:
   `tests/paletteGridGeometry.test.ts` +17 (Spezifitäts- und Reihenfolge-Kontrakt,
   `+`-Geometrie, Palette, plus ein Quelltext-Scan des Escape-Handlers).
   Gesamt **1020**.
-- Noch offen (bewusst v1-Nichtziele): Marquee, Range/Rechteck, Multi-Drag,
-  Pipette, freier RGB-Picker, Undo, Keyboard-Pfeilauswahl, Delete/Export
-  Selected, ZotFlow-Color-Seeding. Ebenfalls zurückgestellt: die Leiste zeigt
-  noch nicht an, welche Farben im Grid vorkommen, solange ein Modifier gehalten
-  wird (Spezifikation §10) — der Tooltip nennt alle drei Bedeutungen.
+- Noch offen (bewusst v1-Nichtziele): freies Pixel-Marquee, Shift-Klick-Range,
+  Multi-Drag, Pipette, freier RGB-Picker, Undo, Keyboard-Pfeilauswahl,
+  Delete/Export Selected, ZotFlow-Color-Seeding. Ebenfalls zurückgestellt: die
+  Leiste zeigt noch nicht an, welche Farben im Grid vorkommen, solange ein
+  Modifier gehalten wird (Spezifikation §10) — der Tooltip nennt alle drei
+  Bedeutungen.
+
+## 2e. Rechteck-Auswahl, DnD-Vorrang, Auswahlfarbe, Locked/Edit-Parität (Stand 2026-09-18, zweite Runde)
+
+Spezifikation: `docs/ocap/cell-selection-colors.md` §4a, §8.2, §19.
+Drei `DECISIONS.md`-Einträge vom selben Tag.
+
+**Pure Kernlogik — `src/utils/gridRectangleSelection.ts`:**
+`rectangleCellKeys(a, b, dimensions)` (inklusiv, richtungsfrei, auf das Grid
+geclippt), `nearestTrackIndex` / `cellAtPoint` (Messung gegen Track-MITTEN, damit
+Lücken und der Grid-Rand keine toten Zonen haben; bei exakter Gleichheit gewinnt
+der spätere Track), `rectangleSelectionCells(baseline, rectangle, gesture)` und
+`cellsAddedByRectangle(baseline, rectangle)`. Kein DOM, kein React, keine
+Settings.
+
+**Zeigerschicht — `src/hooks/useCellRectangleSelection.ts`:**
+Bewusst schlichte Dokument-Listener wie `useGridResizeDrag`, mit zwei tragenden
+Abweichungen:
+
+- **kein `setPointerCapture`.** Capture retargetet auch die
+  Kompatibilitäts-Mausereignisse, sodass ein Druck, der sich nie bewegt hat,
+  seinen `click` an den Grid-Container statt an die getroffene Zelle liefern
+  würde — und genau dieser Klick ist der Einzelzellen-Fallback (`Shift-Klick =
+  eine Zelle`), der unverändert funktionieren muss;
+- **kein `preventDefault` beim PointerDown**, aus demselben Grund. Die
+  Textauswahl wird stattdessen per `user-select: none` auf dem Grid ferngehalten.
+
+Die Geometrie (Grid-Box, Track-Größen, Gaps, Dimensionen) wird **einmal beim
+PointerDown** gemessen; ein Grid, das sich mitten in der Geste ändert, kann die
+Rechnung deshalb nicht verschieben. Die Schwelle ist dieselbe euklidische 4-px-
+Distanz wie beim Drag-Sensor und beim Klick-Check, und sie **rastet ein**: Ist
+der Druck einmal ein Drag, bleibt er es, auch wenn der Zeiger zurückwandert
+(`onActivate` verwirft dafür den Klick-Ursprung im Grid).
+
+**DnD-Vorrang.** Zwei Stellen, kein globaler Schalter:
+
+- `CategoryButtonGrid.handleGridPointerDownCapture` beansprucht einen
+  Modifier-Druck in der **Capture-Phase** und ruft `stopPropagation()`. Damit
+  erreicht er weder den dnd-kit-Aktivator des Tools darunter noch den
+  Kategorie-Drag darüber — auf belegten wie auf leeren Zellen, und auch auf dem
+  `+` (das seinen Klick bei gehaltenem Modifier ohnehin durchreicht);
+- `src/utils/dragSelectionGuard.ts` (`suppressDragOnSelectionModifier`) umhüllt
+  `onPointerDown` der dnd-kit-Listener auf `SortableCategoryBlock`,
+  `SortableCategoryTab` und `SortableCategoryFolder`. Nur der Pointer-Aktivator:
+  der Touch-Sensor aktiviert auf `onTouchStart`, und ein Touch trägt keinen
+  Modifier — Touch-Verhalten bleibt unangetastet.
+
+**Ephemere Auswahlfarbe.** `CellPaintColor = { color: string | null }` (das
+Wrapper-Objekt trennt „nichts scharf" von „ungefärbt scharf"), Zustand in
+`PanelContent`, verteilt über `GridCellSelectionContext` (`paint`, `armPaint`).
+Zurückgesetzt von **einem** Effekt, der auf `gridContextKey(selection.context)`
+hört — nicht auf die Objektidentität, denn `applyCellGesture` liefert bei jeder
+Zellenänderung einen frischen Kontext und würde die Farbe genau bei der Geste
+entwaffnen, die sie tragen soll. Während des Ziehens wird nichts gespeichert;
+`handlePointerUp` löst **eine** gebündelte `applyCellColor`-Operation aus und
+hält die Vorschau (`pendingPaintRef`), bis `cellStyles` die Farbe wirklich trägt
+— ein abgelehnter Schreibvorgang (read-only-Konfiguration) lässt sie sofort
+fallen.
+
+**Escape-Vorrang.** `cellGestureActive` im Selection-Context; `CellSelectionEscape`
+tritt zurück, solange eine Rechteck-Geste läuft, genau wie es das für einen Drag
+tut. Sonst feuerten beide auf dieselbe Taste und der Abbruch endete in einer
+leeren statt in der Baseline-Auswahl.
+
+**Locked/Edit-Parität — `PaletteGrid.css` + `CategoryButtonGrid`:**
+Raster (Zellborder, äußerer `outline`, Grund gefüllter/leerer Zellen) hängt nicht
+mehr an `--managed`; `--managed` trägt nur noch Hover einer leeren Zelle und den
+Greif-Cursor. Die Breitenregel für das Tool benennt die Layout-Klasse mit
+(`.icon-top`/`.icon-left`, 0-5-2), weil die Upstream-Regeln dort eine FESTE
+Breite bei 0-4-2 setzen und im Locked-Mode der Drag-Wrapper fehlt, der die
+Grid-Regel im Edit-Mode auf Gleichstand hob. Derselbe Konflikt hatte den
+Hover-Grund eines Tools in **beiden** Modi ausgeschaltet; der Grid setzt ihn
+jetzt selbst (0-5-2) und bleibt damit unter der Regel für gefärbte Zellen
+(gleiche Spezifität, später — eine deckende Fläche verdeckte sonst die Farbe).
+Der Frame wird in jedem Modus gerendert; im Locked-Mode stehen statt der
+Resize-Zonen leere `ocap-grid-gutter`-Platzhalter mit `pointer-events: none`,
+damit die 16 px Rinne die Zellbreiten nicht zwischen den Modi verschieben.
+
+Tests: `tests/gridRectangleSelection.test.ts` (31),
+`tests/cellSelectionGesturePrecedence.test.ts` (26, davon ein Teil
+Quelltext-Scans nach dem Muster des Escape-Kontrakts),
+`tests/paletteGridGeometry.test.ts` +4. Gesamt **1081**.
 
 ## 2. Produktmodell
 

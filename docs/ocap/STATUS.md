@@ -1,10 +1,70 @@
 # OCAP – Status
 
-Last updated: 2026-09-18 (Cell Selection + Cell Colors v1 — implemented locally
-and live-smoke-tested in an isolated Obsidian; awaiting the user's own manual
-and productive validation)
+Last updated: 2026-09-18 (Rectangle cell selection + locked/edit visual parity —
+implemented locally and live-smoke-tested in an isolated Obsidian; awaiting the
+user's own manual UX acceptance)
 
 ## Newest work first
+
+- **Locked/Edit visual parity + modifier rectangle selection + ephemeral paint
+  colour (2026-09-18, second round) — implemented locally, live-smoke-tested,
+  deployed only to the disposable smoke vault. Not pushed, not in the productive
+  vault, awaiting Max's manual UX acceptance.** Specification:
+  `docs/ocap/cell-selection-colors.md` §4a, §8.2, §19; three new entries in
+  `DECISIONS.md`.
+  - **Locked and edit now render the same panel.** The manual test reported that
+    the design "jumps" on a mode switch, and it did, for four reasons — three of
+    them accidents: (a) `.icon-top`/`.icon-left` pin a FIXED button width at
+    0-4-2, which the grid's `width: 100%` only beat in edit mode because the drag
+    wrapper adds a class, so a locked tool sat 56px wide and left-aligned in a
+    much wider cell; (b) the same collision killed the tool's hover ground in
+    BOTH modes, leaving only a drop shadow whose size jumped with (a); (c) the
+    raster and the outer frame were gated on `--managed`, i.e. on edit mode; and
+    (d) — found only by measuring in a running Obsidian — the 16px resize gutter
+    exists only in edit mode, so every cell of a 4-column grid grew by 4px on
+    locking. Fixed by naming the layout class (0-5-2), giving the slot a real
+    hover ground that loses to the coloured-cell rule, drawing the raster in
+    every mode, and reserving the gutter as an empty pointer-through spacer in
+    locked. `--managed` now gates only genuine editing chrome (empty-cell hover,
+    grab cursor).
+  - **Shift-drag adds a rectangle of cells, Ctrl/Cmd-drag removes one** — the
+    same semantics as the click, applied to an area. Cell-gridded, never pixel
+    geometry; direction-free; the pointer always resolves to the nearest track so
+    gutters and the grid edge have no dead zones. Below the 4px threshold the
+    gesture IS the existing single-cell click. Every step derives from the
+    pointer-down BASELINE, so grow/shrink inside one gesture is exact. Escape and
+    `pointercancel` restore the baseline and write nothing.
+  - **A modifier press reserves the selection**: no tool move, no swap, no
+    category reorder, on filled and empty cells alike. Claimed in the capture
+    phase inside a grid, and by wrapping dnd-kit's activator on the list-view
+    category block, the tabs and the folder tiles. No global switch, nothing that
+    a key-up can leave stuck.
+  - **Ephemeral selection paint colour:** applying a colour arms it for that
+    selection session, so a following additive gesture paints exactly the cells
+    it adds ("no colour" included). Modifier swatch clicks never arm it. Nothing
+    is written during a drag; pointer-up produces ONE bundled write, and the
+    preview is held until the stored styles carry it. Never persisted.
+  - **No settings-version bump, no template-format bump, no data change.**
+  - Tests: **1081/1081** (38 files; +61 over the previous round in
+    `tests/gridRectangleSelection.test.ts`,
+    `tests/cellSelectionGesturePrecedence.test.ts` and the extended
+    `tests/paletteGridGeometry.test.ts`). `tsc --noEmit`, `eslint .` and
+    `npm run build` all green.
+  - **Live smoke (2026-09-18): 69/69 checks in a real, isolated Obsidian
+    1.13.7**, driven by trusted CDP mouse and key input against a snapshot of the
+    smoke vault in a scratch Electron profile (the user's Obsidian and both real
+    vaults untouched). Verified live: identical grid/cell/tool geometry and
+    raster in both modes, slot-wide hover, locked execution, edit selection;
+    rectangles 1xN, Nx1, 2x3, reverse diagonal, grow-and-shrink, Ctrl removal,
+    sub-threshold clicks, live preview, Escape restore, the cross-grid rule, and
+    a rectangle from all 16 start cells; a Shift drag on a tool never moving it
+    while a plain drag still does; category reorder suppressed with a modifier
+    and working without one; paint carried through Shift rectangles with exactly
+    ONE settings write, Ctrl removal writing nothing, Escape committing nothing,
+    "no colour" armed the same way, and no paint state anywhere in the settings;
+    `Ctrl`/`Shift` + swatch unchanged and still write-free; colours in locked
+    mode and across a plugin reload; the resize-edge drag. Console: no errors, no
+    unhandled rejections.
 
 - **Cell Selection + Cell Colors v1 (2026-09-18) — implemented locally and
   live-smoke-tested; NOT yet validated by the user, and NOT in the productive
@@ -17,7 +77,9 @@ and productive validation)
   - Selection is the **cell coordinate** in one grid context, ephemeral React
     state in `PanelContent`, never persisted. Gestures: plain = replace,
     Shift = add, Ctrl/Cmd = remove. No toggle, no range, no marquee, no
-    sub-mode, no multi-drag.
+    sub-mode, no multi-drag. *(Superseded in part the same day: a modifier DRAG
+    now spans a cell rectangle — see the entry above. A free pixel marquee and
+    the Shift-click range remain non-goals.)*
   - Colors use the **existing `cellStyles`** — no `settingsVersion` bump, no
     template format bump. One commit per color application, whatever the
     selection size.
