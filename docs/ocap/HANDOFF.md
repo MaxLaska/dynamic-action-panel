@@ -814,6 +814,24 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Cell-Key-Helfer, `gridCellColor.ts`, `setCellColorsInState`, Unit-Tests; keine
   UI). Danach B (Farben rendern: `ResolvedGridView` reicht `cellStyles` heute
   NICHT bis zum Renderer durch), C (Select Mode), D (Apply Color), E (Marquee).
+- **ZotFlow-Annotationen als Tools: analysiert, NICHT implementiert.**
+  `docs/ocap/audits/2026-09-18-zotflow-annotation-integration.md` (ZotFlow
+  1.6.5, Code + empirisch in isolierter Instanz, adversarial reviewt).
+  Kernbefunde: Identität lokal = `(PDF-Vault-Pfad, 8-stellige Annotation-ID
+  aus der `.zf.json`)`; Wiederöffnen läuft über ZotFlows eigenen
+  Link-Contract `#page=<label>#annotation=<urlencoded {annotationID,pageIndex}>`
+  (Obsidian-Subpath, exakt + Seiten-Fallback, verifiziert; `#page=` =
+  `pageIndex+1`); der native Drag-Payload lokaler Annotationen ist
+  `text/plain` = `![[<SourceNote>#^<id>]]` (Regelfall: 7 der 8 annotierten
+  PDFs haben eine Source Note) bzw. `" "` ohne Note — Identität kommt aus
+  dem Embed + Frontmatter `zotflow-local-attachment` (Level 1), Seite/Text
+  fürs Label und der No-Note-Fall aus dem Same-Origin-Reader-Iframe
+  (`_draggingAnnotationIDs`, einzige Level-3-Stelle, ein Adapter).
+  Library-Annotationen: `obsidian://zotflow?type=open-annotation…`
+  über die bestehende `url`-Action. **Empfohlene v1:** `FileActionParams.subpath?`
+  (generisch) + `FileService`-Bereits-offen-Fall via `setEphemeralState` +
+  `templateParse`-Übernahme; dann Drop-Adapter. Kein neuer Action-Typ, kein
+  `settingsVersion`-/`formatVersion`-Bump.
 
 0. **Produktiv-Deployment des v5-Builds ist erledigt** (Abschnitt 1), ebenso die
    Plugin-Identity-Migration auf `dynamic-action-panel`.
