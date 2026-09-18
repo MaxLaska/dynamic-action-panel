@@ -19,7 +19,12 @@
 // stored functions. Edits follow the immutable-edit convention from
 // DECISIONS.md (changed objects are replaced, unchanged ones keep identity).
 
-import type { ButtonConfig, CategoryConfig, CategoryVariant } from '@/types/settings';
+import type {
+    ButtonConfig,
+    CategoryConfig,
+    CategoryVariant,
+    GridCellStyles,
+} from '@/types/settings';
 import type { ButtonCondition } from '@/types/conditions';
 import type { WorkspaceContextSnapshot } from '@/context/workspaceContext';
 import { evaluateCondition, isValidCondition } from '@/context/conditions';
@@ -255,6 +260,14 @@ export interface ResolvedGridView {
     slots: (ButtonConfig | null)[];
     /** Buttons that could not be placed. Never dropped, rendered separately. */
     overflow: ButtonConfig[];
+    /**
+     * Cell metadata of exactly this grid — the variant's own, or the static
+     * category's. Passed through BY REFERENCE from the object that also gave
+     * `dimensions`, never copied and never mutated: the same object is reachable
+     * from the stored settings, so writing to it here would edit the
+     * configuration behind the commit funnel's back.
+     */
+    cellStyles?: GridCellStyles;
 }
 
 function emptyView(reason: GridViewReason, dimensions: GridDimensions): ResolvedGridView {
@@ -271,7 +284,8 @@ function viewOfButtons(
     buttons: readonly ButtonConfig[],
     dimensions: GridDimensions,
     variantId: string | null,
-    reason: GridViewReason
+    reason: GridViewReason,
+    cellStyles: GridCellStyles | undefined
 ): ResolvedGridView {
     const placement = placeButtonsOnGrid(buttons, dimensions);
     return {
@@ -280,6 +294,7 @@ function viewOfButtons(
         dimensions,
         slots: placement.slots,
         overflow: placement.overflow,
+        ...(cellStyles === undefined ? {} : { cellStyles }),
     };
 }
 
@@ -297,7 +312,8 @@ export function resolveGridViewForVariant(
             category.buttons,
             readGridDimensions(category),
             null,
-            'static'
+            'static',
+            category.cellStyles
         );
     }
     const variants = getCategoryVariants(category);
@@ -310,7 +326,8 @@ export function resolveGridViewForVariant(
         variant.buttons,
         readGridDimensions(variant),
         variant.id,
-        'selected'
+        'selected',
+        variant.cellStyles
     );
 }
 
@@ -324,7 +341,8 @@ export function resolveGridViewForContext(
             category.buttons,
             readGridDimensions(category),
             null,
-            'static'
+            'static',
+            category.cellStyles
         );
     }
     const resolution = resolveDynamicCategoryVariant(category, context);
@@ -335,7 +353,8 @@ export function resolveGridViewForContext(
         resolution.variant.buttons,
         readGridDimensions(resolution.variant),
         resolution.variant.id,
-        resolution.reason
+        resolution.reason,
+        resolution.variant.cellStyles
     );
 }
 

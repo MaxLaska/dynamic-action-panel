@@ -33,7 +33,9 @@ import {
     findFirstFreeSlot,
     getCategoryLayout,
     gridSlotCount,
+    isCellKeyInsideGrid,
     isGridCategory,
+    isGridCellColor,
     isValidSlotIndex,
     readGridDimensions,
     resizeGridButtons,
@@ -529,6 +531,115 @@ export function commitStoredGridResize(
         tools: gcTools(state.tools, categories, plan.removedToolIds),
         categories,
     };
+}
+
+// --- Cell colors ----------------------------------------------------------------
+
+/**
+ * Set (or clear) the color of a set of CELLS in one grid.
+ *
+ * The unit is the cell coordinate, so a cell is colored whether a tool sits on
+ * it or not — this operation does not even look at the occupancy. It touches
+ * nothing but `cellStyles`: no placement, no registry entry, no other variant,
+ * and it never garbage-collects.
+ *
+ * Target resolution is STRICTER than `resolveGridVariantId` on purpose and does
+ * not use it: that helper reads `variantId === null` on a dynamic category as
+ * "the first variant", which is right for a write the user aimed at a category
+ * but wrong for a selection, whose `null` means "the static grid". A mismatch
+ * must therefore color nothing rather than the wrong grid:
+ *
+ * - static/flow category  ⇒ only `variantId === null`;
+ * - dynamic category      ⇒ only a `variantId` that actually exists.
+ *
+ * Every refusal — no such category, no grid, wrong variant shape, a color that
+ * is not a portable value — returns the very SAME state object, so a caller can
+ * tell "nothing to do" from "done" by identity and skip the commit.
+ *
+ * @param color the stored color value, or null to clear the cells.
+ */
+export function setCellColorsInState(
+    state: ToolState,
+    categoryId: string,
+    variantId: string | null,
+    cells: readonly string[],
+    color: string | null
+): ToolState {
+    if (cells.length === 0) {
+        return state;
+    }
+    if (color !== null && !isGridCellColor(color)) {
+        // Validated in the domain, not in the UI: nothing may write a value the
+        // template parser would later reject.
+        return state;
+    }
+
+    const category = findCategory(state, categoryId);
+    if (!category || !isGridCategory(category)) {
+        return state;
+    }
+
+    const dynamic = isDynamicCategory(category);
+    const variant = variantId !== null ? findVariant(category, variantId) : null;
+    if (dynamic !== (variantId !== null) || (variantId !== null && !variant)) {
+        return state;
+    }
+
+    const owner: GridCellStyleFields = variant ?? category;
+    const dimensions = gridDimensionsOf(category, variantId);
+
+    // A key outside the grid can neither be shown nor cleaned up, so it is
+    // ignored rather than written — the same strip rule as a resize.
+    const inside = cells.filter((cell) => isCellKeyInsideGrid(cell, dimensions));
+    if (inside.length === 0) {
+        return state;
+    }
+
+    const current = owner.cellStyles;
+    const next: GridCellStyles = { ...cloneGridCellStyles(current) };
+    let changed = false;
+    for (const cell of inside) {
+        const entry = current?.[cell];
+        if (color === null) {
+            if (entry?.color === undefined) {
+                continue;
+            }
+            // Clearing removes the color, and an entry that carried nothing
+            // else goes with it, so untouched data stays byte-identical to
+            // data written before cell colors existed.
+            const { color: _drop, ...rest } = entry;
+            if (Object.keys(rest).length === 0) {
+                delete next[cell];
+            } else {
+                next[cell] = rest;
+            }
+            changed = true;
+            continue;
+        }
+        if (entry?.color === color) {
+            continue;
+        }
+        // Other style fields of the cell survive: a GridCellStyle may carry
+        // more than a color later.
+        next[cell] = { ...entry, color };
+        changed = true;
+    }
+
+    if (!changed) {
+        return state;
+    }
+
+    const styles = Object.keys(next).length === 0 ? undefined : next;
+    const nextCategory: StoredCategory = variant
+        ? {
+              ...category,
+              variants: (category.variants ?? []).map((entry) =>
+                  entry.id === variant.id ? setCellStyles(entry, styles) : entry
+              ),
+          }
+        : setCellStyles(category, styles);
+
+    return withCategory(state, nextCategory);
 }
 
 // --- Variant operations ----------------------------------------------------------
