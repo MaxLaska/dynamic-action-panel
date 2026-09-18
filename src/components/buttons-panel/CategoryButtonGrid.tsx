@@ -15,6 +15,7 @@ import { useButtonDragOptional } from '@/contexts/ButtonDragContext';
 import { ButtonDragEmptySlot } from '@/components/buttons-panel/ButtonDragEmptySlot';
 import { GridSlotCell } from '@/components/buttons-panel/GridSlotCell';
 import { GridRectanglePreview } from '@/components/buttons-panel/GridRectanglePreview';
+import { GridSelectionOutline } from '@/components/buttons-panel/GridSelectionOutline';
 import {
     GridResizeEdgeZone,
     GridResizeReadout,
@@ -636,10 +637,16 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                 onClick={selectionActive ? handleGridClick : undefined}
             >
                 {cells}
-                {/* The running gesture, drawn as ONE box over the whole block
-                    (see GridRectanglePreview). It is the last child so it sits
-                    above the cells, and it is out of flow, so it cannot
-                    displace them. */}
+                {/* The PERSISTENT layer: the contour of what is selected right
+                    now, in its real shape. It outlives the gesture that
+                    produced it, which is the whole point — a selection built by
+                    subtracting a block from a larger one is unreadable from the
+                    wash alone. */}
+                <GridSelectionOutline cells={selectedCells} dimensions={dimensions} />
+                {/* The running gesture, drawn as ONE dashed box over the whole
+                    block (see GridRectanglePreview). Last child and above the
+                    contour, so "what am I doing" is never mistaken for "what is
+                    selected"; out of flow, so neither can displace a cell. */}
                 {rectangle.preview && (
                     <GridRectanglePreview
                         bounds={rectangle.preview.bounds}

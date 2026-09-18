@@ -222,6 +222,59 @@ describe('the gesture draws itself, separately from the selection', () => {
         expect(gridEl.indexOf('{cells}')).toBeLessThan(gridEl.indexOf('GridRectanglePreview'));
     });
 
+    it('stays clearly apart from the PERSISTENT selection contour', () => {
+        const gridEl = grid.slice(grid.indexOf('const gridEl ='), grid.indexOf('const availability'));
+        // Three layers, in this order: the cells (wash), the contour of what is
+        // selected, and the gesture on top of both.
+        expect(gridEl.indexOf('{cells}')).toBeLessThan(
+            gridEl.indexOf('GridSelectionOutline')
+        );
+        expect(gridEl.indexOf('GridSelectionOutline')).toBeLessThan(
+            gridEl.indexOf('GridRectanglePreview')
+        );
+    });
+});
+
+describe('the persistent selection contour', () => {
+    const grid = codeOf('components/buttons-panel/CategoryButtonGrid.tsx');
+    const outline = codeOf('components/buttons-panel/GridSelectionOutline.tsx');
+
+    it('is drawn from the SELECTION, not from the gesture', () => {
+        // It has to outlive the gesture that produced it — that is the point.
+        expect(grid).toMatch(
+            /<GridSelectionOutline cells=\{selectedCells\} dimensions=\{dimensions\} \/>/
+        );
+        expect(outline).not.toMatch(/preview|gesture|rectangle/i);
+    });
+
+    it('traces the real shape, never a bounding box', () => {
+        expect(outline).toMatch(/selectionOutlinePieces\(cells, dimensions\)/);
+        // A bounding box would be a single element with a span; the contour is
+        // one piece per cell, keyed by the cell itself.
+        expect(outline).toMatch(/pieces\.map\(\(piece\) =>/);
+        expect(outline).toMatch(/key=\{piece\.cell\}/);
+    });
+
+    it('draws a side only where the neighbour is not selected', () => {
+        const core = codeOf('utils/gridSelectionOutline.ts');
+        expect(core).toMatch(/top:\s*!selected\(row - 1, column\)/);
+        expect(core).toMatch(/right:\s*!selected\(row, column \+ 1\)/);
+        expect(core).toMatch(/bottom:\s*!selected\(row \+ 1, column\)/);
+        expect(core).toMatch(/left:\s*!selected\(row, column - 1\)/);
+    });
+
+    it('reaches into a gutter only where the grid has one', () => {
+        const core = codeOf('utils/gridSelectionOutline.ts');
+        expect(core).toMatch(/top:\s*row > 0/);
+        expect(core).toMatch(/right:\s*column < dimensions\.columns - 1/);
+        expect(core).toMatch(/bottom:\s*row < dimensions\.rows - 1/);
+        expect(core).toMatch(/left:\s*column > 0/);
+    });
+
+    it('renders nothing when nothing is selected', () => {
+        expect(outline).toMatch(/pieces\.length === 0/);
+    });
+
     it('feeds the cells their transient "leaving" state', () => {
         expect(grid).toMatch(/deselecting=\{rectangle\.preview\?\.removing\.has\(cellKey\)/);
     });

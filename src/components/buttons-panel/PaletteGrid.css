@@ -564,43 +564,91 @@ body .buttons-panel .ocap-palette-grid .ocap-grid-slot.ocap-grid-slot--deselecti
     box-shadow: inset 0 0 0 999px var(--ocap-cell-deselect-tint);
 }
 
-/* --- The rectangle gesture ---------------------------------------------
-   ONE continuous outline over the whole block, gaps included.
+/* --- Selection chrome drawn OVER the grid -------------------------------
+   Two overlays share one piece of arithmetic: the grid's own track sizes,
+   recomputed here from the very tokens the grid is laid out with. So both are
+   exact at any panel width and nothing has to measure a pixel.
 
-   Placed from four integers the gesture publishes (row, column, rows, columns)
-   against the grid's OWN track sizes, recomputed here from the same tokens the
-   grid is laid out with. So it is exact at any panel width, needs no pixel
-   measurement from JS, and spans the gutters on purpose: the cells stay
-   grid-snapped, the shape around them does not have to look it.
-
-   Absolutely positioned (out of flow, so it cannot occupy a track or displace
-   an auto-placed cell) and pointer-transparent (so it can never swallow the
-   gesture it draws). */
-.buttons-panel .ocap-palette-grid .ocap-grid-rect-preview {
-    --ocap-rect-column-size: calc(
+   Both are absolutely positioned — out of flow, so they can neither occupy a
+   track nor displace an auto-placed cell — and pointer-transparent, so neither
+   can swallow a click or the gesture it draws. */
+.buttons-panel .ocap-palette-grid .ocap-grid-overlay {
+    --ocap-track-width: calc(
         (100% - (var(--ocap-grid-columns, 4) - 1) * var(--ocap-grid-gap)) /
             var(--ocap-grid-columns, 4)
     );
+    --ocap-track-height: var(--ocap-grid-row-height);
 
     position: absolute;
+    box-sizing: border-box;
+    border-style: solid;
+    pointer-events: none;
+}
+
+/* --- The persistent selection outline -----------------------------------
+   The contour of what is selected RIGHT NOW — its real shape, not a bounding
+   box. One piece per selected cell, each drawing a border only on the sides
+   whose neighbour is not selected (see src/utils/gridSelectionOutline.ts for
+   why that is the whole algorithm).
+
+   Every piece reaches half a gutter toward each side that HAS an in-grid
+   neighbour, which is what turns tiled boxes into one shape: two neighbouring
+   pieces meet exactly in the middle of the gutter between them, and a concave
+   corner closes exactly for the same reason. At the grid's own boundary there
+   is nothing to meet, so the piece stops at the cell edge and the contour stays
+   inside the grid frame.
+
+   Square corners on purpose: with only some sides drawn, a radius would render
+   as a hook off the ends of a border that has no neighbour to curve into. */
+.buttons-panel .ocap-palette-grid .ocap-grid-outline-piece {
     left: calc(
-        var(--ocap-rect-column, 0) * (var(--ocap-rect-column-size) + var(--ocap-grid-gap))
+        var(--ocap-cell-column, 0) * (var(--ocap-track-width) + var(--ocap-grid-gap)) -
+            var(--ocap-outline-left)
     );
     width: calc(
-        var(--ocap-rect-columns, 1) * var(--ocap-rect-column-size) +
-            (var(--ocap-rect-columns, 1) - 1) * var(--ocap-grid-gap)
+        var(--ocap-track-width) + var(--ocap-outline-left) + var(--ocap-outline-right)
     );
     top: calc(
-        var(--ocap-rect-row, 0) * (var(--ocap-grid-row-height) + var(--ocap-grid-gap))
+        var(--ocap-cell-row, 0) * (var(--ocap-track-height) + var(--ocap-grid-gap)) -
+            var(--ocap-outline-top)
     );
     height: calc(
-        var(--ocap-rect-rows, 1) * var(--ocap-grid-row-height) +
-            (var(--ocap-rect-rows, 1) - 1) * var(--ocap-grid-gap)
+        var(--ocap-track-height) + var(--ocap-outline-top) + var(--ocap-outline-bottom)
     );
-    box-sizing: border-box;
-    border: 2px solid var(--interactive-accent);
-    border-radius: var(--radius-s);
-    pointer-events: none;
+    border-width: var(--ocap-outline-widths, 0);
+    border-color: var(--interactive-accent);
+    border-radius: 0;
+}
+
+/* --- The rectangle gesture ---------------------------------------------
+   ONE box over the whole block the gesture currently covers, gutters included,
+   placed from four integers the gesture publishes (row, column, rows, columns).
+
+   DASHED, and above the persistent contour: "what I am doing right now" must
+   never have to be told apart from "what is selected" by position alone. Where
+   an add-rectangle happens to coincide with the resulting shape the two simply
+   sit on the same line, which is the truth and reads as one edge. */
+.buttons-panel .ocap-palette-grid .ocap-grid-rect-preview {
+    left: calc(
+        var(--ocap-rect-column, 0) * (var(--ocap-track-width) + var(--ocap-grid-gap)) -
+            var(--ocap-grid-gap) / 2
+    );
+    width: calc(
+        var(--ocap-rect-columns, 1) * var(--ocap-track-width) +
+            (var(--ocap-rect-columns, 1) - 1) * var(--ocap-grid-gap) + var(--ocap-grid-gap)
+    );
+    top: calc(
+        var(--ocap-rect-row, 0) * (var(--ocap-track-height) + var(--ocap-grid-gap)) -
+            var(--ocap-grid-gap) / 2
+    );
+    height: calc(
+        var(--ocap-rect-rows, 1) * var(--ocap-track-height) +
+            (var(--ocap-rect-rows, 1) - 1) * var(--ocap-grid-gap) + var(--ocap-grid-gap)
+    );
+    border-width: 2px;
+    border-style: dashed;
+    border-color: var(--interactive-accent);
+    border-radius: 0;
     z-index: 1;
 }
 

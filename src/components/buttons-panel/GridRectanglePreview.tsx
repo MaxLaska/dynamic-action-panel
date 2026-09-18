@@ -29,13 +29,19 @@ interface GridRectanglePreviewProps {
  * auto-placed slot cells (an in-flow grid item would occupy tracks and push
  * them around), and `pointer-events: none`, so it can never swallow the very
  * gesture it draws.
+ *
+ * DASHED, and drawn above the persistent selection contour
+ * (`GridSelectionOutline`), which is solid. The two answer different questions
+ * — "what am I doing right now" against "what is selected" — and a gesture is
+ * provisional until the pointer comes up, which is exactly what a dashed edge
+ * has always meant.
  */
 export const GridRectanglePreview: React.FC<GridRectanglePreviewProps> = ({
     bounds,
     gesture,
 }) => (
     <div
-        className={`ocap-grid-rect-preview ocap-grid-rect-preview--${gesture}`}
+        className={`ocap-grid-overlay ocap-grid-rect-preview ocap-grid-rect-preview--${gesture}`}
         aria-hidden
         style={
             {

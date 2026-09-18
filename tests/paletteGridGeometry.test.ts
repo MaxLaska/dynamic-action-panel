@@ -437,22 +437,51 @@ describe('cell colours and selection', () => {
         }
     });
 
-    it('draws the running gesture as ONE box on the grid tracks', () => {
-        // The shape has to read as a single rectangle, gutters included — that
-        // is the whole point of having it next to the per-cell wash.
-        const preview = ruleBody(/\.ocap-grid-rect-preview$/);
+    it('shares one piece of track arithmetic between both overlays', () => {
+        // Two overlays sit on the grid — the persistent contour and the running
+        // gesture. They must be placed by the SAME tokens the grid is laid out
+        // with, or one of them drifts the first time a track size is tuned.
+        const overlay = ruleBody(/\.ocap-grid-overlay$/);
         // Out of flow: an in-flow grid item would occupy tracks and displace
         // the auto-placed cells.
-        expect(preview).toMatch(/position:\s*absolute/);
-        // It must never swallow the gesture it draws.
-        expect(preview).toMatch(/pointer-events:\s*none/);
-        // Placed from the grid's OWN tracks, so it is exact at any width and
-        // needs no pixel measurement from JS.
+        expect(overlay).toMatch(/position:\s*absolute/);
+        // Neither may swallow a click, or the gesture it draws.
+        expect(overlay).toMatch(/pointer-events:\s*none/);
+        expect(overlay).toMatch(/--ocap-track-width:[\s\S]*var\(--ocap-grid-columns/);
+        expect(overlay).toMatch(/--ocap-track-height:\s*var\(--ocap-grid-row-height\)/);
+    });
+
+    it('draws the persistent selection contour from per-side widths', () => {
+        // The shape is traced by drawing a border only on the sides whose
+        // neighbour is not selected, so the widths have to be per side — a
+        // uniform `border` here would ring every cell again.
+        const piece = ruleBody(/\.ocap-grid-outline-piece$/);
+        expect(piece).toMatch(/border-width:\s*var\(--ocap-outline-widths/);
+        expect(piece).not.toMatch(/border:\s*\d/);
+        expect(piece).toMatch(/border-color:\s*var\(--interactive-accent\)/);
+        // Each piece reaches half a gutter toward its neighbours, which is what
+        // makes neighbouring pieces meet instead of tiling.
+        for (const side of ['left', 'right', 'top', 'bottom']) {
+            expect(piece).toMatch(new RegExp(`var\\(--ocap-outline-${side}\\)`));
+        }
+        expect(piece).toMatch(/var\(--ocap-cell-row/);
+        expect(piece).toMatch(/var\(--ocap-cell-column/);
+        // Square corners: with only some sides drawn, a radius renders as a
+        // hook off the end of a border with nothing to curve into.
+        expect(piece).toMatch(/border-radius:\s*0/);
+    });
+
+    it('draws the running gesture as ONE box, dashed and above the contour', () => {
+        const preview = ruleBody(/\.ocap-grid-rect-preview$/);
         expect(preview).toMatch(/var\(--ocap-rect-row/);
         expect(preview).toMatch(/var\(--ocap-rect-column/);
-        expect(preview).toMatch(/var\(--ocap-grid-row-height\)/);
+        expect(preview).toMatch(/var\(--ocap-track-height\)/);
         expect(preview).toMatch(/var\(--ocap-grid-gap\)/);
-        expect(preview).toMatch(/border:\s*2px solid var\(--interactive-accent\)/);
+        // Dashed against the solid contour: "what am I doing" must never have
+        // to be told apart from "what is selected" by position alone.
+        expect(preview).toMatch(/border-style:\s*dashed/);
+        expect(preview).toMatch(/border-width:\s*2px/);
+        expect(preview).toMatch(/z-index:\s*1/);
         // Removing reads differently from adding.
         expect(ruleBody(/\.ocap-grid-rect-preview--remove$/)).toMatch(
             /border-color:\s*var\(--text-error\)/
