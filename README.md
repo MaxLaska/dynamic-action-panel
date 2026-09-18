@@ -63,6 +63,11 @@ property or view type.
 
 - Export a category — with all of its variants and every tool it references —
   to a single `.ocap.json` file, and import it into another vault.
+- Templates live in one visible folder, `Dynamic Action Panel/Templates`, which
+  `Open template folder` opens in Explorer or Finder. Export puts files there
+  without asking; import lists what is there. Drop a `.ocap.json` into that
+  folder from a backup and it shows up in the import list — and
+  `Import template from file…` still reaches a file anywhere else.
 - Import always mints fresh ids, so it can never overwrite anything and the
   same file can be imported twice without a collision.
 - Dynamic variants, triggers, grid sizes and cell styles all travel with the

@@ -488,6 +488,37 @@ the user and is never rewritten, no page is ever put on the button's face.
 Reading the sidecar was listed as a non-goal in the original audit; that
 exclusion is superseded (its section 20.6) and now covers writing only.
 
+## 2026-09-18 – Panel templates live in one fixed, visible vault folder
+
+**Decision:** Exported panel templates are written to, and normally imported
+from, `Dynamic Action Panel/Templates/` in the vault. The path is **fixed and
+deliberately not configurable**, and it is not `pathConfig.templateFolderPath`
+— that field belongs to the note templates of the `create_file` action and
+keeps its meaning. The folder is created on demand. The file extension stays
+`.ocap.json` and the format stays `formatVersion: 1`.
+
+**Reason:** the question a user actually has is "where are my templates?", and
+every answer that involves a dialog gets it wrong. A save dialog asks the
+destination again on every export; the OS open dialog cannot even be told where
+to start — no web API can set a file input's initial directory — so it kept
+opening wherever the user had last been, which during testing was a disposable
+vault. A folder that is always the same, sits next to the notes rather than
+under `.obsidian`, and can be opened in Explorer or Finder from inside the
+plugin answers the question once and stays answered. Making it configurable
+would reintroduce exactly the uncertainty it removes; it can still be added
+later if several vaults ever need to share one external folder.
+
+**Consequence:** the folder IS the collection. There is no index, no import
+history and no second database, so a `.ocap.json` copied in from a backup drive
+is importable with no further step, and one deleted behind Obsidian's back is
+simply gone. The listing reads that one folder — not the vault — and offers
+direct children only. The OS file picker survives as an explicitly secondary
+path for files outside the vault, where its unsteerable starting directory no
+longer matters. `Open template folder` is built only from public API
+(`FileSystemAdapter#getFilePath` plus `window.open(url, '_external')`, the same
+mechanism as Obsidian's own "Show in system explorer"), so it needs no Electron
+import; on mobile it names the folder instead of opening it.
+
 ## Open decisions
 
 The following are still open:

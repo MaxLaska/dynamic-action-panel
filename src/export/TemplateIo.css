@@ -7,3 +7,9 @@
 .ocap-template-file-input {
     display: none;
 }
+
+/*
+ * The library picker reuses `.file-suggestion-title` / `.file-suggestion-desc`
+ * from FileInputSuggest.css rather than defining its own pair: it is the same
+ * two-line row, and a second set of classes would drift from the first.
+ */

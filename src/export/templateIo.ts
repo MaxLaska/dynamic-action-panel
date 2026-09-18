@@ -5,19 +5,23 @@
 // I/O, user feedback, and the single commit.
 //
 // File mechanics, chosen for robustness over cleverness:
-// - EXPORT writes into the vault itself (`app.vault.create`). The vault is a
-//   plain folder, so the file is immediately visible in the file explorer and
-//   on disk, ready to be copied to another vault. No Electron internals, no
-//   download sandbox, works the same on desktop and mobile;
-// - IMPORT uses a transient `<input type="file">`, i.e. the OS file picker.
-//   It can reach a file ANYWHERE — including another vault — which is the
-//   whole point, and it is a plain DOM API rather than a hand-built browser.
+// - EXPORT writes into the managed library folder (see templateLibrary.ts)
+//   through `app.vault.create`. The vault is a plain folder, so the file is
+//   immediately visible in the file explorer and on disk, ready to be copied
+//   elsewhere. No save dialog: the destination is known, so the user is never
+//   asked a question they already answered. No Electron internals, no download
+//   sandbox, works the same on desktop and mobile;
+// - IMPORT has two doors. The normal one lists what is in the library folder,
+//   which is also where a file copied in by hand shows up. The second one is
+//   the OS file picker, kept for a file that lives ANYWHERE else — including
+//   another vault — which no in-vault list can reach.
 //
 // Atomicity: parse -> validate -> plan -> ONE commitToolState. Every failure
 // path returns before the commit, so a broken file cannot leave half a
-// category, half a tool or a registry corpse behind.
+// category, half a tool or a registry corpse behind. Both import doors end in
+// the same `importTemplateContent`, so they cannot drift apart.
 
-import { App, Notice } from 'obsidian';
+import { App, FileSystemAdapter, Notice, Platform } from 'obsidian';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 import { commitToolState, toolStateOf } from '@/utils/categoryStore';
 import { freshId } from '@/utils/id';
@@ -33,11 +37,13 @@ import {
     planTemplateImport,
     type TemplateIdKind,
 } from '@/export/templateImport';
+import { type TemplateDocument, type TemplateParseError } from '@/export/templateFormat';
 import {
-    OCAP_TEMPLATE_FILE_EXTENSION,
-    type TemplateDocument,
-    type TemplateParseError,
-} from '@/export/templateFormat';
+    TEMPLATE_LIBRARY_FOLDER,
+    ensureTemplateLibraryFolder,
+    freeTemplateLibraryPath,
+} from '@/export/templateLibrary';
+import { TemplateSuggestModal } from '@/export/TemplateSuggestModal';
 
 /**
  * A counted phrase with its own singular form — "1 tool" reads wrong as
@@ -49,25 +55,8 @@ function counted(key: string, count: number): string {
         : tWithParams(`${key}_other`, { count });
 }
 
-/** A vault path that is still free, derived from `Name.ocap.json`. */
-function freeVaultPath(app: App, fileName: string): string {
-    if (!app.vault.getAbstractFileByPath(fileName)) {
-        return fileName;
-    }
-    const base = fileName.endsWith(OCAP_TEMPLATE_FILE_EXTENSION)
-        ? fileName.slice(0, -OCAP_TEMPLATE_FILE_EXTENSION.length)
-        : fileName;
-    for (let n = 1; n < 1000; n += 1) {
-        const candidate = `${base} ${n}${OCAP_TEMPLATE_FILE_EXTENSION}`;
-        if (!app.vault.getAbstractFileByPath(candidate)) {
-            return candidate;
-        }
-    }
-    return `${base} ${Date.now()}${OCAP_TEMPLATE_FILE_EXTENSION}`;
-}
-
 /**
- * Export one category as a portable template file in the vault root.
+ * Export one category as a portable template file in the template library.
  *
  * Read-only with respect to the settings: nothing is renumbered, collected or
  * saved — the plugin state after an export is byte-identical to the state
@@ -78,24 +67,39 @@ export async function exportCategoryTemplate(
     plugin: ButtonsPanelPlugin,
     categoryId: string
 ): Promise<void> {
-    const state = toolStateOf(plugin);
-    const category = state.categories.find((entry) => entry.id === categoryId);
-    if (!category) {
-        new Notice(t('category_not_found'));
-        return;
-    }
-
-    const document = buildTemplateDocument(state, [categoryId], {
-        pluginVersion: plugin.manifest?.version,
-        exportedAt: new Date().toISOString(),
-    });
-
+    // The whole body is guarded, not just the write: the caller invokes this
+    // with a bare `void`, so anything escaping here becomes an unhandled
+    // rejection and the user simply sees nothing happen. Building the document
+    // serializes the category, which is not obviously incapable of throwing.
     try {
-        const path = freeVaultPath(app, templateFileName(category.name));
+        const state = toolStateOf(plugin);
+        const category = state.categories.find((entry) => entry.id === categoryId);
+        if (!category) {
+            new Notice(t('template_export_no_category'));
+            return;
+        }
+
+        const document = buildTemplateDocument(state, [categoryId], {
+            pluginVersion: plugin.manifest?.version,
+            exportedAt: new Date().toISOString(),
+        });
+
+        // Refused before anything is written rather than after: `vault.create`
+        // on a path whose folder is missing fails.
+        const folderError = await ensureTemplateLibraryFolder(app);
+        if (folderError !== null) {
+            new Notice(
+                `${t('create_folder_failed')}: ${TEMPLATE_LIBRARY_FOLDER} (${folderError})`
+            );
+            return;
+        }
+
+        const path = freeTemplateLibraryPath(app, templateFileName(category.name));
         await app.vault.create(path, serializeTemplateDocument(document));
         new Notice(
             tWithParams('template_export_done', {
-                path,
+                file: path.slice(TEMPLATE_LIBRARY_FOLDER.length + 1),
+                folder: TEMPLATE_LIBRARY_FOLDER,
                 tools: counted('template_count_tool', Object.keys(document.tools).length),
             })
         );
@@ -192,7 +196,114 @@ export async function importTemplateContent(
 }
 
 /**
+ * Open the template library folder in the operating system's file manager.
+ *
+ * This is the action that makes the library a real place rather than a plugin
+ * concept: it is how a user gets to the files to copy them off a backup drive,
+ * hand one to somebody, or just see that they exist.
+ *
+ * Mechanism, and it is entirely public API: `getFilePath` turns the
+ * vault-relative path into a `file://` URL, and Obsidian's main process
+ * intercepts `window.open(url, '_external')` and hands a file URL to the
+ * platform shell — which, for a directory, opens the directory itself. This is
+ * what Obsidian's own `openWithDefaultApp` does (the "Open in default app"
+ * command), NOT what "Show in system explorer" does: the latter is
+ * `shell.showItemInFolder`, which selects an item inside its parent instead.
+ * Opening is the wanted behaviour here, and this route needs no Electron
+ * import and no undocumented `App` member.
+ *
+ * The folder is created first — before the platform check, so the notice
+ * mobile gets names a folder that actually exists. "Show me where these go"
+ * has to work BEFORE there is anything in it, which is exactly the state
+ * someone restoring from a backup is in.
+ */
+export async function openTemplateLibraryFolder(app: App): Promise<void> {
+    const folderError = await ensureTemplateLibraryFolder(app);
+    if (folderError !== null) {
+        new Notice(
+            `${t('create_folder_failed')}: ${TEMPLATE_LIBRARY_FOLDER} (${folderError})`
+        );
+        return;
+    }
+
+    // On mobile there is no file manager a plugin can hand a folder to, and
+    // `CapacitorAdapter` has no `getFilePath` at all. This check must come
+    // before the `instanceof` below: `FileSystemAdapter` is a desktop-only
+    // export, and `x instanceof undefined` is a TypeError.
+    if (!Platform.isDesktopApp) {
+        new Notice(
+            tWithParams('template_open_folder_unsupported', {
+                folder: TEMPLATE_LIBRARY_FOLDER,
+            })
+        );
+        return;
+    }
+
+    const adapter = app.vault.adapter;
+    if (!(adapter instanceof FileSystemAdapter)) {
+        new Notice(t('template_open_folder_failed'));
+        return;
+    }
+
+    try {
+        // The return value is deliberately ignored: Obsidian's window-open
+        // handler answers `{ action: 'deny' }` after dispatching to the shell,
+        // so `window.open` yields null on SUCCESS too. It reports neither
+        // outcome, which means a refusal by the OS cannot be detected here.
+        window.open(adapter.getFilePath(TEMPLATE_LIBRARY_FOLDER), '_external');
+    } catch {
+        new Notice(t('template_open_folder_failed'));
+    }
+}
+
+/**
+ * Pick a template from the library and import it.
+ *
+ * The normal way in. The list is the folder's current contents, so a file the
+ * user copied in from a backup a second ago is offered without any refresh
+ * step, and a file they deleted is simply gone.
+ *
+ * The folder is created when it is missing so the picker can explain an empty
+ * library instead of failing — and so "Import" followed by "Open template
+ * folder" lands somewhere real on a vault that has never exported anything.
+ */
+export async function importTemplateFromLibrary(
+    app: App,
+    plugin: ButtonsPanelPlugin
+): Promise<void> {
+    const folderError = await ensureTemplateLibraryFolder(app);
+    if (folderError !== null) {
+        // Without this the picker would open and tell the user to copy files
+        // into a folder that could not be created, naming no reason.
+        new Notice(
+            `${t('create_folder_failed')}: ${TEMPLATE_LIBRARY_FOLDER} (${folderError})`
+        );
+        return;
+    }
+    new TemplateSuggestModal(app, (file) => {
+        void (async () => {
+            try {
+                // `read`, not `cachedRead`: the file may have been written
+                // outside Obsidian moments ago, and this is a one-shot import
+                // rather than a render path.
+                const content = await app.vault.read(file);
+                await importTemplateContent(app, plugin, content);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                new Notice(`${t('template_import_failed')}: ${message}`);
+            }
+        })();
+    }).open();
+}
+
+/**
  * Open the OS file picker and import the chosen template.
+ *
+ * The secondary way in, for a file that is NOT in the library: on a backup
+ * drive, in another vault, in a download folder. It reaches anywhere, which is
+ * exactly what an in-vault list cannot do, and it is the reason this path
+ * survives the library. Where the dialog opens is left to the OS — no web API
+ * can set it, and it no longer matters now that it is not the normal route.
  *
  * A transient `<input type="file">` is the one file chooser that works in
  * Obsidian on every platform without touching Electron internals; it is

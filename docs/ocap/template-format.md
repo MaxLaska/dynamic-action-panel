@@ -105,9 +105,15 @@ Two things are deliberately **absent**:
   no GC, no migration written, no `library` flag set, no `ToolDefinition`
   touched. The document is built field by field into fresh objects, so it can
   neither alias nor mutate anything that is stored.
-- Written into the **vault root** as `<Category>.ocap.json` (`Research 1.ocap.json`
-  if the name is taken). The vault is a plain folder, so the file is visible in
-  the file explorer and immediately ready to be copied to another vault.
+- Written into the **template library**, `Dynamic Action Panel/Templates/`, as
+  `<Category>.ocap.json` (`Research 1.ocap.json` if the name is taken). The
+  folder is created on demand. The vault is a plain folder, so the file is
+  visible in the file explorer and immediately ready to be copied to another
+  vault — and `Open template folder` opens exactly that folder in Explorer or
+  Finder.
+- The library path is **fixed and not configurable**. Knowing where templates
+  are without having to decide or look it up is the point; a setting would
+  make the answer differ per vault.
 
 ## 5. Import
 
@@ -226,11 +232,35 @@ this build stay loadable by earlier ones.
 
 | Where | Entry |
 | --- | --- |
-| Category context menu | `Export template…`, `Import template…` |
-| Right-click on the `+` "Add category" button | `Add category`, `Import template…` |
-| Command palette | `Import template…` (`dynamic-action-panel:import-template`) |
+| Category context menu | `Export template…`, `Import template…`, `Import template from file…`, `Open template folder` |
+| Right-click on the `+` "Add category" button | `Add category`, `Import template…`, `Import template from file…`, `Open template folder` |
+| Command palette | `Import template…` (`dynamic-action-panel:import-template`), `Open template folder` (`dynamic-action-panel:open-template-folder`) |
+| Settings → Path | `Panel templates` row with an `Open template folder` button |
 
-Import uses a transient `<input type="file">` — the OS file picker — which can
-reach a file anywhere, including another vault, and is a plain DOM API rather
-than a hand-built browser or an Electron internal. It needs a real user
-gesture, which every entry point above provides.
+The `+` menu repeats the whole group because an empty panel has no category to
+right-click — which is exactly the state of someone restoring from a backup.
+
+**`Import template…`** lists the `.ocap.json` files in the library folder in a
+suggester. It reads the folder each time it opens, so a file copied in by hand
+is simply there; nothing is indexed or cached. Only direct children of the
+library are offered — a stray `.ocap.json` next to a note is not part of the
+handover zone.
+
+**`Import template from file…`** is the secondary path, for a file that is not
+in the library: on a backup drive, in another vault, in a download folder. It
+uses a transient `<input type="file">` — the OS file picker — which can reach a
+file anywhere and is a plain DOM API rather than a hand-built browser or an
+Electron internal. It needs a real user gesture, which every entry point above
+provides. Where that dialog opens is left to the OS: no web API can set a file
+input's starting directory, which is the reason it is no longer the normal way
+in.
+
+**`Open template folder`** turns the vault-relative path into a `file://` URL
+with `FileSystemAdapter#getFilePath` and hands it to `window.open(url,
+'_external')`. Obsidian's main process intercepts that and passes a file URL to
+the platform shell, which opens a directory rather than selecting it — the same
+mechanism as Obsidian's own "Show in system explorer", built only from public
+API, so it needs no `require('electron')` and no undocumented `App` member. The
+folder is created first, so the action works on a vault that has never
+exported. On mobile there is no file manager to hand off to; the folder is
+named in a notice instead.

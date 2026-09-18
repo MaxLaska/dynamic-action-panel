@@ -16,7 +16,12 @@ import {
     duplicateCategoryInState,
 } from '@/domain/categoryOps';
 import { freshId } from '@/utils/id';
-import { exportCategoryTemplate, pickAndImportTemplate } from '@/export/templateIo';
+import {
+    exportCategoryTemplate,
+    importTemplateFromLibrary,
+    openTemplateLibraryFolder,
+    pickAndImportTemplate,
+} from '@/export/templateIo';
 import type { CategoryConfig, ButtonsPanelPlugin } from '@/types';
 
 /**
@@ -61,10 +66,14 @@ export function openMakeDynamicModal(
  * The portable-template entries, shared by both category menu builders.
  *
  * Export ships THIS category (with every variant and every tool it
- * references) as a `.ocap.json` file; import is panel-level but lives here
- * because the category menu is where a user looks for "where do panels come
- * from". Neither entry touches the other's state: export is read-only and
+ * references) as a `.ocap.json` file; the other three are panel-level but live
+ * here because the category menu is where a user looks for "where do panels
+ * come from". Neither entry touches the other's state: export is read-only and
  * import only ever appends.
+ *
+ * The order is the order of use: write one out, read one back, reach past the
+ * library for a file that is not in it, and open the folder the first three
+ * are talking about.
  */
 export function addTemplateMenuItems(
     menu: Menu,
@@ -79,10 +88,41 @@ export function addTemplateMenuItems(
                 void exportCategoryTemplate(app, plugin, categoryId);
             });
     });
+    addTemplateLibraryMenuItems(menu, app, plugin);
+}
+
+/**
+ * The three template entries that need no category: importing from the
+ * library, importing from anywhere else, and reaching the folder itself.
+ *
+ * Separate from the export entry because the `+` "Add category" menu offers
+ * exactly these — an empty panel has no category to export, but it is the
+ * state in which finding the folder matters most. Keeping them in one place
+ * stops the two menus drifting apart.
+ */
+export function addTemplateLibraryMenuItems(
+    menu: Menu,
+    app: App,
+    plugin: ButtonsPanelPlugin
+): void {
     menu.addItem((item: MenuItem) => {
         item.setTitle(t('category_import_template'))
             .setIcon('upload')
+            .onClick(() => {
+                void importTemplateFromLibrary(app, plugin);
+            });
+    });
+    menu.addItem((item: MenuItem) => {
+        item.setTitle(t('template_import_from_file'))
+            .setIcon('file-input')
             .onClick(() => pickAndImportTemplate(app, plugin));
+    });
+    menu.addItem((item: MenuItem) => {
+        item.setTitle(t('template_open_folder'))
+            .setIcon('folder-open')
+            .onClick(() => {
+                void openTemplateLibraryFolder(app);
+            });
     });
 }
 

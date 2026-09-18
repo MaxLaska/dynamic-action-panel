@@ -18,7 +18,7 @@ import type { ButtonsPanelPlugin as ButtonsPanelPluginType } from '@/types';
 import { migrateSettings } from '@/settings/settingsMigrations';
 import { WorkspaceContextService } from '@/context/WorkspaceContextService';
 import { t, tWithParams } from '@/utils/i18n';
-import { pickAndImportTemplate } from '@/export/templateIo';
+import { importTemplateFromLibrary, openTemplateLibraryFolder } from '@/export/templateIo';
 
 // View type constant
 export const BUTTONS_PANEL_VIEW_TYPE = 'buttons-panel-view';
@@ -89,7 +89,18 @@ export default class ButtonsPanelPlugin extends Plugin {
             id: 'import-template',
             name: t('category_import_template'),
             callback: () => {
-                pickAndImportTemplate(this.app, this);
+                void importTemplateFromLibrary(this.app, this);
+            },
+        });
+
+        // Reaching the library folder itself, for the same reason: it has to
+        // work before there is any panel content to right-click, which is the
+        // state someone copying templates in from a backup starts from.
+        this.addCommand({
+            id: 'open-template-folder',
+            name: t('template_open_folder'),
+            callback: () => {
+                void openTemplateLibraryFolder(this.app);
             },
         });
 

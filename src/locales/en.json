@@ -324,7 +324,7 @@
     "category_export_template": "Export template…",
     "category_import_template": "Import template…",
     "template_imported_suffix": "imported",
-    "template_export_done": "Exported to {path} ({tools}).",
+    "template_export_done": "Exported {file} to {folder} ({tools}).",
     "template_export_failed": "Export failed",
     "template_import_failed": "Import failed",
     "template_import_done": "Imported {categories} with {tools}.",
@@ -338,5 +338,14 @@
     "template_count_category_one": "1 category",
     "template_count_category_other": "{count} categories",
     "template_count_tool_one": "1 tool",
-    "template_count_tool_other": "{count} tools"
+    "template_count_tool_other": "{count} tools",
+    "template_export_no_category": "Category to export not found",
+    "template_library_title": "Panel templates",
+    "template_library_placeholder": "Choose a panel template",
+    "template_library_empty": "No templates in this folder yet. Export a category, or copy a .ocap.json file into it.",
+    "template_import_from_file": "Import template from file…",
+    "template_open_folder": "Open template folder",
+    "template_open_folder_failed": "Could not open the template folder",
+    "template_open_folder_desc": "Exported panel templates are stored here. Copy .ocap.json files into this folder to import them.",
+    "template_open_folder_unsupported": "Opening a folder needs the desktop app. The templates are in {folder}."
 }

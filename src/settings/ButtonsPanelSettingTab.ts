@@ -2,6 +2,8 @@ import { App, PluginSettingTab, Setting, TextComponent, Notice, normalizePath } 
 import type { SettingDefinitionItem } from 'obsidian';
 import { ButtonsPanelPlugin } from '@/types';
 import { FolderInputSuggest } from '@/components/suggest/FolderInputSuggest';
+import { openTemplateLibraryFolder } from '@/export/templateIo';
+import { TEMPLATE_LIBRARY_FOLDER } from '@/export/templateLibrary';
 import { t } from '@/utils/i18n';
 
 export class ButtonsPanelSettingTab extends PluginSettingTab {
@@ -92,6 +94,14 @@ export class ButtonsPanelSettingTab extends PluginSettingTab {
                         desc: t('create_paths_desc'),
                         render: (setting) => this.renderCreatePathsButton(setting),
                     },
+                    {
+                        // The panel-template library, which is a FIXED folder
+                        // and therefore has no path input above it — the row
+                        // exists to name the folder and to get the user to it.
+                        name: t('template_library_title'),
+                        desc: `${t('template_open_folder_desc')} (${TEMPLATE_LIBRARY_FOLDER})`,
+                        render: (setting) => this.renderOpenTemplateFolderButton(setting),
+                    },
                 ],
             },
         ];
@@ -144,6 +154,18 @@ export class ButtonsPanelSettingTab extends PluginSettingTab {
                 .onClick(() => {
                     void this.createPaths();
                 });
+        });
+    }
+
+    /**
+     * Opens the panel-template library folder. Not `mod-warning`: unlike
+     * "Create paths" next to it, this only reveals a folder.
+     */
+    private renderOpenTemplateFolderButton(setting: Setting): void {
+        setting.addButton((button) => {
+            button.setButtonText(t('template_open_folder')).onClick(() => {
+                void openTemplateLibraryFolder(this.app);
+            });
         });
     }
 

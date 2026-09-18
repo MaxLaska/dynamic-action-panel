@@ -162,13 +162,40 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   die Tool-Registry wird mit `Object.create(null)` gebaut; Größen- und
   Tiefenlimits begrenzen die Arbeit; dangling interne Tool-Referenzen und ein
   zweites Fallback werden abgelehnt. Importieren führt nichts aus.
-- **UI-Einstiege:** Kategorie-Kontextmenü (`Export template…` /
-  `Import template…`), Rechtsklick auf den `+`-Add-Category-Button
-  (`Import template…` — der Weg bei LEEREM Panel-Kontextmenü) und das Command
-  `dynamic-action-panel:import-template`. Export schreibt in die **Vault-Wurzel**
-  (sichtbar im File Explorer, direkt kopierbar); Import nutzt ein transientes
-  `<input type="file">`, also den OS-Dateidialog — der braucht eine echte
-  User-Geste, die alle drei Einstiege liefern.
+- **Template Library:** Export und Import laufen über einen festen, sichtbaren
+  Vault-Ordner `Dynamic Action Panel/Templates/` (`src/export/templateLibrary.ts`).
+  Er wird bei Bedarf angelegt, beide Ebenen einzeln geprüft; ein verlorenes
+  Rennen gegen Sync zählt als Erfolg, solange der Ordner danach da ist. Der Pfad
+  ist **absichtlich nicht konfigurierbar** — der Sinn ist, dass der User ihn
+  ohne Nachschlagen kennt. `pathConfig.templateFolderPath` ist etwas anderes
+  (Notiz-Templates der `create_file`-Action) und wird NICHT mitbenutzt.
+- **Export** schreibt `<Category>.ocap.json` in die Library, mit der bisherigen
+  Kollisionsleiter (`Research 1`, `Research 2`, …). Der Ordnerpräfix hängt an
+  jedem Zweig inklusive dem Timestamp-Fallback nach 999 Kollisionen — genau das
+  pinnen die Tests, weil ein Zweig ohne Präfix wieder in der Vault-Wurzel landen
+  würde. Schlägt die Ordneranlage fehl, wird gar nicht geschrieben.
+- **Import (primär)** ist ein `FuzzySuggestModal` über die `.ocap.json` in
+  genau diesem Ordner (`src/export/TemplateSuggestModal.ts`), sortiert nach dem
+  angezeigten Namen (numerisch, damit `Research 2` vor `Research 10` steht).
+  Kein Index, kein Cache: eine per Hand hineinkopierte Datei ist sofort da.
+  Nur direkte Kinder, keine Unterordner, kein Vault-Scan.
+- **Import (sekundär)** bleibt der OS-Dateidialog (`Import template from file…`)
+  für Dateien AUSSERHALB des Vaults. Wo er aufgeht, bestimmt das OS — kein
+  Web-API kann das Startverzeichnis setzen, und genau deshalb ist er nicht mehr
+  der Normalweg.
+- **`Open template folder`** öffnet die Library im Explorer/Finder über
+  `window.open(FileSystemAdapter#getFilePath(pfad), '_external')` — derselbe
+  Mechanismus wie Obsidians eigenes „Show in system explorer", aber nur aus
+  öffentlicher API, ohne `require('electron')` und ohne undokumentiertes
+  `App`-Member. Mobile bekommt eine Notice mit dem Ordnernamen statt eines
+  Crashes.
+- **UI-Einstiege:** Kategorie-Kontextmenü und Rechtsklick auf den
+  `+`-Add-Category-Button tragen beide die volle Gruppe (Export, Import,
+  Import-from-file, Open-folder); der `+`-Weg existiert, weil ein LEERES Panel
+  kein Kategorie-Kontextmenü hat — der Zustand eines Backup-Restores. Dazu die
+  Commands `dynamic-action-panel:import-template` und
+  `dynamic-action-panel:open-template-folder` sowie eine Zeile
+  „Panel templates" in den Settings unter „Path".
 
 ## 2c. Grid Cell Styles (Datenmodell vorbereitet, KEINE UI)
 
@@ -770,13 +797,15 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
     columns: 3`); `other/Becker_Westerholt.pdf` per echtem File-Explorer-
     `dragstart` auf Slot 0 gedroppt (`app.dragManager` real gefüllt); zweites
     Tool über das Slot-`+` mit URL-Action konfiguriert.
-  - Kategorie-Kontextmenü zeigt `Edit / Make dynamic… / Copy / Export
-    template… / Import template… / Delete`. `Export template…` schreibt
-    `Smoke.ocap.json` in die Vault-Wurzel; die Settings sind danach
-    **byte-gleich** (Export ist read-only).
+  - *(Historisch — dieser Lauf fand vor der Template Library statt. Menü und
+    Zielordner sehen heute anders aus, siehe Abschnitt 2b.)* Kategorie-Kontextmenü
+    zeigt `Edit / Make dynamic… / Copy / Export template… / Import template… /
+    Delete`. `Export template…` schreibt `Smoke.ocap.json` in die Vault-Wurzel;
+    die Settings sind danach **byte-gleich** (Export ist read-only).
   - Kategorie gelöscht (Registry 11 → 9), dann über `Import template…` +
     echten (abgefangenen) OS-Dateidialog reimportiert: neue Kategorie mit
     frischen `cat-`/`tool-`-IDs, 1×3, Slots 0/1, beide Actions vollständig.
+    *(Heute wäre das der sekundäre Weg `Import template from file…`.)*
   - Klick auf den importierten PDF-Button im locked Mode öffnet das echte
     PDF-Leaf (`other/Becker_Westerholt.pdf`).
   - **Zweiter Import derselben Datei:** zusätzliche Kategorie

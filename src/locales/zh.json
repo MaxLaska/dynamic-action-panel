@@ -324,7 +324,7 @@
     "category_export_template": "导出模板…",
     "category_import_template": "导入模板…",
     "template_imported_suffix": "导入",
-    "template_export_done": "已导出到 {path}（{tools}）。",
+    "template_export_done": "已将 {file} 导出到 {folder}（{tools}）。",
     "template_export_failed": "导出失败",
     "template_import_failed": "导入失败",
     "template_import_done": "已导入 {categories}，共 {tools}。",
@@ -338,5 +338,14 @@
     "template_count_category_one": "1 个分类",
     "template_count_category_other": "{count} 个分类",
     "template_count_tool_one": "1 个工具",
-    "template_count_tool_other": "{count} 个工具"
+    "template_count_tool_other": "{count} 个工具",
+    "template_export_no_category": "未找到要导出的分类",
+    "template_library_title": "面板模板",
+    "template_library_placeholder": "选择一个面板模板",
+    "template_library_empty": "此文件夹中还没有模板。请先导出一个分类，或将 .ocap.json 文件复制到此处。",
+    "template_import_from_file": "从文件导入模板…",
+    "template_open_folder": "打开模板文件夹",
+    "template_open_folder_failed": "无法打开模板文件夹",
+    "template_open_folder_desc": "导出的面板模板保存在此处。将 .ocap.json 文件复制到此文件夹即可导入。",
+    "template_open_folder_unsupported": "打开文件夹需要桌面版应用。模板位于 {folder}。"
 }

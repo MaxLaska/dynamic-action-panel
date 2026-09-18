@@ -324,7 +324,7 @@
     "category_export_template": "Экспортировать шаблон…",
     "category_import_template": "Импортировать шаблон…",
     "template_imported_suffix": "импорт",
-    "template_export_done": "Экспортировано в {path} ({tools}).",
+    "template_export_done": "Файл {file} экспортирован в {folder} ({tools}).",
     "template_export_failed": "Не удалось экспортировать",
     "template_import_failed": "Не удалось импортировать",
     "template_import_done": "Импортировано: {categories}, {tools}.",
@@ -338,5 +338,14 @@
     "template_count_category_one": "1 категория",
     "template_count_category_other": "категорий: {count}",
     "template_count_tool_one": "1 инструмент",
-    "template_count_tool_other": "инструментов: {count}"
+    "template_count_tool_other": "инструментов: {count}",
+    "template_export_no_category": "Категория для экспорта не найдена",
+    "template_library_title": "Шаблоны панели",
+    "template_library_placeholder": "Выберите шаблон панели",
+    "template_library_empty": "В этой папке пока нет шаблонов. Экспортируйте категорию или скопируйте сюда файл .ocap.json.",
+    "template_import_from_file": "Импортировать шаблон из файла…",
+    "template_open_folder": "Открыть папку шаблонов",
+    "template_open_folder_failed": "Не удалось открыть папку шаблонов",
+    "template_open_folder_desc": "Здесь хранятся экспортированные шаблоны панели. Скопируйте файлы .ocap.json в эту папку, чтобы импортировать их.",
+    "template_open_folder_unsupported": "Для открытия папки нужно настольное приложение. Шаблоны находятся в {folder}."
 }
