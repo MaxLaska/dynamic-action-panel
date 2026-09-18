@@ -127,6 +127,123 @@ describe('createToolInCategory', () => {
     });
 });
 
+/**
+ * `replaceOccupied` — the file-drop case.
+ *
+ * A file aimed at a particular cell means THAT cell, occupied or not: the drop
+ * is already the deliberate act, so it replaces without asking. Every other
+ * entry point (the `+`, the modal, a copy) means "put this somewhere" and must
+ * keep the old, non-destructive fallback — which is why this is opt-in.
+ *
+ * The displaced tool is collected by the ORDINARY rule, not deleted on sight:
+ * it goes only when nothing else references it and it is not a library tool.
+ */
+describe('createToolInCategory with replaceOccupied', () => {
+    it('takes the addressed slot instead of dodging to a free one', () => {
+        const state = stateOf(registryOf(tool('a')), storedGrid([p('a', 0)]));
+        const next = createToolInCategory(state, 'cat', null, draft('new'), 0, {
+            replaceOccupied: true,
+        })!;
+        expect(next.categories[0]!.placements).toEqual([p('new', 0)]);
+    });
+
+    it('collects the definition the replacement displaced', () => {
+        const state = stateOf(registryOf(tool('a')), storedGrid([p('a', 0)]));
+        const next = createToolInCategory(state, 'cat', null, draft('new'), 0, {
+            replaceOccupied: true,
+        })!;
+        expect(next.tools['a']).toBeUndefined();
+        expect(next.tools['new']).toMatchObject({ id: 'new' });
+    });
+
+    it('KEEPS the displaced definition when another placement still uses it', () => {
+        // The same tool placed in a second variant must survive losing one
+        // placement — the pre-v5 behaviour, and the reason GC is a rule rather
+        // than a delete.
+        const state = stateOf(
+            registryOf(tool('a'), tool('b')),
+            storedDynamic([
+                storedVariant('source', SOURCE, [p('a', 0)]),
+                storedVariant('topic', TOPIC, [p('a', 1), p('b', 0)]),
+            ])
+        );
+        const next = createToolInCategory(state, 'cat', 'source', draft('new'), 0, {
+            replaceOccupied: true,
+        })!;
+        expect(next.tools['a']).toBeDefined();
+        expect(findVariant(next.categories[0]!, 'source')!.placements).toEqual([
+            p('new', 0),
+        ]);
+        expect(findVariant(next.categories[0]!, 'topic')!.placements).toEqual([
+            p('a', 1),
+            p('b', 0),
+        ]);
+    });
+
+    it('KEEPS a displaced library tool, which has a life of its own', () => {
+        const state = stateOf(
+            registryOf({ ...tool('a'), library: true }),
+            storedGrid([p('a', 0)])
+        );
+        const next = createToolInCategory(state, 'cat', null, draft('new'), 0, {
+            replaceOccupied: true,
+        })!;
+        expect(next.tools['a']).toMatchObject({ library: true });
+        expect(next.categories[0]!.placements).toEqual([p('new', 0)]);
+    });
+
+    it('removes only the placement on the target cell, not the tool elsewhere', () => {
+        // The same tool placed twice in ONE grid: replacing cell 0 must leave
+        // the copy on cell 3 exactly where it is.
+        const state = stateOf(
+            registryOf({ ...tool('a'), library: true }),
+            storedGrid([p('a', 0), p('a', 3)])
+        );
+        const next = createToolInCategory(state, 'cat', null, draft('new'), 0, {
+            replaceOccupied: true,
+        })!;
+        expect(next.categories[0]!.placements).toEqual([p('a', 3), p('new', 0)]);
+        expect(next.tools['a']).toBeDefined();
+    });
+
+    it('still fills an EMPTY addressed cell without collecting anything', () => {
+        const state = stateOf(registryOf(tool('a')), storedGrid([p('a', 0)]));
+        const next = createToolInCategory(state, 'cat', null, draft('new'), 5, {
+            replaceOccupied: true,
+        })!;
+        expect(next.categories[0]!.placements).toEqual([p('a', 0), p('new', 5)]);
+        expect(next.tools['a']).toBeDefined();
+    });
+
+    it('fills a full grid instead of refusing, because it replaces', () => {
+        const full = storedGrid(Array.from({ length: 16 }, (_, i) => p(`b${i}`, i)));
+        const tools = registryOf(...Array.from({ length: 16 }, (_, i) => tool(`b${i}`)));
+        const state = stateOf(tools, full);
+        const next = createToolInCategory(state, 'cat', null, draft('x'), 7, {
+            replaceOccupied: true,
+        })!;
+        expect(next).not.toBeNull();
+        expect(next.tools['b7']).toBeUndefined();
+        expect(next.categories[0]!.placements).toHaveLength(16);
+    });
+
+    it('is OFF by default, so every other entry point is unchanged', () => {
+        const state = stateOf(registryOf(tool('a')), storedGrid([p('a', 0)]));
+        const next = createToolInCategory(state, 'cat', null, draft('new'), 0)!;
+        expect(next.categories[0]!.placements).toEqual([p('a', 0), p('new', 1)]);
+        expect(next.tools['a']).toBeDefined();
+    });
+
+    it('never mutates its input', () => {
+        const state = stateOf(registryOf(tool('a')), storedGrid([p('a', 0)]));
+        const before = snapshot(state);
+        createToolInCategory(state, 'cat', null, draft('new'), 0, {
+            replaceOccupied: true,
+        });
+        expect(snapshot(state)).toEqual(before);
+    });
+});
+
 describe('updateToolDefinition (edit)', () => {
     it('changes the definition and leaves every placement untouched', () => {
         const state = stateOf(

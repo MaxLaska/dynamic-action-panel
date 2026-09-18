@@ -571,6 +571,14 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         // add a column or a row.
         const creationEnabled = enableEditMode && !isDragging && !resizeDrag.preview;
 
+        // Dropping a file is NOT an edit affordance, and it is the one thing
+        // here that is not gated on the mode. Locked is the working mode, and
+        // filing a PDF onto a slot is work; what stays edit-only is everything
+        // that rearranges what is already on the grid. This is a drop from
+        // OUTSIDE — a native HTML5 drag out of Obsidian — so it cannot reach
+        // the plugin's own pointer-based move/swap, which remains edit-only.
+        const fileDropEnabled = !isDragging && !resizeDrag.preview;
+
         // Every cell is the same keyed component whether filled or empty, so
         // the droppable cell nodes survive variant switches (see
         // GridSlotCell). The target cell keeps its ring even when the live
@@ -605,11 +613,16 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                             : undefined
                     }
                     fileDrop={
-                        creationEnabled
+                        fileDropEnabled
                             ? {
                                   canAccept: canAcceptFileDrag,
                                   onDrop: (dataTransfer) =>
-                                      dropFileOnSlot(category, slot, dataTransfer),
+                                      dropFileOnSlot(category, slot, dataTransfer, {
+                                          // The grid on screen, which in locked
+                                          // mode is the context-resolved
+                                          // variant and not an edited one.
+                                          variantId: resolution.variantId,
+                                      }),
                               }
                             : undefined
                     }

@@ -184,6 +184,23 @@ function categoryToolIds(category: StoredCategory): string[] {
 
 // --- Create / copy / edit / remove one tool ------------------------------------
 
+export interface CreateToolOptions {
+    /**
+     * The addressed slot may be TAKEN, and the tool on it is then replaced.
+     *
+     * Off by default, because every other entry point (the `+`, the modal, a
+     * copy) means "put this somewhere" and must not overwrite anything. Only a
+     * file dropped on a specific occupied cell means "put it HERE" — the drop
+     * itself is the deliberate act, so it needs no confirmation.
+     *
+     * The displaced tool's definition is garbage-collected by the ordinary
+     * rule: it goes only if nothing else still references it and it is not a
+     * library tool. A tool placed in another variant, another category or kept
+     * in the library survives losing this one placement.
+     */
+    replaceOccupied?: boolean;
+}
+
 /**
  * Create a tool from a view-shaped draft (the modal's tempButton, a file-drop
  * draft) and place it in one step: definition into the registry, placement
@@ -191,15 +208,17 @@ function categoryToolIds(category: StoredCategory): string[] {
  *
  * Grid semantics are unchanged from addButtonToGrid: `targetSlot` is the cell
  * the gesture pointed at and is honoured unless it turned out to be taken;
- * without one the lowest free slot is used. Returns null when the grid is
- * full or the category is missing — nothing is changed then.
+ * without one the lowest free slot is used. With `replaceOccupied` a taken
+ * target is honoured too, and its occupant makes way. Returns null when the
+ * grid is full or the category is missing — nothing is changed then.
  */
 export function createToolInCategory(
     state: ToolState,
     categoryId: string,
     variantId: string | null,
     draft: ButtonConfig,
-    targetSlot: number | null = null
+    targetSlot: number | null = null,
+    options: CreateToolOptions = {}
 ): ToolState | null {
     const category = findCategory(state, categoryId);
     if (!category) {
@@ -221,23 +240,45 @@ export function createToolInCategory(
     }
     const existing = gridTargetPlacements(category, target.variantId);
     const dimensions = gridDimensionsOf(category, target.variantId);
-    const occupancy = storedGridSlotToolIds(existing, dimensions);
+    // The resolved slots, not just their ids: replacing needs the exact
+    // placement OBJECT on the target cell, so it can be dropped by identity.
+    // Filtering by tool id would also hit a second placement of the same tool
+    // elsewhere in the grid, and rebuilding the array from the occupancy would
+    // silently rewrite every other placement's slot and lose the overflow.
+    const placed = placeStoredGrid(existing, dimensions);
+    const occupancy = placed.slots.map((placement) => placement?.toolId ?? null);
+    const addressable = isValidSlotIndex(targetSlot, occupancy.length);
+    const displaced =
+        addressable && options.replaceOccupied === true
+            ? (placed.slots[targetSlot] ?? null)
+            : null;
     const requested =
-        isValidSlotIndex(targetSlot, occupancy.length) && occupancy[targetSlot] === null
+        addressable && (occupancy[targetSlot] === null || displaced !== null)
             ? targetSlot
             : null;
     const slot = requested ?? findFirstFreeSlot(occupancy);
     if (slot === null) {
         return null;
     }
-    const placements = [...existing, { toolId: definition.id, slot }];
+    const kept =
+        displaced === null
+            ? existing
+            : existing.filter((placement) => placement !== displaced);
+    const placements = [...kept, { toolId: definition.id, slot }];
     const nextCategory =
         target.variantId === null
             ? { ...category, placements }
             : replaceVariantPlacements(category, target.variantId, placements);
+    const categories = withCategory(state, nextCategory).categories;
     return {
-        tools: { ...state.tools, [definition.id]: definition },
-        categories: withCategory(state, nextCategory).categories,
+        // GC is the ordinary rule, applied to the one tool that just lost a
+        // placement: it goes only if nothing else references it any more.
+        tools: gcTools(
+            { ...state.tools, [definition.id]: definition },
+            categories,
+            displaced === null ? [] : [displaced.toolId]
+        ),
+        categories,
     };
 }
 

@@ -14,14 +14,35 @@ import {
 import { t } from '@/utils/i18n';
 import type { ButtonConfig, CategoryConfig } from '@/types';
 
+/** Which grid the drop landed on, as only the renderer can know. */
+export interface SlotDropTarget {
+    /**
+     * The variant on screen, for a dynamic category.
+     *
+     * Passed explicitly because the right answer differs by mode: in a
+     * management mode it is the variant being edited, in locked mode the one
+     * the workspace context resolved to. Omitted for a static grid.
+     */
+    variantId?: string | null;
+}
+
 /**
  * useSlotFileDrop
  *
- * Dropping something from Obsidian onto an empty grid slot creates the tool the
+ * Dropping something from Obsidian onto a grid slot creates the tool the
  * gesture obviously means, in exactly that slot — the first step of editing ON
  * the grid instead of in a form. A vault file becomes an Open file (or Run
  * script) tool; an annotation dragged out of a reader becomes an Open file tool
  * pointed at the exact place inside the document.
+ *
+ * It works in LOCKED mode too, and that is deliberate: locked is the working
+ * mode, and filing a PDF onto a slot is work, not layout. What stays edit-only
+ * is everything that rearranges what is already there — move, swap, reorder,
+ * resize, selection, colours, the `+`. A drop brings something IN.
+ *
+ * A drop on an OCCUPIED slot replaces it, without a confirmation: aiming a file
+ * at a particular cell is already the deliberate act, and a dialog on top of it
+ * would only be a second one.
  *
  * Everything the decision needs is already in the gesture: the payload says what
  * the tool does, the slot says where it goes, and the variant selector says
@@ -43,7 +64,12 @@ export function useSlotFileDrop() {
     );
 
     const dropFileOnSlot = useCallback(
-        (category: CategoryConfig, slot: number, dataTransfer: DataTransfer | null) => {
+        (
+            category: CategoryConfig,
+            slot: number,
+            dataTransfer: DataTransfer | null,
+            target: SlotDropTarget = {}
+        ) => {
             // What the gesture means, decided once: an annotation, a vault file,
             // or nothing. The draft is the same shape either way, so everything
             // below — naming, icon, placement, persistence — stays one path.
@@ -64,9 +90,14 @@ export function useSlotFileDrop() {
             if (!stored) {
                 return;
             }
-            // Same target resolution as the `+`: the variant on screen.
+            // The variant the DROP landed on. The grid knows it exactly — in a
+            // management mode it is the one being edited, in locked mode the
+            // one the context resolved to — so it says so rather than letting
+            // this hook guess. Guessing was wrong in locked mode: there is no
+            // editing selection there, and falling back to "the first variant"
+            // would file the tool into a grid nobody was looking at.
             const variantId = isDynamicCategory(stored)
-                ? (selection[stored.id]?.current ?? null)
+                ? (target.variantId ?? selection[stored.id]?.current ?? null)
                 : null;
 
             const button: ButtonConfig = {
@@ -88,7 +119,11 @@ export function useSlotFileDrop() {
                 stored.id,
                 variantId,
                 button,
-                slot
+                slot,
+                // A file dropped on a cell means THIS cell, occupied or not.
+                // The drop is the deliberate act, so it replaces without
+                // asking; the displaced tool is collected by the ordinary rule.
+                { replaceOccupied: true }
             );
             if (!next) {
                 new Notice(t('variant_grid_full'));

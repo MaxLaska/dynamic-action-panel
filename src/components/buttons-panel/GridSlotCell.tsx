@@ -179,10 +179,14 @@ export const GridSlotCell: React.FC<GridSlotCellProps> = ({
 
     const [fileDragOver, setFileDragOver] = React.useState(false);
     const addable = !filled && onCreate !== undefined;
-    const acceptsFiles = !filled && fileDrop !== undefined;
+    // A file may land on ANY cell, filled or not: aiming it at an occupied one
+    // means "this one instead", and the drop is the deliberate act. Creating a
+    // tool through the `+` stays empty-cells-only — that is editing, and the
+    // cell has nothing to say about what should replace what.
+    const acceptsFiles = fileDrop !== undefined;
 
-    // A filled cell must never keep a stale highlight from a drag that was
-    // still in flight when the slot got occupied.
+    // A cell must never keep a stale highlight from a drag that was still in
+    // flight when dropping stopped being allowed.
     React.useEffect(() => {
         if (!acceptsFiles && fileDragOver) {
             setFileDragOver(false);
