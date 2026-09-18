@@ -557,6 +557,178 @@ its own file, and it is how someone rescues a category from a configuration this
 build cannot edit — but it says the copy may be incomplete rather than implying
 it is a backup.
 
+## 2026-09-18 – Edit mode manages, locked mode executes
+
+**Decision:** A normal activation of a tool in **edit mode no longer runs its
+actions** — neither a left click nor Enter/Space on the focused tool. Edit mode
+is the management surface, where activating a cell means **selecting** it;
+locked mode is the consumption surface and executes exactly as before. There is
+no third mode and no "select cells" sub-mode: the panel has had exactly two
+interaction modes since settings version 4.
+
+The guard lives in `useButtonClickHandler` (`src/hooks/`), which is the one hook
+both item components use. A tool is a real `<button>`, so Enter and Space
+produce an ordinary click on that same path — one guard therefore covers pointer
+and keyboard, and a future item component cannot bypass it.
+
+**Reason:** the previous behavior was an accident of the upstream code — there
+was no interaction-mode guard anywhere in the click path, so a slipped click
+while rearranging the panel could run a script. It is also what makes cell
+selection possible without a sub-mode: the plain click is free precisely because
+executing was the wrong meaning in this mode to begin with.
+
+**Consequence, accepted:** testing a tool means switching to locked mode. No
+"run" entry was added to the context menu, and no one-time notice explains the
+change — the selection outline on the clicked cell and the permanently mounted
+palette below the grid explain it on the first click.
+
+## 2026-09-18 – The selection unit is the cell coordinate, and it is ephemeral
+
+**Decision:** Grid selection selects **cells**, identified by the coordinate
+`r<row>c<column>` inside exactly one grid context `(categoryId, variantId |
+null)`. Never a tool id, never the flat slot index. Empty and occupied cells are
+indistinguishable to the selection core.
+
+The state is **ephemeral UI state** (React state in `PanelContent`, distributed
+through `GridCellSelectionContext`): never in `data.json`, never in a template,
+never in a settings version. It survives ordinary re-renders and a cell-color
+commit — the user usually tries a second color right after — and is dropped when
+edit mode ends, the search filters the panel, the category disappears or stops
+being a grid, the displayed variant changes, the rendering instance stops being
+the visible one, or Escape is pressed.
+
+`variantId === null` means the **static** grid, strictly. The domain layer's
+`resolveGridVariantId` reads a null id on a dynamic category as "the first
+variant"; for a selection that would silently address the wrong grid, so
+`setCellColorsInState` carries its own guard and refuses every mismatched
+combination instead.
+
+**Reason:** only a coordinate can address an empty cell, only a coordinate
+survives a resize unchanged (a flat slot index means a different cell as soon as
+the column count changes), and it is exactly the key `cellStyles` is already
+stored under. Persisting a selection would make a work-in-progress gesture part
+of the configuration and would have to be migrated, exported and validated
+forever.
+
+## 2026-09-18 – Replace / add / remove, and never a toggle
+
+**Decision:** The three selection gestures are fixed:
+
+```
+plain click = replace    Shift = add    Ctrl (Cmd on macOS) = remove
+```
+
+Shift **never** deselects, Ctrl **never** selects, and a second plain click on
+the only selected cell leaves it selected. There is no toggle, no range and no
+rectangle selection, and no marquee. Shift+Ctrl resolves deterministically to
+`add`; on macOS Ctrl+click is the secondary click and is ignored entirely, so a
+context menu can never open together with a selection change.
+
+Shift and Ctrl are inert on a grid that does not already hold the selection —
+only a plain click moves the selection to another grid. At most one grid carries
+a selection.
+
+**Reason:** this is the classic desktop/DCC model the user asked for, and its
+value is that each key has exactly one direction. A toggle would make "what does
+this click do?" depend on invisible state; a modifier that reaches across grids
+would create a selection spanning two categories, which nothing downstream could
+address.
+
+## 2026-09-18 – A cell color belongs to the coordinate, and `cellStyles` stays its only home
+
+**Decision:** Cell colors are written through one pure operation
+(`setCellColorsInState`, `src/domain/categoryOps.ts`) into the **existing**
+`cellStyles` field — on the category for a static grid, on the variant for a
+dynamic one. No second color persistence, no `settingsVersion` bump, no template
+format bump. Clearing a color removes the entry, and an emptied map removes the
+field, so untouched data stays byte-identical to data written before cell colors
+existed.
+
+Coloring a whole selection is **one** operation and **one** commit, never one
+per cell. The operation returns the same state object when it changes nothing,
+so a no-op never causes a save or a panel refresh.
+
+Stored values stay portable (`ocap:<name>` or a hex literal) and are resolved to
+CSS only at render time: `ocap:red` becomes `rgba(var(--color-red-rgb), …)`, so
+the color follows the theme without a `var(--…)` ever being persisted. **Gray**
+has no Obsidian color variable and resolves through `--mono-rgb-100`, the same
+theme-neutral mechanism the grid raster already uses.
+
+The resolver deliberately understands **more values than the palette offers** —
+all eight Obsidian color names and every hex literal — because a template import
+can carry them at any time, and a value this build could not draw would look
+exactly like data loss. An unknown name renders as uncolored and is never
+rewritten.
+
+**Reason:** the data model was designed for this in advance and needed no
+change. The one thing that had to be added was the render path: `ResolvedGridView`
+did not carry `cellStyles`, so no component could see a color.
+
+## 2026-09-18 – Cell colors are content; selection is chrome
+
+**Decision:** Cell colors render in **every** interaction mode, locked included,
+because they are content: a colored empty cell is a separator, a group marker or
+a reserved place. Such a cell stops being `aria-hidden` in locked mode but never
+becomes a control. The selection outline, the palette and the `+` exist only in
+edit mode.
+
+Visually the two are separate channels and neither may take the other's: the
+**color** is the cell background, the **selection** is
+`outline: 2px solid var(--interactive-accent)` inset by 2px. `border-color` is
+reserved for the drop-target rings that promise where a drop lands, `border-width`
+is frozen by the grid's geometry contract, `1px dashed var(--text-faint)` already
+means "hidden by its context", and `opacity` is used by the target states. The
+specificity needed to beat the managed ground while still losing to the drop
+rings is pinned in `tests/paletteGridGeometry.test.ts` rather than left to
+authoring order.
+
+**Reason:** a red selected cell has to read as red *and* as selected at the same
+time, and an outline is the only free channel that never takes part in layout —
+which the grid requires, because its cell rects must not move between modes.
+
+## 2026-09-18 – The `+` becomes a corner affordance so the cell surface can be selected
+
+**Decision:** The `+` of an empty cell is no longer the cell. It is an 18px
+target in the top-right corner, inset 2px, dimmed at rest and stronger when the
+pointer is on its cell. The cell surface it vacated is the selection surface.
+
+**With Shift or Ctrl held the `+` is not a button at all**: the click is treated
+as an ordinary cell click and no create modal opens. A stray corner hit in the
+middle of building a selection is the worst misclick this feature can produce,
+so it is ruled out rather than made unlikely.
+
+Because the `+` used to swallow the press of an entire empty cell (which is what
+kept a press on it from starting the list view's category drag), the grid
+container now does that for bare cell surface instead. A press on a tool is left
+untouched, so the button drag and every existing category-drag path behave
+exactly as before.
+
+**Reason:** a full-cell `+` made the empty cell unselectable, which was the one
+structural blocker against modifier-only selection. Moving it is what removed
+the need for a "select cells" sub-mode entirely.
+
+## 2026-09-18 – A modifier on the palette never writes
+
+**Decision:** In the color palette a **plain click is the only gesture that
+changes the configuration**. `Ctrl + swatch` replaces the selection with every
+cell of that color, `Shift + swatch` adds them to it, and both work on `No
+color` too (selecting the uncolored cells of the grid). The search is strictly
+inside the grid on screen — never another variant, never another category.
+
+The palette is mounted for the whole of edit mode rather than appearing with the
+first selection, for two reasons that are both about not moving things under the
+pointer: a bar that appears on the first click pushes the grid down so the next
+Shift-click lands on the wrong cell, and `Ctrl + swatch` is a selection tool that
+must work before anything is selected.
+
+**Accepted asymmetry:** Ctrl means "remove" on a cell and "replace" on a swatch.
+They are different surfaces; what unites them is the rule above, and it is stated
+in the swatch tooltip rather than left to intuition.
+
+**Reason:** the palette is the one place where a slipped modifier could rewrite
+many cells at once. Making every modifier gesture read-only turns it into a
+surface the user can explore without risk.
+
 ## Open decisions
 
 The following are still open:

@@ -1,6 +1,42 @@
 # OCAP – Status
 
-Last updated: 2026-09-17 (Phase 5.1 – Variant Grid DnD robustness & UX polish)
+Last updated: 2026-09-18 (Cell Selection + Cell Colors v1 — implemented locally,
+awaiting manual/productive validation)
+
+## Newest work first
+
+- **Cell Selection + Cell Colors v1 (2026-09-18) — implemented locally, NOT yet
+  manually or productively validated.** Not deployed to any vault, not pushed.
+  Normative specification: `docs/ocap/cell-selection-colors.md`; durable
+  decisions in `DECISIONS.md` (six entries dated 2026-09-18); technical detail
+  in `HANDOFF.md` §2d.
+  - **Edit mode no longer executes tools** (click and Enter/Space); locked mode
+    unchanged. This is a deliberate, user-visible behavior change.
+  - Selection is the **cell coordinate** in one grid context, ephemeral React
+    state in `PanelContent`, never persisted. Gestures: plain = replace,
+    Shift = add, Ctrl/Cmd = remove. No toggle, no range, no marquee, no
+    sub-mode, no multi-drag.
+  - Colors use the **existing `cellStyles`** — no `settingsVersion` bump, no
+    template format bump. One commit per color application, whatever the
+    selection size.
+  - The `+` of an empty cell became an 18px top-right corner target; a modifier
+    held over it selects instead of creating.
+  - Palette of six colors plus clear below the grid, permanently mounted in edit
+    mode; `Ctrl/Shift + swatch` selects by color and never writes.
+  - Colors render in locked mode too (they are content).
+  - Tests: **1012/1012** (36 files; +105 new in `tests/gridCellSelection.test.ts`,
+    `tests/cellColors.test.ts` and the extended `tests/paletteGridGeometry.test.ts`).
+    `tsc --noEmit`, `eslint .` and `npm run build` all green.
+  - An independent adversarial review ran against the finished code and found
+    one **high-severity** defect plus four smaller ones, all fixed before the
+    commits: the Escape handler swallowed the key globally (breaking drag
+    cancel, resize cancel, inline rename and very likely Obsidian's own modals
+    while a selection existed); the palette stayed live during a resize preview
+    and searched a different grid than the one on screen; the grid gutters
+    silently stopped being a category-drag handle; the `+` accepted a click
+    after a short drag inside it; and the click threshold used a per-axis test
+    where the drag sensor uses a euclidean one, leaving a narrow band where a
+    press did nothing at all. Detail in `HANDOFF.md` §2d.
 
 ## Current state
 

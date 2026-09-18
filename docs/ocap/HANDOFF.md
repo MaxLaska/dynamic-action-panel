@@ -324,6 +324,137 @@ vereinbart.
 - **Es gibt noch KEINE Farb-UI:** kein Picker, kein Auswahlrahmen, keine
   Pipette, kein Paint Mode, keine sichtbare Einfärbung.
 
+## 2d. Cell Selection + Cell Colors v1 (Stand 2026-09-18)
+
+**Lokal implementiert, noch NICHT manuell/produktiv abgenommen.** Nicht
+deployt, nicht gepusht. Normative Spezifikation:
+`docs/ocap/cell-selection-colors.md`; Begründungen in `DECISIONS.md`.
+
+- **Zwei Modi, nicht drei.** `InteractionMode = 'locked' | 'edit'` (der frühere
+  `sort` ist seit v4 in `edit` aufgelöst). **Edit Mode führt kein Tool mehr
+  aus** — der Guard sitzt in `useButtonClickHandler`, dem EINEN Hook, den
+  `ButtonItem` und `SortableButtonItem` beide benutzen. Weil ein Tool ein echtes
+  `<button>` ist, erzeugen Enter und Leertaste einen gewöhnlichen Click auf
+  demselben Pfad: ein Guard deckt Zeiger und Tastatur ab.
+- **Auswahleinheit ist die Zell-Koordinate** `r<row>c<column>` in genau einem
+  Grid-Kontext `(categoryId, variantId | null)`. Reiner React-State in
+  `PanelContent`, verteilt über `GridCellSelectionContext`. Nie in `data.json`,
+  nie im Template, nie in einer Settings-Version.
+- **Die Regeln sind pur** (`src/utils/gridCellSelection.ts`): `replace` / `add` /
+  `remove`, kein Toggle. Shift und Strg sind auf einem fremden Grid **inert** —
+  nur ein Plain-Click verschiebt die Auswahl in ein anderes Grid. Jede Operation
+  gibt bei „nichts geändert" dasselbe State-Objekt zurück.
+- **macOS:** Strg+Klick ist dort der Sekundärklick und wird komplett ignoriert
+  (`cellGestureOf(..., isMac)` liefert `null`), Cmd übernimmt „entfernen".
+  `Platform.isMacOS` wird nur in `src/utils/cellSelectionGesture.ts` gelesen,
+  damit der Kern pur bleibt.
+- **Die Geste gehört dem GRID, nicht der Zelle.** `CategoryButtonGrid` trägt
+  `onPointerDownCapture` / `onPointerDown` / `onClick` am Grid-Container und
+  liest die getroffene Zelle über `closest('[data-slot]')`. Damit sind belegte
+  Zelle (Click blubbert vom Tool hoch), leere Zelle und `+` ein Pfad. Kein
+  Pointer-Handler pro Zelle.
+- **Click vs. Drag, dreifach abgesichert:** dnd-kit hängt beim Aktivieren selbst
+  einen Click-Stopper ans Dokument (bis 50 ms nach dem Drag-Ende), der Zeiger
+  muss **euklidisch ≤ 4 px** gereist sein — exakt die Gegenprobe zur
+  Sensor-Schwelle `> 4`, damit kein Press zwischen beide Regeln fällt und
+  wirkungslos bleibt —, **und** der Press-Ursprung wird verworfen, sobald
+  `isDragging` wahr wird. Letzteres deckt den Drag ab, der wandert und
+  zurückkommt: der landet mit ~0 px Gesamtweg auf seiner eigenen Zelle.
+  Dieselbe Schwellenregel gilt im `+` selbst, das mit 18 px klein genug ist,
+  dass ein Press darin wandern und trotzdem darin enden kann.
+- **Der Kategorie-Drag der List-View** wurde bisher auf leeren Zellen dadurch
+  verhindert, dass das `+` die ganze Zelle füllte und seinen Press schluckte.
+  Das `+` ist jetzt eine Ecke, also schluckt der Grid-Container den Press auf
+  nackter **Zellfläche** — und nur dort: der Press muss einen
+  `[data-slot]`-Vorfahren haben und darf nicht auf einem Tool liegen. Ein Press
+  in der 4-px-**Rinne** zwischen zwei Zellen oder auf dem Grid-Hintergrund
+  blubbert weiter und startet den Kategorie-Drag wie bisher (er ist dort auch
+  kein Selection-Ziel, es gibt also nichts zu schützen). Der erste Entwurf
+  schluckte die Rinne mit und nahm ihr damit stillschweigend die
+  Handle-Funktion.
+- **Das `+`** ist 18 px, `position: absolute` oben rechts, 2 px eingerückt. Mit
+  Shift/Strg ist es **kein Button**: der Click blubbert zum Grid und zählt als
+  Zell-Click. Es schluckt `pointerdown/mousedown/touchstart` weiterhin
+  unabhängig vom Modifier, sonst startete ein Shift-Press den Kategorie-Drag.
+- **Variant-Pin:** Beginnt eine Auswahl in einer **dynamischen** Kategorie, ruft
+  der Click-Handler zuerst `selectVariant(category.id, variantId)`. Ohne
+  expliziten Pick leitet `selectedVariantOf` die angezeigte Variant aus dem
+  Obsidian-Kontext ab — ein Notizwechsel tauschte sonst das Grid unter dem
+  Zeiger, und die Auswahl (die eine Variant benennt) verschwände aus einem für
+  den Nutzer unsichtbaren Grund.
+- **I-CTX** prüft `PanelContent` in einem Effekt gegen genau die Daten, aus
+  denen gerendert wird (Modus, Suche, Kategorie-Mitgliedschaft, angezeigte
+  Variant). Zusätzlich das Prop **`selectable`** pro `CategoryButtonGrid`-
+  Instanz: eine Kategorie ist zeitweise mehrfach gerendert (Drag-Vorschau
+  doppelt, versteckter Stale-Folder-Overlay) und teils versteckt-aber-gemountet
+  (eingeklappte List-Kategorie, inaktiver Tab, beide `display:none`). **Nur eine
+  Instanz, die selbst selectable WAR, darf aufräumen** (`wasSelectableRef`) —
+  sonst beendete das Unmounten einer Vorschau die echte Auswahl.
+- **Escape** leert die Auswahl — und **verschluckt die Taste dabei nie**
+  (`CellSelectionEscape.tsx`). Das war der schwerste Fund des Reviews: die erste
+  Fassung war ein Capture-Listener am `document`, der für **jedes** Escape
+  `stopPropagation()` rief, solange eine Auswahl existierte. Damit waren alle
+  anderen Escape-Handler der App tot — dnd-kits Drag-Abbruch und der
+  Resize-Abbruch hören beide in der **Bubble**-Phase am Dokument, die
+  Inline-Umbenennung im Folder ist ein React-Handler am Root-Container, und
+  Obsidians Modals/Menüs sind ebenfalls keine Document-Capture-Listener. Eine
+  Auswahl zu leeren darf niemanden in einem Dialog einsperren. Die Regeln jetzt:
+  Bubble-Phase, kein `stopPropagation`/`preventDefault`, **ein laufender Drag
+  gewinnt** (dort heißt Escape „Drag abbrechen"), und nur Events **aus dem
+  Panel** zählen. Der Handler sitzt deshalb als eigene Komponente **innerhalb**
+  des Drag-Providers — `PanelContent` steht darüber und sieht `isDragging`
+  nicht. Der Vorrang vor dem Folder hängt nicht mehr an einer Race: der Overlay
+  prüft `useHasCellSelection()` selbst, was reihenfolgeunabhängig ist. Per
+  Quelltext-Scan gepinnt (`tests/paletteGridGeometry.test.ts`).
+- **Farben: `cellStyles` bleibt die einzige Persistenz.** Ein Op
+  (`setCellColorsInState`), ein Commit für die ganze Auswahl. Ziel-Auflösung
+  **strikt**, ausdrücklich NICHT über `resolveGridVariantId` (das deutet `null`
+  bei dynamischen Kategorien als „erste Variant"): statisch ⇒ nur `null`,
+  dynamisch ⇒ nur eine existierende Variant. Alles andere → unverändertes
+  `state` (Identität), also kein Save.
+- **Farbwerte bleiben portabel**, CSS entsteht erst beim Rendern
+  (`src/utils/gridCellColor.ts`). `ocap:gray` läuft über `--mono-rgb-100` (es
+  gibt kein `--color-gray-rgb`); die Tint-Stärke ist ein Token
+  (`--ocap-cell-color-alpha`). **Der Resolver kennt mehr als die Palette
+  anbietet** — alle acht Obsidian-Namen und jedes Hex —, weil ein Import sie
+  jederzeit mitbringen kann und ein nicht zeichenbarer Wert wie Datenverlust
+  aussähe. Unbekannte Namen zeichnen nichts und werden nie umgeschrieben.
+- **Die Render-Lücke ist geschlossen:** `ResolvedGridView` trägt jetzt
+  `cellStyles` — als **Referenz** des Besitzers durchgereicht, nie kopiert, nie
+  mutiert (dasselbe Objekt hängt an den Settings).
+- **CSS-Spezifität ist ein Kontrakt**, gepinnt in
+  `tests/paletteGridGeometry.test.ts`: die Farbregel ist wörtlich
+  `body .buttons-panel .ocap-palette-grid .ocap-grid-slot.ocap-grid-slot--colored`
+  (0-4-1, schlägt den `--managed`-Grund bei 0-3-0 und den Managed-Empty-Hover
+  bei 0-4-0), die Drop-/File-Target-Ringe werden danach explizit
+  wiederhergestellt (sie sind nur 0-3-1), und eine eigene Hover-Regel (0-5-1)
+  hält die Farbe gegen `--empty:hover`. **Zwei** Hover-Fälle brauchen das: die
+  leere gefärbte Zelle (Managed-Grund) und die **belegte** gefärbte Zelle, deren
+  Tool-Button beim Hover einen deckenden Grund malt und sonst genau die Farbe
+  verdeckte, die der Nutzer gerade ändern will — dort liegt jetzt eine
+  translozente `--mono-rgb-100`-Auflage darüber, damit Farbe und Hover beide
+  lesbar bleiben. `.ocap-grid-slot` bekam `position: relative` ohne Offsets —
+  geometrisch neutral, verankert das `+`; kein bestehender absolut positionierter
+  Nachfahre hängt sich dadurch um (geprüft).
+- **Die Palette** (`CellColorPalette`) sitzt UNTER dem Grid und ist im Edit Mode
+  dauerhaft montiert: eine Leiste, die bei der ersten Auswahl erscheint, schöbe
+  das Grid unter dem Zeiger weg, und `Strg + Farbfeld` muss ohne bestehende
+  Auswahl funktionieren. Sie heißt bewusst nicht wie eine Grid-Edge, sonst zöge
+  der Edge-Kontrakt sie in seine Assertions.
+- **Die Palette ist während einer Resize-Vorschau nicht montiert**
+  (`selectionActive`, nicht nur `selectionEnabled`). Die Vorschau überlebt den
+  Zeiger bewusst, bis die gespeicherten Dimensionen nachziehen; eine Leiste in
+  diesem Fenster durchsuchte ein anderes Grid, als der Nutzer ansieht.
+- Tests: `tests/gridCellSelection.test.ts` (47), `tests/cellColors.test.ts` (41),
+  `tests/paletteGridGeometry.test.ts` +17 (Spezifitäts- und Reihenfolge-Kontrakt,
+  `+`-Geometrie, Palette, plus ein Quelltext-Scan des Escape-Handlers).
+  Gesamt **1012**.
+- Noch offen (bewusst v1-Nichtziele): Marquee, Range/Rechteck, Multi-Drag,
+  Pipette, freier RGB-Picker, Undo, Keyboard-Pfeilauswahl, Delete/Export
+  Selected, ZotFlow-Color-Seeding. Ebenfalls zurückgestellt: die Leiste zeigt
+  noch nicht an, welche Farben im Grid vorkommen, solange ein Modifier gehalten
+  wird (Spezifikation §10) — der Tooltip nennt alle drei Bedeutungen.
+
 ## 2. Produktmodell
 
 - Eine Grid-Kategorie ist **statisch** (ein volles Grid, gespeichert als
