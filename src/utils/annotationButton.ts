@@ -14,7 +14,7 @@ import {
     buildLibraryAnnotationUrl,
     type ZotflowAnnotationRef,
 } from '@/utils/zotflowAnnotationDrop';
-import { annotationTooltip, shortSourceLabel, PAGE_PREFIX } from '@/utils/sourceLabel';
+import { annotationTooltip, shortSourceLabel } from '@/utils/sourceLabel';
 
 /** How long a label may get before it is cut; the cell shows far less. */
 const MAX_LABEL_TEXT = 60;
@@ -80,11 +80,11 @@ function annotationName(ref: ZotflowAnnotationRef): string {
     }
     // A highlight with neither text nor comment (an image or ink region): name it
     // after what it points at, since there is nothing to quote.
-    const page = ref.pageLabel?.trim();
-    if (ref.kind === 'local' && ref.fileBasename) {
-        return page ? `${ref.fileBasename} · ${PAGE_PREFIX} ${page}` : ref.fileBasename;
-    }
-    return page ? `Annotation · ${PAGE_PREFIX} ${page}` : 'Annotation';
+    //
+    // Deliberately WITHOUT the page: a name belongs to the user and is never
+    // rewritten, while the page can be corrected in the reader afterwards. A page
+    // on the face would end up contradicting the hover text, which does follow it.
+    return ref.kind === 'local' && ref.fileBasename ? ref.fileBasename : 'Annotation';
 }
 
 /** The action that reopens the annotation. */

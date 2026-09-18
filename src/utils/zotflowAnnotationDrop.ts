@@ -255,6 +255,48 @@ export function buildAnnotationSubpath(annotationId: string, pageIndex?: number)
 }
 
 /**
+ * The annotation a stored subpath points at — the inverse of
+ * `buildAnnotationSubpath`, using the same extraction ZotFlow itself performs.
+ *
+ * Needed to ask "which annotation is this bookmark for?" long after the drop,
+ * without storing the id a second time. Returns null for any other subpath (a
+ * heading, a block reference, a bare page), which is simply not an annotation.
+ */
+export function parseAnnotationSubpath(
+    subpath: string | undefined
+): { annotationId: string; pageIndex?: number } | null {
+    if (typeof subpath !== 'string') {
+        return null;
+    }
+    // Anchored at a subpath boundary, so a heading that merely contains the word
+    // is not mistaken for one (ZotFlow's own links are `#page=N#annotation=…`).
+    const match = /(?:^|#)annotation=([^&#]+)/.exec(subpath);
+    if (!match?.[1]) {
+        return null;
+    }
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(decodeURIComponent(match[1]));
+    } catch {
+        return null;
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return null;
+    }
+    const annotationId = ownString(parsed, 'annotationID');
+    if (annotationId === undefined || !isAnnotationKey(annotationId)) {
+        return null;
+    }
+    const pageIndex = ownNumber(parsed, 'pageIndex');
+    return {
+        annotationId,
+        ...(pageIndex !== undefined && Number.isInteger(pageIndex) && pageIndex >= 0
+            ? { pageIndex }
+            : {}),
+    };
+}
+
+/**
  * The URI that reopens a LIBRARY annotation: ZotFlow's own protocol handler,
  * which looks the annotation up in its database and navigates its parent
  * attachment there. Nothing else can address a library item.

@@ -457,6 +457,37 @@ cell now lands on the last cell the pointer addressed rather than reverting;
 only an explicitly refused target (`blocked`) and a release outside the button
 area still revert.
 
+## An annotation bookmark keeps its source but not its page
+
+**Decision:** a dropped ZotFlow annotation is an ordinary `file` tool — an
+operational bookmark, not a second annotation store and not a knowledge node.
+Its hover text is split by lifetime: the compact source (`Bieker, Westerholt
+2021`) is a **snapshot** taken once at drop time, while the **page is resolved
+when the hover text is needed** — from an open reader if there is one, otherwise
+from ZotFlow's own `.zf.json` sidecar, read-only. The page captured at drop time
+remains the fallback. Navigation never depends on any of this: it stays
+(PDF vault path + annotation id), carried in the action's `subpath`.
+
+**Reason:** the two halves age differently. A book's authors do not change, so
+re-deriving them on every render would buy nothing and couple the panel to
+metadata it does not own. A page label is not a fixed property of a highlight:
+ZotFlow lets the user correct it afterwards ("Edit Page Number", which sends
+only `{ id, pageLabel }`), and that is routine because PDFs almost always carry
+an offset between the physical page and the printed folio. A bookmark that
+conserved the capture-time page was therefore quietly wrong from the moment the
+user fixed it — found in productive use, not in testing.
+
+**Consequence:** the source is never synchronized and the page is never
+synchronized either — it is simply looked up on demand, so there is no store, no
+watcher and no sync layer. The lookup is two `getFileByPath` probes (the
+installed ZotFlow build patches the sidecar path order, so both layouts are
+tried) plus one `cachedRead`; the render path does no I/O. Anything unresolvable
+— deleted annotation, missing sidecar, ZotFlow disabled — silently keeps the
+captured page, and hovering never raises a notice. Because a name belongs to
+the user and is never rewritten, no page is ever put on the button's face.
+Reading the sidecar was listed as a non-goal in the original audit; that
+exclusion is superseded (its section 20.6) and now covers writing only.
+
 ## Open decisions
 
 The following are still open:

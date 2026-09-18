@@ -213,16 +213,153 @@ export function readAnnotationMeta(
     annotationId: string
 ): ZotflowAnnotationMeta | null {
     for (const leaf of localReaderLeaves(app)) {
-        const view = leaf.view as unknown as LocalReaderView;
-        if (readerFilePath(view) !== filePath) {
-            continue;
-        }
-        const meta = annotationMetaOf(view, annotationId);
-        if (meta) {
-            return meta;
+        try {
+            const view = leaf?.view as unknown as LocalReaderView | undefined;
+            if (!view || readerFilePath(view) !== filePath) {
+                continue;
+            }
+            const meta = annotationMetaOf(view, annotationId);
+            if (meta) {
+                return meta;
+            }
+        } catch {
+            // A leaf shaped differently than expected is simply not an answer.
         }
     }
     return null;
+}
+
+/**
+ * The page the document prints for this annotation, as ZotFlow has it NOW.
+ *
+ * A page label is not a fixed property of a highlight: ZotFlow lets the user
+ * correct it afterwards ("Edit Page Number"), which is routine because PDFs
+ * usually carry an offset between the physical page and the printed folio. Only
+ * `pageLabel` changes then — the annotation id and `pageIndex` stay — so a
+ * bookmark can show the corrected page while still navigating by the same id.
+ *
+ * Two sources, cheapest first, and neither depends on the other:
+ * 1. an open reader for that file, straight from memory;
+ * 2. otherwise ZotFlow's own sidecar, read through Obsidian's cached read.
+ *
+ * Returns null when the annotation cannot be found at all — the caller then
+ * keeps whatever was captured, rather than dropping the page.
+ *
+ * @param app Obsidian app
+ * @param filePath Vault path of the annotated document
+ * @param annotationId The annotation's stable id
+ */
+export async function resolveCurrentPageLabel(
+    app: App,
+    filePath: string,
+    annotationId: string
+): Promise<string | null> {
+    // Never rejects and never throws: this runs while the pointer is moving, so
+    // the only acceptable failure is "I do not know", which the caller answers by
+    // keeping what was captured.
+    try {
+        if (typeof filePath !== 'string' || typeof annotationId !== 'string') {
+            return null;
+        }
+        const fromReader = readAnnotationMeta(app, filePath, annotationId)?.pageLabel;
+        if (fromReader) {
+            return fromReader;
+        }
+        return await readSidecarPageLabel(app, filePath, annotationId);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * The sidecar ZotFlow keeps for a document, found rather than derived.
+ *
+ * The path follows the `localSidecarFolder` setting, but the order of the
+ * document's own folder and that setting differs between ZotFlow builds (the
+ * installed one is locally patched), so both candidates are probed and the one
+ * that exists wins. Two path lookups, no scanning.
+ */
+function findSidecar(app: App, filePath: string): TFile | null {
+    const slash = filePath.lastIndexOf('/');
+    const dir = slash === -1 ? '' : filePath.slice(0, slash);
+    const fileName = slash === -1 ? filePath : filePath.slice(slash + 1);
+    const dot = fileName.lastIndexOf('.');
+    const basename = dot === -1 ? fileName : fileName.slice(0, dot);
+
+    const folder = sidecarFolderSetting(app).replace(/^\/+|\/+$/g, '');
+    const dirPart = dir ? `${dir}/` : '';
+    const folderPart = folder ? `${folder}/` : '';
+    const candidates = [
+        `${dirPart}${folderPart}${basename}.zf.json`,
+        `${folderPart}${dirPart}${basename}.zf.json`,
+    ];
+
+    for (const candidate of candidates) {
+        try {
+            const file = app.vault.getFileByPath(candidate.replace(/\/+/g, '/'));
+            if (file) {
+                return file;
+            }
+        } catch {
+            // Keep probing; a bad candidate is not an error.
+        }
+    }
+    return null;
+}
+
+/**
+ * ZotFlow's configured sidecar folder, or '' (its default: next to the
+ * document).
+ *
+ * Read from the live plugin, so a DISABLED ZotFlow yields '' — the sidecar of a
+ * vault that configures a folder is then not found and the caller keeps its
+ * captured page. That is the right outcome: with ZotFlow off, the bookmark
+ * cannot navigate either, so there is nothing to be current about.
+ */
+function sidecarFolderSetting(app: App): string {
+    try {
+        const plugin = (
+            app as unknown as {
+                plugins?: { plugins?: Record<string, { settings?: unknown }> };
+            }
+        ).plugins?.plugins?.['zotflow'];
+        const value = asObject(plugin?.settings)?.['localSidecarFolder'];
+        return typeof value === 'string' ? value : '';
+    } catch {
+        return '';
+    }
+}
+
+/** `pageLabel` of one annotation inside the sidecar, or null. */
+async function readSidecarPageLabel(
+    app: App,
+    filePath: string,
+    annotationId: string
+): Promise<string | null> {
+    const sidecar = findSidecar(app, filePath);
+    if (!sidecar) {
+        return null;
+    }
+    try {
+        // Obsidian's cached read: repeated hovers do not hit the disk again.
+        const parsed: unknown = JSON.parse(await app.vault.cachedRead(sidecar));
+        const annotations = asObject(parsed)?.['annotations'];
+        if (!Array.isArray(annotations)) {
+            return null;
+        }
+        for (const entry of annotations as unknown[]) {
+            const record = asObject(entry);
+            if (readString(record, 'id') !== annotationId) {
+                continue;
+            }
+            const pageLabel = readString(record, 'pageLabel')?.trim();
+            return pageLabel ? pageLabel : null;
+        }
+        return null;
+    } catch {
+        // Missing, unreadable or not JSON: the caller keeps its snapshot.
+        return null;
+    }
 }
 
 /**

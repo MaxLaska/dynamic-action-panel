@@ -10,6 +10,7 @@ import {
     useInteractionMode,
 } from '@/contexts/PanelVisibilityContext';
 import { hasConditions } from '@/context/conditions';
+import { resolveLiveTooltip } from '@/utils/liveTooltip';
 import {
     ContextStatusBadge,
     type ContextStatus,
@@ -94,9 +95,10 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
     // (a dropped annotation records its source and page there); otherwise it is
     // the full name, which is what a cell truncates.
     const hoverText = button.tooltip?.trim() || button.name;
+    const tooltipsEnabled = plugin.settings.panelConfig.showButtonTooltip;
     React.useEffect(() => {
         const el = buttonRef.current;
-        if (el && hoverText && plugin.settings.panelConfig.showButtonTooltip) {
+        if (el && hoverText && tooltipsEnabled) {
             setTooltip(el, hoverText);
         }
         return () => {
@@ -105,7 +107,41 @@ export const SimpleButton: React.FC<SimpleButtonProps> = ({
                 setTooltip(el, '');
             }
         };
-    }, [hoverText, plugin.settings.panelConfig.showButtonTooltip]);
+    }, [hoverText, tooltipsEnabled]);
+
+    // One part of that text can go out of date while the tool stays correct: the
+    // printed page of a PDF annotation, which the user may fix in the reader
+    // afterwards. Resolved when the pointer arrives — before the tooltip is
+    // shown — rather than kept in sync, so nothing observes anything.
+    React.useEffect(() => {
+        const el = buttonRef.current;
+        if (!el || !hoverText || !tooltipsEnabled) {
+            return;
+        }
+        let cancelled = false;
+        let bound = hoverText;
+        const refresh = () => {
+            // Always resolved against the STORED text, never against whatever a
+            // previous hover happened to bind: a lookup that fails must fall back
+            // to what was captured, not to the last value that worked.
+            void resolveLiveTooltip(app, button)
+                .then((refreshed) => {
+                    const next = refreshed ?? hoverText;
+                    if (!cancelled && next !== bound && buttonRef.current) {
+                        bound = next;
+                        setTooltip(buttonRef.current, next);
+                    }
+                })
+                .catch(() => {
+                    // Hovering must never surface an error; keep what is bound.
+                });
+        };
+        el.addEventListener('pointerenter', refresh);
+        return () => {
+            cancelled = true;
+            el.removeEventListener('pointerenter', refresh);
+        };
+    }, [app, button, hoverText, tooltipsEnabled]);
 
     // Bind the context menu.
     React.useEffect(() => {

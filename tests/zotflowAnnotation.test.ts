@@ -466,9 +466,12 @@ describe('the tool a captured annotation becomes', () => {
     it('names itself after the file when there is nothing to quote', () => {
         // An image or ink region: no text, no comment.
         expect(buildAnnotationButtonDraft(local()).name).toBe('Salomon-Grundlagen');
-        expect(buildAnnotationButtonDraft(local({ pageLabel: '7' })).name).toBe(
-            'Salomon-Grundlagen · S. 7'
-        );
+        // No page on the FACE, even when one is known: a name is the user's and is
+        // never rewritten, while the page can be corrected in the reader later —
+        // a page here would end up contradicting the hover text, which follows it.
+        const withPage = buildAnnotationButtonDraft(local({ pageLabel: '7' }));
+        expect(withPage.name).toBe('Salomon-Grundlagen');
+        expect(withPage.tooltip).toBe('Salomon 2004 · S. 7');
     });
 
     it('condenses a long quote to one short line', () => {

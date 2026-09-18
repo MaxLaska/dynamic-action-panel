@@ -849,10 +849,20 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
     gedruckte Folios verifiziert). Fehlt `pageLabel`, entfällt die Seite —
     keine plausibel aussehende falsche Seitenzahl. `S.` ist eine feste
     Abkürzung (kein `de`-Locale vorhanden).
-  - **Presentation Snapshot, keine Sync:** Tooltip und Label werden EINMAL
-    beim Drop erfasst. Änderungen an Annotation, Farbe, Kommentar oder
-    Metadaten in ZotFlow werden nicht nachgezogen; die Navigation hängt
-    allein an der Annotation-ID. ZotFlow bleibt Owner der Annotation.
+  - **Snapshot für die Quelle, Live für die Seite:** die Kurzquelle und das
+    Label werden EINMAL beim Drop erfasst und nie nachgezogen. Die **Seite**
+    dagegen wird beim Hover aufgelöst (`src/utils/liveTooltip.ts`): offener
+    Reader zuerst, sonst ZotFlows `.zf.json` **read-only** über
+    `vault.cachedRead`; der Sidecar-Pfad wird nicht blind abgeleitet, sondern
+    in beiden Reihenfolgen (Stock/Patch) per `getFileByPath` probiert. Grund:
+    ZotFlows „Edit Page Number" korrigiert `pageLabel` nachträglich (nur
+    `{id, pageLabel}`, `pageIndex` und ID bleiben) — ein konservierter Wert
+    wäre ab da falsch. Die Capture-Seite ist nur noch **Fallback** (gelöschte
+    Annotation, fehlende Sidecar, ZotFlow deaktiviert → dann ist auch dessen
+    Ordner-Einstellung nicht lesbar). Kein Store, kein Watcher, keine Sync;
+    Hover erzeugt nie eine Notice und der Render-Pfad keine I/O. Die
+    Navigation hängt unverändert allein an PDF-Pfad + Annotation-ID.
+    ZotFlow bleibt Owner der Annotation. Siehe `DECISIONS.md`.
   - **DAP schreibt ausschließlich sein eigenes `data.json`** — kein
     Nexus-Node, keine Source Note, keine `.zf.json`, keine Zotero-Daten.
   - **Known limitation:** wird das PDF umbenannt/verschoben, zeigt der Klick

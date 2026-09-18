@@ -59,7 +59,7 @@ Typ `AnnotationJSON` (`ZF/types/zotero-reader.d.ts:167-198`), Zotero-Reader-Form
 - **Was:** pro lokaler Datei (PDF/EPUB/HTML) genau eine Sidecar `{version, annotations[]}`; `SIDECAR_VERSION = 1` (`local-data-manager.ts:10-17`). Pfad rein aus dem Dateipfad abgeleitet (`ZF/utils/utils.ts:47-65`, installiert gepatcht, s. o.); **kein** Rückverweis auf das PDF, **kein** Item-/Attachment-Key.
 - **Source of Truth:** ja, für lokale Annotationen der durable Store — aber bei offenem Reader gibt es zwei In-Memory-Kopien (`LocalDataManager.annotationCache`, `local-data-manager.ts:27,199-205`; Reader `AnnotationManager._annotations`). Jeder Save schreibt die **ganze** Datei aus dem Cache neu; kein Watcher auf externe Änderungen.
 - **Rename/Move des PDFs:** ZotFlow benennt die Sidecar mit um (`ZF/main.ts:499-506,795-812`, `ZF/utils/file.ts:208-236`); Löschen trasht sie. **Sidecar selbst verschoben/umbenannt:** kein Handler → Reader findet nichts, nächster Save legt eine neue an (Annotationen effektiv „verschwunden“).
-- **Für DAP bedeutet das:** Die Sidecar ist **nicht** der Ort, an dem DAP nachschlägt. Beim Drop liest DAP die Annotation aus dem laufenden Reader; beim Klick löst ZotFlow die ID selbst gegen die Sidecar auf. DAP darf den Sidecar-Pfad in v1 **nicht selbst ableiten** (die installierte Reihenfolge ist gepatcht; Stock und Patch widersprechen sich). Wenn v1 einen Existenz-Check will, dann über den geöffneten Leaf (`view.dataManager.getAnnotation(id)`, intern) — best effort.
+- **Für DAP bedeutet das** (durch Abschnitt 20.6 teils überholt — die *Seite* wird inzwischen read-only aus der Sidecar gelesen): Die Sidecar ist **nicht** der Ort, an dem DAP die Annotation *identifiziert*. Beim Drop liest DAP die Annotation aus dem laufenden Reader; beim Klick löst ZotFlow die ID selbst gegen die Sidecar auf. Den Sidecar-Pfad darf DAP **nicht blind ableiten** (die installierte Reihenfolge ist gepatcht; Stock und Patch widersprechen sich) — es probiert beide Kandidaten und nimmt den existierenden (Abschnitt 20.6).
 
 ## 5. Stable Annotation Identity
 
@@ -327,7 +327,7 @@ Reihenfolge der Implementierung: (1) → Tests → (2) pure Teile → Tests → 
 
 ## 18. Explicit Non-Goals
 
-Annotation bearbeiten/löschen; Farbe synchron halten oder rendern; bidirektionale Sync; automatische Label-Aktualisierung bei Textänderung; Batch-Import von Annotationen; Annotation-Browser; Zotero-Library-UI; Selection/Create-Note-Integration; Cell Colors; Sidecar lesen oder schreiben; `.zf.json`-Pfad ableiten; eigener Action-Typ; `formatVersion`/`settingsVersion`-Bump; Rename-Tracking von PDF-Pfaden; Fuzzy-Suche nach Highlight-Text; `zotero://`-Links; Popout-Fenster-Drags (unverifiziert, nicht adressiert).
+Annotation bearbeiten/löschen; Farbe synchron halten oder rendern; bidirektionale Sync; automatische Label-Aktualisierung bei Textänderung; Batch-Import von Annotationen; Annotation-Browser; Zotero-Library-UI; Selection/Create-Note-Integration; Cell Colors; Sidecar **schreiben** (Lesen der Seite ist seit Abschnitt 20.6 erlaubt); eigener Action-Typ; `formatVersion`/`settingsVersion`-Bump; Rename-Tracking von PDF-Pfaden; Fuzzy-Suche nach Highlight-Text; `zotero://`-Links; Popout-Fenster-Drags (unverifiziert, nicht adressiert).
 
 ## 19. Known Version Risks
 
@@ -394,6 +394,18 @@ Behoben, dreistufig: (1) genau ein Kandidat → nehmen; (2) mehrere → derjenig
 
 Die Annotation-Farbe ist beim Capture verfügbar: `color` im Reader-Record bzw. in der Sidecar, **lowercase 6-stelliges Hex mit `#`** (7 Zeichen). Real gesehen: `#ffd400`, `#2ea8e5`, `#ff6666`; ein `#f19837` steht in einer Notiz, aber in keiner aktuellen Sidecar — die Palette ist also als **offen** zu behandeln, nicht als Enum. `ZotflowAnnotationRef` trägt sie derzeit **nicht** (bewusst: keine Farb-UI, kein `cellStyles`-Konsument). Für das Color-Seeding genügt später ein Feld auf dem Ref plus ein einmaliges Schreiben in `cellStyles` beim Drop; danach ist die Zellfarbe unabhängig. Keine Dauer-Synchronisation.
 
-### 20.6 Was die Tests NICHT beweisen können
+### 20.6 Korrektur: die Sidecar wird gelesen — read-only, gezielt, für die Seite
+
+Abschnitt 4 und die Non-Goals (Abschnitt 18) sagen „Sidecar lesen" und „`.zf.json`-Pfad ableiten" seien ausgeschlossen, und Zeile 2 der Entscheidungsmatrix verwarf den Sidecar-Lookup. **Das gilt nicht mehr**, und zwar aus einem Grund, den die Analyse nicht kannte:
+
+`pageLabel` ist keine feste Eigenschaft einer Markierung. ZotFlows „Edit Page Number" korrigiert sie nachträglich (Reader-Popup → `onUpdateAnnotations([{ id, pageLabel }])`), und das ist Alltag, weil PDFs fast immer einen Offset zwischen physischer und gedruckter Seite haben. Ein Lesezeichen, das die Capture-Seite konserviert, ist ab dieser Korrektur stillschweigend falsch — vom Nutzer produktiv gefunden.
+
+Geändert wurde daher genau eine Sache: **die angezeigte Seite wird aufgelöst, wenn sie gebraucht wird.** Reihenfolge: offener Reader (`dataManager`, in-memory), sonst ZotFlows eigene Sidecar über `vault.cachedRead`. Der Pfad wird **nicht** blind abgeleitet — beide Kandidaten (Stock- und Patch-Reihenfolge) werden per `getFileByPath` probiert, der existierende gewinnt. Zwei O(1)-Lookups, kein Scan, kein Cache, kein Watcher, kein Schreiben.
+
+Unverändert bleiben: die Quellenangabe (Snapshot, keine Bibliografie-Sync), die Navigationsidentität (PDF-Pfad + Annotation-ID), `#page=` = `pageIndex + 1` und die gespeicherte Capture-Seite als Fallback, wenn nichts auflösbar ist (gelöschte Annotation, fehlende Sidecar, ZotFlow deaktiviert — dann ist auch dessen Ordner-Einstellung nicht lesbar, und navigieren könnte das Tool ohnehin nicht).
+
+Aus den Non-Goals gestrichen sind damit nur „Sidecar lesen" und „`.zf.json`-Pfad ableiten". **Sidecar schreiben bleibt ausgeschlossen**, ebenso jede Synchronisation.
+
+### 20.7 Was die Tests NICHT beweisen können
 
 Jede ZotFlow-Konstante (View-Type, Frontmatter-Key, `_draggingAnnotationIDs`, `dataManager.getAnnotation`, die Subpath-Grammatik) ist in den Unit-Tests nur gegen die eigenen Fakes geprüft. Wäre eine davon falsch, bleiben **alle** Tests grün und das Feature degradiert stumm zu „keine Annotation". Deshalb ist der Live-Smoke in der isolierten Instanz Pflichtbestandteil und nicht durch die Suite ersetzbar.

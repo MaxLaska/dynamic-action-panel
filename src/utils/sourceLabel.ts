@@ -186,3 +186,49 @@ export function annotationTooltip(
     }
     return parts.length > 0 ? parts.join(SEPARATOR) : undefined;
 }
+
+const ESCAPED_SEPARATOR = SEPARATOR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const ESCAPED_PREFIX = PAGE_PREFIX.replace(/\./g, '\\.');
+
+/**
+ * Splits the source half off a hover text this module wrote. The leading group is
+ * greedy on purpose, so it is the LAST page part that is removed, and `[\s\S]`
+ * rather than `.` so a multi-line text is handled too.
+ */
+const WITH_PAGE = new RegExp(`^([\\s\\S]*)${ESCAPED_SEPARATOR}${ESCAPED_PREFIX}\\s[\\s\\S]*$`);
+
+/**
+ * A hover text that is ONLY a page — what a library annotation gets, since no
+ * vault folder names its source.
+ *
+ * Checked after the suffix form and limited to a SINGLE token, which is the only
+ * way to tell "S. 43" from a source that happens to begin the same way
+ * ("S. Freud 1900"). Page labels are single tokens in practice: a folio, a roman
+ * numeral, "Cover".
+ */
+const PAGE_ONLY = new RegExp(`^${ESCAPED_PREFIX}\\s\\S+$`);
+
+/**
+ * The same hover text with a different page — used when the page shown at
+ * capture time is no longer the page the document prints.
+ *
+ * Only the page is replaced; the source part is left exactly as captured,
+ * because that is a snapshot on purpose. Reading the old page back off is exact
+ * rather than a guess: this module wrote the suffix with the very constants it
+ * strips here.
+ *
+ * @param tooltip The stored hover text, or undefined when there is none
+ * @param pageLabel The page the document prints now; empty drops the page
+ * @returns The recomposed text, or undefined when nothing is left to show
+ */
+export function withCurrentPage(
+    tooltip: string | undefined,
+    pageLabel: string | undefined
+): string | undefined {
+    const stored = tooltip ?? '';
+    // Suffix form first: it is the shape this module writes whenever there is a
+    // source at all, and it is the only one that can be recognised for certain.
+    const withoutPage = WITH_PAGE.exec(stored)?.[1];
+    const source = withoutPage ?? (PAGE_ONLY.test(stored) ? '' : stored);
+    return annotationTooltip(source.trim(), pageLabel);
+}
