@@ -302,6 +302,7 @@
     "button_no_action": "No action assigned.",
     "grid_slot_add_tooltip": "Add a tool here (row {row}, column {column})",
     "script_outside_script_folder": "Tool created — it opens the script file. Run script only finds scripts inside the configured script folder.",
+    "slot_annotation_created": "Annotation shortcut created — it reopens this annotation.",
     "grid_handle_column_tooltip": "Add a column, or drag to resize (currently {count})",
     "grid_handle_row_tooltip": "Add a row, or drag to resize (currently {count})",
     "grid_handle_column_max_tooltip": "Maximum of {count} columns — drag to resize",

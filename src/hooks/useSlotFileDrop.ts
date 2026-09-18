@@ -7,12 +7,24 @@ import { isDynamicCategory } from '@/utils/categoryVariants';
 import { createToolInCategory } from '@/domain/categoryOps';
 import { createDefaultButtonConfig } from '@/utils/buttonFactory';
 import { buildVaultFileButtonDraft } from '@/utils/vaultFileButton';
+import { buildAnnotationButtonDraft } from '@/utils/annotationButton';
 import {
     canAcceptVaultFileDrag,
+    resolveDroppedAnnotation,
     resolveDroppedVaultFiles,
 } from '@/utils/obsidianFileDrag';
 import { t } from '@/utils/i18n';
+import type { ButtonAction } from '@/types/action';
 import type { ButtonConfig, CategoryConfig } from '@/types';
+
+/** A tool the drop should create, plus what to tell the user about it. */
+interface SlotDropDraft {
+    name: string;
+    /** Obsidian icon id, resolved to stored SVG markup below. */
+    iconId: string;
+    action: ButtonAction;
+    noticeKey: string;
+}
 
 /**
  * useSlotFileDrop
@@ -39,12 +51,54 @@ export function useSlotFileDrop() {
         [app]
     );
 
-    const dropFileOnSlot = useCallback(
-        (category: CategoryConfig, slot: number, dataTransfer: DataTransfer | null) => {
+    /**
+     * What this drop means, as one tool draft plus the message to show for it.
+     *
+     * An annotation is asked about FIRST: it is identified either by ZotFlow's
+     * own MIME type or by a source-note embed whose note points back at the
+     * annotated file — neither of which a file drag can produce. Anything it
+     * does not claim keeps exactly its previous meaning.
+     */
+    const resolveDrop = useCallback(
+        (dataTransfer: DataTransfer | null): SlotDropDraft | null => {
+            const annotation = resolveDroppedAnnotation(app, dataTransfer);
+            if (annotation) {
+                const draft = buildAnnotationButtonDraft(annotation);
+                return { ...draft, noticeKey: 'slot_annotation_created' };
+            }
+
             // Only the first file: one slot is one tool, and silently filling
             // unrelated slots is not what dropping onto THIS cell asked for.
             const file = resolveDroppedVaultFiles(app, dataTransfer)[0];
             if (!file) {
+                return null;
+            }
+            const draft = buildVaultFileButtonDraft(file, {
+                scriptFolderPath: plugin.settings.pathConfig?.scriptFolderPath,
+            });
+            return {
+                name: draft.name,
+                iconId: draft.iconId,
+                action: draft.action,
+                noticeKey: draft.scriptFolderMismatch
+                    ? 'script_outside_script_folder'
+                    : 'button_create_success',
+            };
+        },
+        [app, plugin]
+    );
+
+    const dropFileOnSlot = useCallback(
+        (category: CategoryConfig, slot: number, dataTransfer: DataTransfer | null) => {
+            // An annotation dragged out of a reader is asked about first: it is
+            // identified by its own MIME type or by a source-note embed, neither
+            // of which a file drag produces. Everything it does not claim keeps
+            // its existing meaning.
+            // What the gesture means, decided once: an annotation, a vault file,
+            // or nothing. `draft` is the same shape either way, so everything
+            // below — naming, icon, placement, persistence — stays one path.
+            const draft = resolveDrop(dataTransfer);
+            if (!draft) {
                 return;
             }
 
@@ -56,10 +110,6 @@ export function useSlotFileDrop() {
             const variantId = isDynamicCategory(stored)
                 ? (selection[stored.id]?.current ?? null)
                 : null;
-
-            const draft = buildVaultFileButtonDraft(file, {
-                scriptFolderPath: plugin.settings.pathConfig?.scriptFolderPath,
-            });
 
             const button: ButtonConfig = {
                 ...createDefaultButtonConfig(),
@@ -87,13 +137,9 @@ export function useSlotFileDrop() {
             }
             void commitToolState(plugin, next);
 
-            new Notice(
-                draft.scriptFolderMismatch
-                    ? t('script_outside_script_folder')
-                    : t('button_create_success')
-            );
+            new Notice(t(draft.noticeKey));
         },
-        [app, plugin, selection]
+        [app, plugin, resolveDrop, selection]
     );
 
     return useMemo(

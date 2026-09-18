@@ -168,8 +168,9 @@ describe('the optional file subpath survives the edit form', () => {
         ]);
         // Not merely equal: the key must be absent, or every stored file tool
         // would gain a field on its next edit.
-        const [action] = result.ok ? result.actions : [];
-        expect(action && 'subpath' in action.parameters).toBe(false);
+        const serialized = result.ok ? result.actions[0] : undefined;
+        const params = (serialized as { parameters?: object } | undefined)?.parameters;
+        expect(params !== undefined && 'subpath' in params).toBe(false);
     });
 
     it('does not make an otherwise empty row count as configured', () => {

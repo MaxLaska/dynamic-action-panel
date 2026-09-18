@@ -25,6 +25,18 @@
 
 import type { App } from 'obsidian';
 import type { DroppedVaultFile } from '@/utils/vaultFileButton';
+import {
+    parseZotflowCitationPayload,
+    parseZotflowEmbedLink,
+    ZOTFLOW_CITATION_MIME,
+    type ZotflowAnnotationRef,
+} from '@/utils/zotflowAnnotationDrop';
+import {
+    basenameOf,
+    readAnnotationMeta,
+    readDraggedLocalAnnotation,
+    resolveAnnotatedFile,
+} from '@/utils/zotflowReader';
 
 /** The shape of `app.dragManager` this module relies on. */
 interface ObsidianDraggable {
@@ -206,5 +218,82 @@ export function canAcceptVaultFileDrag(
         return false;
     }
     const types = Array.from(dataTransfer.types ?? []);
-    return types.includes('text/plain') && !types.includes('Files');
+    if (types.includes('Files')) {
+        return false;
+    }
+    // A ZotFlow annotation drag always brings `text/plain` too, so this only
+    // widens acceptance for a citation drag that somehow omits it.
+    return types.includes('text/plain') || types.includes(ZOTFLOW_CITATION_MIME);
+}
+
+// --- ZotFlow annotations ------------------------------------------------------
+
+/** One `getData` read that never throws (it is forbidden outside a drop). */
+function readData(dataTransfer: DataTransfer, mime: string): string {
+    try {
+        return dataTransfer.getData(mime) ?? '';
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * The ZotFlow annotation this drop carries, or null when it carries something
+ * else. Ordered so that no existing gesture changes meaning:
+ *
+ * 1. `application/zotflow-citation` — ZotFlow's own MIME type, so a match here
+ *    cannot be anything else. A tree-view item drag uses it without annotations
+ *    and correctly yields null.
+ * 2. Nothing is claimed while Obsidian's drag manager holds vault files: that is
+ *    a file-explorer drag, which keeps its existing meaning.
+ * 3. A source-note embed in `text/plain`, but only when the note really is a
+ *    ZotFlow source note (its frontmatter points at the annotated file). An
+ *    ordinary block embed therefore falls through untouched.
+ * 4. Failing that, the open reader is asked what it is dragging — the case where
+ *    ZotFlow writes no usable payload at all. Guarded against stale ids inside
+ *    the adapter.
+ */
+export function resolveDroppedAnnotation(
+    app: App,
+    dataTransfer: DataTransfer | null
+): ZotflowAnnotationRef | null {
+    if (!dataTransfer) {
+        return null;
+    }
+
+    const citation = readData(dataTransfer, ZOTFLOW_CITATION_MIME);
+    if (citation) {
+        return parseZotflowCitationPayload(citation);
+    }
+
+    // A file-explorer drag owns the gesture; never reinterpret it.
+    if (readDragManagerFiles(app).length > 0) {
+        return null;
+    }
+
+    const text = readData(dataTransfer, 'text/plain');
+    const embed = parseZotflowEmbedLink(text);
+    if (embed) {
+        const file = resolveAnnotatedFile(app, embed.notePath);
+        if (file) {
+            return {
+                kind: 'local',
+                filePath: file.path,
+                fileBasename: file.basename || basenameOf(file.path),
+                annotationId: embed.annotationId,
+                ...(readAnnotationMeta(app, file.path, embed.annotationId) ?? {}),
+            };
+        }
+        // The payload named an annotation but the note is not a ZotFlow source
+        // note: the reader may still know it, and it must agree on the id.
+        return readDraggedLocalAnnotation(app, embed.annotationId);
+    }
+
+    // ZotFlow writes a single space when it has no source note for the file, so
+    // "whitespace but not empty" is its signature. An unrelated drag with a
+    // genuinely empty text payload is deliberately not claimed.
+    if (text.length > 0 && text.trim().length === 0) {
+        return readDraggedLocalAnnotation(app);
+    }
+    return null;
 }
