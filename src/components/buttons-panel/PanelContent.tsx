@@ -23,7 +23,9 @@ import {
     applyCellGesture,
     applyCellSetGesture,
     clearSelectionOf,
+    createGridInstanceCounter,
     type CellSelectionGesture,
+    type GridInstanceCounter,
     type GridCellSelectionState,
     type GridSelectionContextKey,
 } from '@/utils/gridCellSelection';
@@ -228,9 +230,38 @@ export const PanelContent: React.FC<PanelContentProps> = ({
         setCellSelection((prev) => (prev.context === null ? prev : NO_CELL_SELECTION));
     }, []);
 
-    const exitCellSelectionOf = React.useCallback((context: GridSelectionContextKey) => {
-        setCellSelection((prev) => clearSelectionOf(prev, context));
-    }, []);
+    /**
+     * How many VISIBLE, interactive renderings each grid currently has.
+     *
+     * A selection may only outlive its grid's last such rendering — but an
+     * unmount alone does not mean the grid is gone. In list view the category
+     * block changes element type while a tool is dragged
+     * (`categorySortEnabled = … && !buttonDrag.isDragging`, ListModeContent),
+     * so React tears the whole grid down and rebuilds it mid-gesture. Counting
+     * the renderings and deciding one turn LATER tells a remount (count back
+     * above zero) from a real disappearance (count stays zero) without either
+     * side having to know about the other.
+     */
+    const gridInstancesRef = React.useRef<GridInstanceCounter>(createGridInstanceCounter());
+
+    const registerSelectableGrid = React.useCallback(
+        (context: GridSelectionContextKey) => {
+            const release = gridInstancesRef.current.register(context);
+            return () => {
+                release();
+                // Asked one turn later, never in the same one: a rebuilt grid
+                // registers again inside the same React commit, so by now the
+                // count tells a remount from a real goodbye.
+                window.setTimeout(() => {
+                    if (gridInstancesRef.current.liveCount(context) > 0) {
+                        return;
+                    }
+                    setCellSelection((prev) => clearSelectionOf(prev, context));
+                }, 0);
+            };
+        },
+        []
+    );
 
     /**
      * The selection may only exist while the grid it names is the one actually
@@ -332,7 +363,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 selectCell={selectCell}
                 selectCells={selectCells}
                 clearCellSelection={clearCellSelection}
-                exitCellSelectionOf={exitCellSelectionOf}
+                registerSelectableGrid={registerSelectableGrid}
             >
             <ButtonDragProvider
                 categories={filteredCategories}

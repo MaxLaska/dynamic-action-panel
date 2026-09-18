@@ -39,8 +39,20 @@ interface GridCellSelectionValue {
     ) => void;
     /** Drop the selection entirely (Escape, mode change). */
     clearCellSelection: () => void;
-    /** Drop it only if it belongs to this grid (a grid stops being selectable). */
-    exitCellSelectionOf: (context: GridSelectionContextKey) => void;
+    /**
+     * Announce that a VISIBLE, interactive rendering of this grid exists.
+     *
+     * The returned cleanup says it is gone again. The selection is dropped when
+     * the last such rendering disappears — checked one turn later, so a grid
+     * that is merely REMOUNTED keeps its selection.
+     *
+     * That distinction is not academic: in list view the category block changes
+     * element type while a tool is being dragged
+     * (`categorySortEnabled = … && !buttonDrag.isDragging`), so React tears the
+     * whole grid down and rebuilds it. An unmount alone therefore cannot mean
+     * "this grid is gone".
+     */
+    registerSelectableGrid: (context: GridSelectionContextKey) => () => void;
 }
 
 const DEFAULT_VALUE: GridCellSelectionValue = {
@@ -48,7 +60,7 @@ const DEFAULT_VALUE: GridCellSelectionValue = {
     selectCell: () => {},
     selectCells: () => {},
     clearCellSelection: () => {},
-    exitCellSelectionOf: () => {},
+    registerSelectableGrid: () => () => {},
 };
 
 const GridCellSelectionContext = createContext<GridCellSelectionValue>(DEFAULT_VALUE);
@@ -60,7 +72,7 @@ export const GridCellSelectionProvider: React.FC<
     selectCell,
     selectCells,
     clearCellSelection,
-    exitCellSelectionOf,
+    registerSelectableGrid,
     children,
 }) => {
     const value = React.useMemo(
@@ -69,9 +81,9 @@ export const GridCellSelectionProvider: React.FC<
             selectCell,
             selectCells,
             clearCellSelection,
-            exitCellSelectionOf,
+            registerSelectableGrid,
         }),
-        [state, selectCell, selectCells, clearCellSelection, exitCellSelectionOf]
+        [state, selectCell, selectCells, clearCellSelection, registerSelectableGrid]
     );
     return (
         <GridCellSelectionContext.Provider value={value}>

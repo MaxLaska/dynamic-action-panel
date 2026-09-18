@@ -177,7 +177,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     // clicked cell out of the DOM and covers filled cells (the click bubbles up
     // from the tool button), empty cells and the corner `+` alike. No per-cell
     // pointer handler, and nothing to keep in sync across three code paths.
-    const { selectCell, selectCells, exitCellSelectionOf } = useGridCellSelection();
+    const { selectCell, selectCells, registerSelectableGrid } = useGridCellSelection();
     const { applyCellColor } = useCellColorActions();
 
     /**
@@ -341,39 +341,43 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     };
 
     /**
-     * A selection may not outlive the instance that could be pointed at.
+     * A selection may not outlive the last rendering that could be pointed at.
      *
-     * Only an instance that WAS selectable is allowed to clean up. Without that
-     * rule a drag preview — which renders the same category, twice, with the
-     * identical context key — would end the real selection the moment it
-     * unmounted. Hidden-but-mounted cases (a collapsed list category, an
-     * inactive tab) never unmount at all and are caught by the first branch,
-     * where `selectable` has flipped to false.
+     * Registering is the whole rule. An instance that is not selectable never
+     * registers, so a drag preview — which renders the same category, twice,
+     * with the identical context key — can neither own nor end a selection.
+     * Hidden-but-mounted cases (a collapsed list category, an inactive tab)
+     * deregister because `selectable` flips, without unmounting. And a grid
+     * that is merely REBUILT deregisters and registers again in the same
+     * commit, which the counter on the other side sees as "still here".
      */
-    const wasSelectableRef = React.useRef(false);
-    const selectionContextRef = React.useRef(selectionContext);
-    selectionContextRef.current = selectionContext;
-
     React.useEffect(() => {
-        if (selectionEnabled) {
-            wasSelectableRef.current = true;
+        if (!selectionEnabled || selectionContext === null) {
             return;
         }
-        if (wasSelectableRef.current && selectionContext !== null) {
-            wasSelectableRef.current = false;
-            exitCellSelectionOf(selectionContext);
-        }
-    }, [selectionEnabled, selectionContext, exitCellSelectionOf]);
+        return registerSelectableGrid(selectionContext);
+    }, [selectionEnabled, selectionContext, registerSelectableGrid]);
 
-    React.useEffect(
-        () => () => {
-            const context = selectionContextRef.current;
-            if (wasSelectableRef.current && context !== null) {
-                exitCellSelectionOf(context);
-            }
-        },
-        [exitCellSelectionOf]
-    );
+    /**
+     * A shrink removes cells from the selection for good.
+     *
+     * Pruning on READ is the safety net — it cannot be forgotten, and it is what
+     * a resize PREVIEW needs, since that may still be cancelled. But read-time
+     * pruning alone only hides those cells: growing the grid again brought them
+     * straight back into the selection, which reads as the grid handing back a
+     * selection the user watched it take away. So once the smaller size is
+     * actually STORED, the removal is committed too.
+     */
+    React.useEffect(() => {
+        if (!selectionActive || selectionContext === null || rawSelectedCells.size === 0) {
+            return;
+        }
+        const kept = pruneToDimensions(rawSelectedCells, storedDimensions);
+        if (kept.size === rawSelectedCells.size) {
+            return;
+        }
+        selectCells(selectionContext, [...kept], 'replace');
+    }, [selectionActive, selectionContext, rawSelectedCells, storedDimensions, selectCells]);
 
     /**
      * Grid layout: slot occupancy of every cell. Three sources, in priority:

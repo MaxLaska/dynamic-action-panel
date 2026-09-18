@@ -72,6 +72,55 @@ export const NO_CELL_SELECTION: GridCellSelectionState = {
  */
 export type CellSelectionGesture = 'replace' | 'add' | 'remove';
 
+/** A stable string key for one grid context. Length-prefixed, so no id can
+ * collide with another merely by containing the separator. */
+export function gridContextKey(context: GridSelectionContextKey): string {
+    return `${context.categoryId.length}:${context.categoryId}:${context.variantId ?? ''}`;
+}
+
+/**
+ * Counts the VISIBLE, interactive renderings each grid currently has.
+ *
+ * A selection may only outlive its grid's last such rendering — but an unmount
+ * on its own does not mean the grid is gone. React rebuilds a whole subtree
+ * whenever the element TYPE at a position changes, and list view does exactly
+ * that while a tool is being dragged (`categorySortEnabled` excludes an active
+ * button drag, so the category block switches between a sortable block and a
+ * plain div). The grid is then torn down and rebuilt mid-gesture, which is
+ * indistinguishable from disappearing if you only watch unmounts.
+ *
+ * Counting separates the two: a rebuild deregisters and registers again within
+ * the same commit, so the count is back above zero by the time anyone asks.
+ * The asking is deliberately left to the caller, which defers it by a turn.
+ */
+export interface GridInstanceCounter {
+    /** Announce a rendering; the returned function takes it back. */
+    register(context: GridSelectionContextKey): () => void;
+    /** How many renderings that grid has right now. */
+    liveCount(context: GridSelectionContextKey): number;
+}
+
+export function createGridInstanceCounter(): GridInstanceCounter {
+    const counts = new Map<string, number>();
+    return {
+        register(context) {
+            const key = gridContextKey(context);
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+            let released = false;
+            return () => {
+                if (released) {
+                    return;
+                }
+                released = true;
+                counts.set(key, Math.max(0, (counts.get(key) ?? 0) - 1));
+            };
+        },
+        liveCount(context) {
+            return counts.get(gridContextKey(context)) ?? 0;
+        },
+    };
+}
+
 /** The modifier state of one activation, however it was produced. */
 export interface SelectionModifierFlags {
     shiftKey: boolean;

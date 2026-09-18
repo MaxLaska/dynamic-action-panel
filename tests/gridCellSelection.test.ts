@@ -17,7 +17,9 @@ import {
     cellGestureOf,
     cellsWithColor,
     clearSelectionOf,
+    createGridInstanceCounter,
     gridCellColorOf,
+    gridContextKey,
     hasSelectionModifierFlags,
     holdsSelection,
     pruneToDimensions,
@@ -394,5 +396,91 @@ describe('what each interaction mode means', () => {
         for (const mode of ['locked', 'edit'] as const) {
             expect(executesToolActions(mode) && allowsCellSelection(mode)).toBe(false);
         }
+    });
+});
+
+/**
+ * A selection must survive a grid being REBUILT.
+ *
+ * Found in a live smoke run: dragging a tool cleared the selection every single
+ * time. The cause was not in the selection code at all — list view computes
+ * `categorySortEnabled = … && !buttonDrag.isDragging`, so the category block
+ * changes element TYPE the moment a drag starts and React tears the whole grid
+ * down and rebuilds it mid-gesture. Watching unmounts alone cannot tell that
+ * apart from the grid actually going away.
+ *
+ * Counting the live renderings can, as long as nobody asks in the same turn.
+ */
+describe('live grid renderings', () => {
+    const A: GridSelectionContextKey = { categoryId: 'cat', variantId: null };
+    const B: GridSelectionContextKey = { categoryId: 'cat', variantId: 'v1' };
+
+    it('counts per grid context, not per category', () => {
+        const counter = createGridInstanceCounter();
+        counter.register(A);
+        expect(counter.liveCount(A)).toBe(1);
+        expect(counter.liveCount(B)).toBe(0);
+    });
+
+    it('drops to zero when the only rendering goes away', () => {
+        const counter = createGridInstanceCounter();
+        const release = counter.register(A);
+        release();
+        expect(counter.liveCount(A)).toBe(0);
+    });
+
+    it('stays above zero across a REBUILD (deregister then register)', () => {
+        // Exactly the drag case: React runs the old cleanup and the new mount
+        // effect inside one commit, so anything asking afterwards must see 1.
+        const counter = createGridInstanceCounter();
+        const release = counter.register(A);
+        release();
+        counter.register(A);
+        expect(counter.liveCount(A)).toBe(1);
+    });
+
+    it('survives a rebuild that mounts the new rendering FIRST', () => {
+        // Some orders mount before unmounting; the count must never dip to 0.
+        const counter = createGridInstanceCounter();
+        const first = counter.register(A);
+        counter.register(A);
+        expect(counter.liveCount(A)).toBe(2);
+        first();
+        expect(counter.liveCount(A)).toBe(1);
+    });
+
+    it('ignores a release that is called twice', () => {
+        // A double invocation must not make a live rendering look gone.
+        const counter = createGridInstanceCounter();
+        const release = counter.register(A);
+        counter.register(A);
+        release();
+        release();
+        expect(counter.liveCount(A)).toBe(1);
+    });
+
+    it('never goes negative', () => {
+        const counter = createGridInstanceCounter();
+        const release = counter.register(A);
+        release();
+        release();
+        expect(counter.liveCount(A)).toBe(0);
+    });
+
+    it('keys two variants of one category apart', () => {
+        const counter = createGridInstanceCounter();
+        counter.register(A);
+        counter.register(B);
+        expect(counter.liveCount(A)).toBe(1);
+        expect(counter.liveCount(B)).toBe(1);
+        expect(gridContextKey(A)).not.toBe(gridContextKey(B));
+    });
+
+    it('cannot confuse two ids by where the separator falls', () => {
+        // Length-prefixed keys: 'a:b' + variant '' must not collide with
+        // category 'a' + variant 'b'.
+        expect(gridContextKey({ categoryId: 'a:b', variantId: null })).not.toBe(
+            gridContextKey({ categoryId: 'a', variantId: 'b' })
+        );
     });
 });
