@@ -14,13 +14,10 @@ import {
     buildLibraryAnnotationUrl,
     type ZotflowAnnotationRef,
 } from '@/utils/zotflowAnnotationDrop';
-import { annotationTooltip, shortSourceLabel } from '@/utils/sourceLabel';
+import { annotationTooltip, shortSourceLabel, PAGE_PREFIX } from '@/utils/sourceLabel';
 
 /** How long a label may get before it is cut; the cell shows far less. */
 const MAX_LABEL_TEXT = 60;
-
-/** Matches the hover text's page notation, for the rare label that needs a page. */
-const PAGE_LABEL_PREFIX = 'S.';
 
 export interface AnnotationButtonDraft {
     name: string;
@@ -85,9 +82,9 @@ function annotationName(ref: ZotflowAnnotationRef): string {
     // after what it points at, since there is nothing to quote.
     const page = ref.pageLabel?.trim();
     if (ref.kind === 'local' && ref.fileBasename) {
-        return page ? `${ref.fileBasename} · ${PAGE_LABEL_PREFIX} ${page}` : ref.fileBasename;
+        return page ? `${ref.fileBasename} · ${PAGE_PREFIX} ${page}` : ref.fileBasename;
     }
-    return page ? `Annotation · ${PAGE_LABEL_PREFIX} ${page}` : 'Annotation';
+    return page ? `Annotation · ${PAGE_PREFIX} ${page}` : 'Annotation';
 }
 
 /** The action that reopens the annotation. */

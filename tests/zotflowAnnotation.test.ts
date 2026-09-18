@@ -111,6 +111,8 @@ interface ReaderLeafSpec {
     throwingDataManager?: boolean;
     /** Mark this leaf as the most recently used one. */
     mostRecent?: boolean;
+    /** Pretend the surrounding document's focus sits inside this leaf. */
+    focused?: boolean;
 }
 
 function fakeApp(options: {
@@ -134,17 +136,19 @@ function fakeApp(options: {
                 },
             }
         );
+        // The iframe element focus lands on when a drag starts inside the reader.
+        const iframeEl = {
+            contentWindow: spec.hostileWindow ? hostile : { _draggingAnnotationIDs: spec.dragging },
+        };
         const view: Record<string, unknown> = {
             getState: () => (spec.file !== null ? { file: spec.file } : {}),
             containerEl: {
                 querySelector: (selector: string) => {
                     if (selector !== 'iframe' || spec.noIframe) return null;
-                    return {
-                        contentWindow: spec.hostileWindow
-                            ? hostile
-                            : { _draggingAnnotationIDs: spec.dragging },
-                    };
+                    return iframeEl;
                 },
+                ownerDocument: { activeElement: spec.focused ? iframeEl : null },
+                contains: (node: unknown) => node === iframeEl,
             },
         };
         if (spec.file !== null && !spec.stateOnly) {
@@ -699,7 +703,43 @@ describe('reading metadata and the dragged id from the open reader', () => {
         expect(readDraggedLocalAnnotation(app)).toBeNull();
     });
 
-    it('uses the most recently used reader to break the tie', () => {
+    it('uses the reader that holds focus to break the tie', () => {
+        // A drag starts with a mousedown inside the reader's iframe, which focuses
+        // that iframe in the surrounding document — evidence about THIS drag,
+        // unlike the session-level most-recent history, which here points at the
+        // wrong reader on purpose.
+        const other = 'other/Second.pdf';
+        const app = fakeApp({
+            files: { [PDF]: vaultFile(PDF) },
+            readers: [
+                {
+                    file: other,
+                    annotations: [{ id: 'KWBFL8CQ' }],
+                    dragging: ['KWBFL8CQ'],
+                    mostRecent: true,
+                },
+                { file: PDF, annotations: [annotation], dragging: [KEY], focused: true },
+            ],
+        });
+
+        const ref = readDraggedLocalAnnotation(app);
+        expect(ref?.filePath).toBe(PDF);
+        expect(ref?.annotationId).toBe(KEY);
+    });
+
+    it('refuses when focus points at neither and history points at neither', () => {
+        const other = 'other/Second.pdf';
+        const app = fakeApp({
+            files: { [PDF]: vaultFile(PDF) },
+            readers: [
+                { file: other, annotations: [{ id: 'KWBFL8CQ' }], dragging: ['KWBFL8CQ'] },
+                { file: PDF, annotations: [annotation], dragging: [KEY] },
+            ],
+        });
+        expect(readDraggedLocalAnnotation(app)).toBeNull();
+    });
+
+    it('uses the most recently used reader when focus says nothing', () => {
         const other = 'other/Second.pdf';
         const app = fakeApp({
             files: { [PDF]: vaultFile(PDF) },

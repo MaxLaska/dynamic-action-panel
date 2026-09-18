@@ -30,7 +30,7 @@ export class FileService {
             return;
         }
 
-        const existingLeaf = this.findOpenLeafForFile(filePath);
+        const existingLeaf = this.findOpenLeafForFile(filePath, file.extension);
         if (existingLeaf) {
             this.activateLeaf(existingLeaf);
             // The file is already on screen, so there is nothing to open — only
@@ -97,10 +97,17 @@ export class FileService {
      * @param filePath File path
      * @returns The open leaf, or null when there is none
      */
-    private findOpenLeafForFile(filePath: string): WorkspaceLeaf | null {
+    private findOpenLeafForFile(filePath: string, extension?: string): WorkspaceLeaf | null {
         const allLeaves = this.getAllLeaves();
+        // A built view that holds the file is the unambiguous answer.
         for (const leaf of allLeaves) {
-            if (this.leafFilePath(leaf) === filePath) {
+            if (this.builtViewFilePath(leaf) === filePath) {
+                return leaf;
+            }
+        }
+        // Only then consider tabs whose view does not exist yet.
+        for (const leaf of allLeaves) {
+            if (this.deferredViewFilePath(leaf, extension) === filePath) {
                 return leaf;
             }
         }
@@ -108,28 +115,69 @@ export class FileService {
     }
 
     /**
-     * The file a leaf is showing.
-     *
-     * Two sources, because a leaf in the background is *deferred*: its real view
-     * has not been built yet, so `view.file` does not exist and only the
-     * persisted view state knows the path. Missing that case would treat every
-     * background tab as "not open" and open a duplicate.
+     * The file a leaf's live view holds.
      * @param leaf The leaf to inspect
-     * @returns The vault path, or undefined when the leaf shows no file
+     * @returns The vault path, or undefined when the view holds no file
      */
-    private leafFilePath(leaf: WorkspaceLeaf): string | undefined {
+    private builtViewFilePath(leaf: WorkspaceLeaf): string | undefined {
         const view = leaf.view as unknown;
         const fromView =
             view && typeof view === 'object'
                 ? (view as { file?: { path?: unknown } }).file?.path
                 : undefined;
-        if (typeof fromView === 'string') {
-            return fromView;
+        return typeof fromView === 'string' ? fromView : undefined;
+    }
+
+    /**
+     * The file a *deferred* leaf would show once built.
+     *
+     * A tab in the background has no real view yet — since Obsidian 1.7 it holds
+     * a placeholder — so only its persisted state knows the path, and treating
+     * that as "not open" would open a duplicate for every background tab.
+     *
+     * The view type has to match as well, because the panes that describe the
+     * ACTIVE file (backlinks, outline, local graph) persist a `file` in their
+     * state too. Without that check, focusing the file could land on a sidebar
+     * pane that ignores the position, and the click would look dead.
+     * @param leaf The leaf to inspect
+     * @param extension Extension of the file being opened
+     * @returns The vault path, or undefined when this leaf is not such a tab
+     */
+    private deferredViewFilePath(leaf: WorkspaceLeaf, extension?: string): string | undefined {
+        if (extension === undefined) {
+            return undefined;
         }
         try {
-            const state = leaf.getViewState?.()?.state;
-            const fromState = state?.['file'];
+            if (!leaf.isDeferred) {
+                return undefined;
+            }
+            const viewState = leaf.getViewState?.();
+            if (!viewState || viewState.type !== this.viewTypeForExtension(extension)) {
+                return undefined;
+            }
+            const fromState = viewState.state?.['file'];
             return typeof fromState === 'string' ? fromState : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * The view type Obsidian opens this extension with, or undefined when that
+     * cannot be determined (the registry is not public API).
+     * @param extension File extension without the dot
+     */
+    private viewTypeForExtension(extension: string): string | undefined {
+        const registry = (
+            this.app as unknown as {
+                viewRegistry?: { getTypeByExtension?: (ext: string) => string | undefined };
+            }
+        ).viewRegistry;
+        if (typeof registry?.getTypeByExtension !== 'function') {
+            return undefined;
+        }
+        try {
+            return registry.getTypeByExtension(extension);
         } catch {
             return undefined;
         }
@@ -229,6 +277,8 @@ export class FileService {
             return;
         }
         try {
+            // Only a registry that ANSWERS "none" is worth a warning; one that
+            // cannot be consulted says nothing either way.
             if (!registry.getTypeByExtension(extension)) {
                 new Notice(tWithParams('no_view_for_extension', { extension }));
             }

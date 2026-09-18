@@ -1,6 +1,6 @@
 # ZotFlow-Annotationen als Dynamic-Action-Panel-Tools — Integrations-Audit
 
-Datum: 2026-09-18. Stand: DAP `3c6408c` (Plugin-ID `dynamic-action-panel`, Settings v5), ZotFlow **1.6.5**. Read-only-Audit; **nichts implementiert**. Alle Zeilenangaben beziehen sich auf den ZotFlow-Quellstand des Release-Tags `1.6.5` (Commit `fe93957`, Reader-Submodul `duanxianpi/obsidian-zotero-reader` @ `c971316`) bzw. auf den DAP-Stand `3c6408c`. Tragende Aussagen wurden zusätzlich im **installierten** Bundle und **empirisch** in einer isolierten Obsidian-1.13.7-Instanz (scratch `--user-data-dir`, Disposable-Vault `ocap-smoke`, CDP) verifiziert; der Produktiv-Vault wurde nur gelesen.
+Datum: 2026-09-18. Stand zur Zeit der Analyse: DAP `3c6408c` (Plugin-ID `dynamic-action-panel`, Settings v5), ZotFlow **1.6.5**. Ursprünglich ein Read-only-Audit; **inzwischen implementiert** (Commits `05d4640`…`ee941ee`) — die Korrekturen und Präzisierungen aus der Umsetzung stehen in **Abschnitt 20**, der bei Widersprüchen Vorrang hat. Alle Zeilenangaben beziehen sich auf den ZotFlow-Quellstand des Release-Tags `1.6.5` (Commit `fe93957`, Reader-Submodul `duanxianpi/obsidian-zotero-reader` @ `c971316`) bzw. auf den DAP-Stand `3c6408c`. Tragende Aussagen wurden zusätzlich im **installierten** Bundle und **empirisch** in einer isolierten Obsidian-1.13.7-Instanz (scratch `--user-data-dir`, Disposable-Vault `ocap-smoke`, CDP) verifiziert; der Produktiv-Vault wurde nur gelesen.
 
 Pfadkürzel: `ZF/` = ZotFlow `src/`, `RD/` = Reader-Submodul `src/`, `DAP/` = dieses Repo `src/`.
 
@@ -349,3 +349,51 @@ Geprüft: ZotFlow **1.6.5** (Tag `fe93957`), Reader `c971316`, installierte `mai
 | Core-Viewer liest `#page=43#annotation=…` als Seite 43 | **UNVERIFIED** | Fallback ohne ZotFlow öffnet Seite 1 |
 
 **Empfehlung an Upstream (optional, später):** ZotFlow könnte lokalen Annotation-Drags denselben MIME-Payload mitgeben (`application/zotflow-citation` mit `filePath` statt `libraryID`) — dann würde der Level-3-Capture zum reinen Fallback. Bis dahin bleibt er in `zotflowReader.ts` isoliert.
+
+---
+
+## 20. Addendum aus der Implementierung (2026-09-18, Commits `05d4640`…`ee941ee`)
+
+Nur was die Analyse oben **korrigiert oder präzisiert**. Der Rest gilt unverändert.
+
+### 20.1 `pageLabel` ist die Anzeige-Seite — `pageIndex + 1` ist es nicht
+
+Abschnitt 9 nannte `pageLabel` „nur im Label" und stellte die beiden nebeneinander, ohne zu sagen, wie oft sie auseinanderliegen. Über alle 13 realen Annotationen der 8 Sidecars gemessen: **`pageLabel ≠ pageIndex + 1` in 10 Fällen**, über 5 verschiedene PDFs, mit Offsets von 1, 3 und 109. Gegen die gedruckten Folios verifiziert (Bieker: physisch 44 trägt Folio 43; Thole: physisch 17 trägt 19; Salomon: `pageIndex 0` ist Artikelseite 109).
+
+Konsequenz, so implementiert:
+- **Anzeige** (Label und Tooltip) nutzt ausschließlich `pageLabel`, als **opaken String** (real gibt es `"Cover"`-artige Labels). Fehlt es, entfällt die Seite ganz — `pageIndex + 1` wird nie als gedruckte Seite ausgegeben. Grund: in diesem Vault ist über eine `pageLabel`-Abweichung schon einmal eine falsche Seitenzahl in eine Notiz gewandert; eine plausibel aussehende falsche Zahl in einem zitatförmigen Tooltip ist schlimmer als keine.
+- **Navigation** (`#page=` im Subpath) bleibt `pageIndex + 1`. ZotFlow ignoriert diesen Teil ohnehin (T7); er zählt nur für den Core-Viewer-Fallback, und der zählt physisch. Abschnitt 9 war hier richtig.
+- `pageLabel` ist nicht garantiert korrekt (dokumentierter Fall `Fachlexikon`: `pageIndex 797` → `pageLabel "789"`, gedruckt 784). Es ist die beste verfügbare Angabe und bleibt ein **Navigationshinweis, kein Zitat**.
+
+### 20.2 Es gibt im Vault keine bibliografischen Daten — die Quelle ist der Ordnername
+
+Die Analyse hatte Kurzquellen nicht betrachtet. Read-only-Erhebung im Produktiv-Vault:
+
+- Über den ganzen Vault (79 `.md`) existieren als Frontmatter-Keys nur `zotflow-locked`, `zotflow-local-attachment`, `Source` und zwei Test-Keys. **Null** Treffer für `author`, `year`, `title`, `citekey`, `citation-key`, `shortTitle`, `csl`, `aliases`.
+- Kein `Source/<library>/@<citekey>`-Ordner (ZotFlows Library-Template hat nie etwas erzeugt), keine `.bib`/CSL/CSL-JSON-Datei, kein Plugin-Store mit Item-Daten.
+- Ein pandocit-Zotero-Cache existiert (`.pandoc/zotero-api-user-…json`), ist aber älter als die Annotationsarbeit, hat **null Treffer für das Beispiel-Werk**, und seine Attachments zeigen per `attachments:<name>` auf Pfade **außerhalb** des Vaults mit anderen Dateinamen — es gibt keinen Join-Key.
+- **PDF-Metadaten sind unbrauchbar und irreführend:** kein PDF liefert ein Publikationsjahr (nur Produktionsdaten, bis zu 8 Jahre daneben), Autorenlisten sind auf den ersten Namen gekürzt oder leer, und ein reales Buch nennt seinen **Grafiker** als `dc:creator`. Bewusst nicht gelesen.
+
+Also: `src/utils/sourceLabel.ts` leitet die Kurzquelle aus dem **Ordnernamen** ab (`Authors (Year) - Title`, in 16 von 20 Quellordnern konform), verankert auf `(YYYY) - ` statt auf einem beliebigen ` - ` (zwei Titel enthalten selbst ` - `), trennt Autoren nur an `", "` (nie an `-`, sonst zerfällt `Staub-Bernasconi`), kürzt ab 3 Autoren auf `<Erster> et al.`, springt über einen `Raw`-Unterordner von Kapitelauszügen und fällt sonst auf den bereinigten Dateinamen zurück. Ein Sammelwerk ohne Autor im Ordnernamen zeigt seinen Titel — **es wird nie ein Autor oder Jahr erfunden**.
+
+Grenze, die der Nutzer kennen muss: die Funktion kann nur den Ordnernamen wiedergeben. Wo der falsch ist, ist das Label falsch — real z. B. `Salomon (2004) - …`, tatsächlich ein Artikel von Braches-Chyrek (2012). Deshalb ist der Tooltip ein **Snapshot in einem editierbaren Feld** und keine Zitationsquelle.
+
+### 20.3 Hintergrund-Tabs sind *deferred* — `view.file` genügt nicht
+
+Nicht vorhergesehen: seit Obsidian 1.7 hat ein Tab im Hintergrund eine `DeferredView` ohne `.file`. `FileService.findOpenLeafForFile` verglich nur `view.file.path` und hielt daher **jeden Hintergrund-Reader für „nicht offen"** → zweiter Tab, und weil ZotFlows Reader ein Duplikat ablehnt, ging die Navigation mit dem Duplikat verloren. Das war der wahrscheinlichste Alltagsfehler, denn ein im Hintergrund liegender Reader-Tab ist der Normalzustand.
+
+Behoben: der Pfad wird zusätzlich aus `leaf.getViewState().state.file` gelesen, und ein deferred Leaf wird per `leaf.loadIfDeferred()` materialisiert, bevor `setEphemeralState` etwas von ihm verlangt. Beides ist öffentliche Obsidian-API.
+
+### 20.4 Mehrere offene Reader: Fokus schlägt Historie
+
+Abschnitt 10 begründete den Stale-Id-Guard mit „der Leaf besitzt die Annotation". Das unterscheidet **nichts**, wenn zwei Reader offen sind — jeder besitzt seine eigenen Annotationen. Ein Drag aus Reader B konnte so als Annotation aus Reader A erfasst werden, samt passendem Label.
+
+Behoben, dreistufig: (1) genau ein Kandidat → nehmen; (2) mehrere → derjenige, in dem der **Fokus** liegt (ein Mousedown im Same-Origin-Iframe fokussiert dieses `<iframe>` im umgebenden Dokument, also Evidenz über *diesen* Drag); (3) sonst `getMostRecentLeaf()`; bleibt es ambig → **kein Tool**, plus Notice (vorher ein stummer No-op, der wie ein Bug aussah).
+
+### 20.5 Farbverfügbarkeit fürs spätere Color-Seeding
+
+Die Annotation-Farbe ist beim Capture verfügbar: `color` im Reader-Record bzw. in der Sidecar, **lowercase 6-stelliges Hex mit `#`** (7 Zeichen). Real gesehen: `#ffd400`, `#2ea8e5`, `#ff6666`; ein `#f19837` steht in einer Notiz, aber in keiner aktuellen Sidecar — die Palette ist also als **offen** zu behandeln, nicht als Enum. `ZotflowAnnotationRef` trägt sie derzeit **nicht** (bewusst: keine Farb-UI, kein `cellStyles`-Konsument). Für das Color-Seeding genügt später ein Feld auf dem Ref plus ein einmaliges Schreiben in `cellStyles` beim Drop; danach ist die Zellfarbe unabhängig. Keine Dauer-Synchronisation.
+
+### 20.6 Was die Tests NICHT beweisen können
+
+Jede ZotFlow-Konstante (View-Type, Frontmatter-Key, `_draggingAnnotationIDs`, `dataManager.getAnnotation`, die Subpath-Grammatik) ist in den Unit-Tests nur gegen die eigenen Fakes geprüft. Wäre eine davon falsch, bleiben **alle** Tests grün und das Feature degradiert stumm zu „keine Annotation". Deshalb ist der Live-Smoke in der isolierten Instanz Pflichtbestandteil und nicht durch die Suite ersetzbar.

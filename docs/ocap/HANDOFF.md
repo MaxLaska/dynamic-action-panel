@@ -814,24 +814,54 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Cell-Key-Helfer, `gridCellColor.ts`, `setCellColorsInState`, Unit-Tests; keine
   UI). Danach B (Farben rendern: `ResolvedGridView` reicht `cellStyles` heute
   NICHT bis zum Renderer durch), C (Select Mode), D (Apply Color), E (Marquee).
-- **ZotFlow-Annotationen als Tools: analysiert, NICHT implementiert.**
-  `docs/ocap/audits/2026-09-18-zotflow-annotation-integration.md` (ZotFlow
-  1.6.5, Code + empirisch in isolierter Instanz, adversarial reviewt).
-  Kernbefunde: Identität lokal = `(PDF-Vault-Pfad, 8-stellige Annotation-ID
-  aus der `.zf.json`)`; Wiederöffnen läuft über ZotFlows eigenen
-  Link-Contract `#page=<label>#annotation=<urlencoded {annotationID,pageIndex}>`
-  (Obsidian-Subpath, exakt + Seiten-Fallback, verifiziert; `#page=` =
-  `pageIndex+1`); der native Drag-Payload lokaler Annotationen ist
-  `text/plain` = `![[<SourceNote>#^<id>]]` (Regelfall: 7 der 8 annotierten
-  PDFs haben eine Source Note) bzw. `" "` ohne Note — Identität kommt aus
-  dem Embed + Frontmatter `zotflow-local-attachment` (Level 1), Seite/Text
-  fürs Label und der No-Note-Fall aus dem Same-Origin-Reader-Iframe
-  (`_draggingAnnotationIDs`, einzige Level-3-Stelle, ein Adapter).
-  Library-Annotationen: `obsidian://zotflow?type=open-annotation…`
-  über die bestehende `url`-Action. **Empfohlene v1:** `FileActionParams.subpath?`
-  (generisch) + `FileService`-Bereits-offen-Fall via `setEphemeralState` +
-  `templateParse`-Übernahme; dann Drop-Adapter. Kein neuer Action-Typ, kein
-  `settingsVersion`-/`formatVersion`-Bump.
+- **ZotFlow-Annotation-Shortcuts: IMPLEMENTIERT** (Analyse:
+  `docs/ocap/audits/2026-09-18-zotflow-annotation-integration.md` inkl.
+  Implementierungs-Addendum). Eine ZotFlow-Markierung auf eine freie Zelle
+  gezogen wird zu einem **operativen Lesezeichen**: ein normales
+  `file`-Tool, dessen Klick den Reader öffnet und genau diese Annotation
+  selektiert und zentriert.
+  - **Kein eigener Tool-/Action-Typ**, kein `settingsVersion`-Bump, kein
+    Template-Format-Bump. Lokale Annotation = `file` mit
+    `FileActionParams.subpath` (generischer Obsidian-Subpath:
+    `#page=<pageIndex+1>#annotation=<urlencoded {annotationID,pageIndex}>`,
+    Reihenfolge `page` vor `annotation` ist zwingend). Library-Annotation =
+    bestehende `url`-Action mit `obsidian://zotflow?type=open-annotation…`.
+  - **Erfassung:** Regelfall ist der Drag-Payload `![[<SourceNote>#^<id>]]`
+    → Annotation-ID + Frontmatter `zotflow-local-attachment` → PDF (Level 1).
+    Ohne Source Note schreibt ZotFlow nur ein Leerzeichen; dann liest ein
+    isolierter Adapter (`src/utils/zotflowReader.ts`, die **einzige** Stelle
+    mit ZotFlow-Internas) `_draggingAnnotationIDs` aus dem Same-Origin-Reader-
+    Iframe. Nur ZotFlows exakte Signatur (ein Leerzeichen, sonst nichts auf
+    dem DataTransfer) betritt diesen Pfad; bei mehreren Readern entscheidet
+    Fokus, dann `getMostRecentLeaf()`, sonst **kein Tool** plus Notice.
+  - **Label vs. Tooltip sind getrennt:** Button-Text = Zitat-Anriss
+    (umbenennbar), Tooltip (neues optionales `ToolDefinition.tooltip`) =
+    `<Quelle> <Jahr> · S. <gedruckte Seite>`, z. B.
+    `Bieker, Westerholt 2021 · S. 44`. Obsidian bindet ihn als `aria-label`.
+  - **Quelle kommt aus dem Ordnernamen** (`Authors (Year) - Title`,
+    `src/utils/sourceLabel.ts`, pur). Nicht aus Präferenz: im Vault existieren
+    **keine** bibliografischen Daten (Source Notes tragen nur
+    `zotflow-locked` + `zotflow-local-attachment`; kein `.bib`/CSL, kein
+    Citekey), und PDF-Metadaten sind nachweislich falsch (keine
+    Publikationsjahre, abgeschnittene Autorenlisten, ein Grafiker als Autor).
+  - **Seite = `pageLabel`, niemals `pageIndex+1` für die Anzeige:** die beiden
+    weichen in 10 von 13 realen Annotationen ab (Offsets 1, 3 und >100, gegen
+    gedruckte Folios verifiziert). Fehlt `pageLabel`, entfällt die Seite —
+    keine plausibel aussehende falsche Seitenzahl. `S.` ist eine feste
+    Abkürzung (kein `de`-Locale vorhanden).
+  - **Presentation Snapshot, keine Sync:** Tooltip und Label werden EINMAL
+    beim Drop erfasst. Änderungen an Annotation, Farbe, Kommentar oder
+    Metadaten in ZotFlow werden nicht nachgezogen; die Navigation hängt
+    allein an der Annotation-ID. ZotFlow bleibt Owner der Annotation.
+  - **DAP schreibt ausschließlich sein eigenes `data.json`** — kein
+    Nexus-Node, keine Source Note, keine `.zf.json`, keine Zotero-Daten.
+  - **Known limitation:** wird das PDF umbenannt/verschoben, zeigt der Klick
+    `File not found` (wie bei jedem `file`-Tool; kein Rename-Tracking).
+  - **Später geplant, NICHT implementiert:** Annotation-Farbe als Initialfarbe
+    einer Zelle. Verfügbar ist sie: `color` steht im Reader-Record als
+    lowercase Hex (`#ffd400`, `#2ea8e5`, `#ff6666`, `#f19837` real gesehen;
+    Palette als offen behandeln). Beim Capture würde sie einmalig in
+    `cellStyles` wandern und danach unabhängig sein — keine Dauer-Sync.
 
 0. **Produktiv-Deployment des v5-Builds ist erledigt** (Abschnitt 1), ebenso die
    Plugin-Identity-Migration auf `dynamic-action-panel`.

@@ -20,8 +20,13 @@
 // only as correct as that name. It is a navigation aid — deliberately NOT a
 // citation, and nothing here should ever be fed into a bibliography.
 
-/** Abbreviation in front of the page. German on purpose, as the panel's own convention. */
-const PAGE_PREFIX = 'S.';
+/**
+ * Abbreviation in front of the page. German on purpose, matching the notation
+ * the user's own notes already use, and deliberately not localized: the plugin
+ * has no German locale, so a localized key would show "p." to exactly the reader
+ * who wants "S.". Exported so nothing else has to repeat the literal.
+ */
+export const PAGE_PREFIX = 'S.';
 
 /** Separator between source and page, matching the notation already in the vault. */
 const SEPARATOR = ' · ';
@@ -109,11 +114,11 @@ function truncate(value: string, max: number): string {
  * A compact source label for a PDF, or null when its path says nothing useful.
  *
  * In order:
- * 1. `Authors (YYYY) - Title` folder  -> "Authors YYYY"
- * 2. same folder without a year       -> "Authors YYYY" using a year from the file name
- * 3. `Authors - YYYY - Title` folder  -> "Authors YYYY"
- * 4. a folder that is just a title    -> that title, plus a file-name year if there is one
- * 5. neither                          -> the tidied file name
+ * 1. `Authors (YYYY) - Title` folder -> "Authors YYYY"
+ * 2. `Authors - YYYY - Title` folder -> "Authors YYYY"
+ * 3. a folder that is a title (two or more words) -> that title, plus a year
+ *    from the FILE name when the folder itself carries none
+ * 4. neither -> the tidied file name
  *
  * An author or a year is never invented: a collective work whose folder carries
  * no author simply shows its title.
@@ -123,7 +128,8 @@ export function shortSourceLabel(filePath: string): string | null {
         return null;
     }
     const folder = sourceFolderOf(filePath);
-    const basenameYear = YEAR_IN_NAME.exec(segmentsOf(filePath).pop() ?? '')?.[1];
+    // On the tidied name, so a year at the very end still matches.
+    const basenameYear = YEAR_IN_NAME.exec(tidyBasename(filePath))?.[1];
 
     if (folder) {
         const canonical = CANONICAL.exec(folder);
@@ -143,9 +149,11 @@ export function shortSourceLabel(filePath: string): string | null {
             }
         }
 
-        // A real title rather than a name: at least two words, no year of its own.
-        if (/\s/.test(folder)) {
-            return basenameYear ? `${folder} ${basenameYear}` : folder;
+        // A title rather than a name: two or more words. A year is appended only
+        // when the folder has none of its own, so nothing is stated twice.
+        if (/\S\s+\S/.test(folder)) {
+            const needsYear = basenameYear !== undefined && !YEAR_IN_NAME.test(folder);
+            return truncate(needsYear ? `${folder} ${basenameYear}` : folder, MAX_FALLBACK);
         }
     }
 

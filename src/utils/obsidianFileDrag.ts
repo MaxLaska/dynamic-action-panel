@@ -305,11 +305,18 @@ function isOnlyPlainText(dataTransfer: DataTransfer): boolean {
 }
 
 /**
- * ZotFlow's signature for "an annotation of a file I keep no source note for":
- * a lone space and nothing else. It says a ZotFlow annotation was dragged
- * WITHOUT saying which one, so the caller can tell "we could not identify this
- * annotation" apart from "this was not an annotation at all" and say so instead
- * of doing nothing visible.
+ * Whether this drop carried ZotFlow's signature for "an annotation of a file I
+ * keep no source note for" — a lone space and nothing else on the DataTransfer.
+ * It says an annotation was dragged without saying which one.
+ *
+ * Used only once `resolveDroppedAnnotation` has already declined, so the caller
+ * can tell "could not identify this annotation" apart from "that was not an
+ * annotation at all" instead of doing nothing visible. This is also the shape a
+ * drag takes when several readers claim it and the tie cannot be broken.
+ *
+ * A source-note embed deliberately does NOT qualify: when its note is not a
+ * ZotFlow source note, the payload is indistinguishable from an ordinary block
+ * embed, and claiming otherwise would put a misleading message on a normal drag.
  */
 export function isUnidentifiedAnnotationDrag(dataTransfer: DataTransfer | null): boolean {
     if (!dataTransfer) {

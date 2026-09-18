@@ -30,6 +30,11 @@ interface FakeLeaf {
     view: { file?: { path: string } | null };
     ephemeral: unknown[];
     setEphemeralState: (state: unknown) => void;
+    /** A background tab: no real view yet, only persisted state. */
+    isDeferred: boolean;
+    loaded: number;
+    loadIfDeferred?: () => Promise<void>;
+    getViewState?: () => { type: string; state?: Record<string, unknown> };
 }
 
 interface Harness {
@@ -38,6 +43,8 @@ interface Harness {
     activated: FakeLeaf[];
     opened: { linktext: string; sourcePath: string; newLeaf: unknown }[];
     addLeaf: (path: string | null, onEphemeral?: (state: unknown) => void) => FakeLeaf;
+    /** A deferred (background) tab of a given view type showing a file. */
+    addDeferredLeaf: (path: string, viewType: string) => FakeLeaf;
 }
 
 function harness(
@@ -59,10 +66,33 @@ function harness(
         const leaf: FakeLeaf = {
             view: path === null ? { file: null } : { file: { path } },
             ephemeral: [],
+            isDeferred: false,
+            loaded: 0,
             setEphemeralState: (state: unknown) => {
                 leaf.ephemeral.push(state);
                 onEphemeral?.(state);
             },
+        };
+        leaves.push(leaf);
+        return leaf;
+    };
+
+    const addDeferredLeaf = (path: string, viewType: string): FakeLeaf => {
+        // A deferred leaf's view is a placeholder: no `file` at all.
+        const leaf: FakeLeaf = {
+            view: {},
+            ephemeral: [],
+            isDeferred: true,
+            loaded: 0,
+            setEphemeralState: (state: unknown) => {
+                leaf.ephemeral.push(state);
+            },
+            loadIfDeferred: async () => {
+                leaf.loaded += 1;
+                leaf.isDeferred = false;
+                leaf.view = { file: { path } };
+            },
+            getViewState: () => ({ type: viewType, state: { file: path } }),
         };
         leaves.push(leaf);
         return leaf;
@@ -104,7 +134,7 @@ function harness(
             : {}),
     };
 
-    return { app, leaves, activated, opened, addLeaf };
+    return { app, leaves, activated, opened, addLeaf, addDeferredLeaf };
 }
 
 function service(h: Harness): FileService {
@@ -240,6 +270,109 @@ describe('FileService with a subpath', () => {
 
         expect(noticeLog).toEqual([`${t('file_not_found')}: ${PDF}`]);
         expect(h.opened).toEqual([]);
+    });
+});
+
+// --- background (deferred) tabs -----------------------------------------------
+//
+// Since Obsidian 1.7 a tab in the background has no real view yet, so it exposes
+// no file and only its persisted state knows the path. Treating that as "not
+// open" opened a duplicate for every background tab — and a view that refuses a
+// duplicate for the same file discards the navigation with it, so the click
+// looked dead. A reader left open in the background is the normal state.
+
+describe('FileService and a background tab', () => {
+    const READER = 'zotflow-local-zotero-reader-view';
+
+    it('finds the deferred tab, builds it, and navigates it instead of opening another', async () => {
+        const h = harness({ files: [PDF], viewTypes: { pdf: READER } });
+        const leaf = h.addDeferredLeaf(PDF, READER);
+
+        await service(h).openFile(fileAction(PDF, SUBPATH));
+
+        expect(h.opened).toEqual([]);
+        expect(h.activated).toEqual([leaf]);
+        // Built before it was asked to navigate, or it would have nowhere to go.
+        expect(leaf.loaded).toBe(1);
+        expect(leaf.ephemeral).toEqual([{ subpath: SUBPATH }]);
+    });
+
+    it('does not build it when there is no position to move to', async () => {
+        const h = harness({ files: [PDF], viewTypes: { pdf: READER } });
+        const leaf = h.addDeferredLeaf(PDF, READER);
+
+        await service(h).openFile(fileAction(PDF));
+
+        expect(h.activated).toEqual([leaf]);
+        expect(leaf.loaded).toBe(0);
+        expect(h.opened).toEqual([]);
+    });
+
+    it('ignores a sidebar pane that merely describes the same file', async () => {
+        // Backlinks, outline and local graph persist a `file` in their state too.
+        // Focusing one of those would ignore the position and look like a dead
+        // bookmark, so only the view type that OPENS the file counts.
+        const h = harness({ files: [PDF], viewTypes: { pdf: READER } });
+        const backlinks = h.addDeferredLeaf(PDF, 'backlink');
+        const outline = h.addDeferredLeaf(PDF, 'outline');
+
+        await service(h).openFile(fileAction(PDF, SUBPATH));
+
+        expect(h.activated).toEqual([]);
+        expect(backlinks.ephemeral).toEqual([]);
+        expect(outline.ephemeral).toEqual([]);
+        expect(h.opened).toEqual([{ linktext: `${PDF}${SUBPATH}`, sourcePath: '', newLeaf: true }]);
+    });
+
+    it('prefers a built view over a deferred one', async () => {
+        const h = harness({ files: [PDF], viewTypes: { pdf: READER } });
+        h.addDeferredLeaf(PDF, READER);
+        const built = h.addLeaf(PDF);
+
+        await service(h).openFile(fileAction(PDF, SUBPATH));
+
+        expect(h.activated).toEqual([built]);
+        expect(built.ephemeral).toEqual([{ subpath: SUBPATH }]);
+    });
+
+    it('does not consult deferred state when the registry cannot be read', async () => {
+        // Without the view type there is no way to tell a reader tab from a
+        // sidebar pane, so the conservative answer is "not open".
+        const h = harness({ files: [PDF], viewTypes: undefined });
+        const leaf = h.addDeferredLeaf(PDF, READER);
+
+        await service(h).openFile(fileAction(PDF, SUBPATH));
+
+        expect(h.activated).toEqual([]);
+        expect(leaf.ephemeral).toEqual([]);
+        expect(h.opened).toHaveLength(1);
+    });
+
+    it('reuses the leaf that was just created when the subpath is rejected', async () => {
+        // The view is built before it rejects the position, so the file is
+        // already on screen; opening it again would add a second tab.
+        const h = harness({
+            files: [PDF],
+            viewTypes: { pdf: READER },
+            openThrowsOnSubpath: true,
+        });
+        // Simulate the leaf appearing as a result of the first open.
+        let created: FakeLeaf | null = null;
+        const original = h.app as { workspace: { openLinkText: (...args: unknown[]) => Promise<void> } };
+        const wrapped = original.workspace.openLinkText.bind(original.workspace);
+        original.workspace.openLinkText = async (...args: unknown[]) => {
+            if (!created) {
+                created = h.addLeaf(PDF);
+            }
+            await wrapped(...args);
+        };
+
+        await expect(
+            service(h).openFile(fileAction(PDF, '#annotation=oops'))
+        ).resolves.toBeUndefined();
+
+        expect(h.opened.map((o) => o.linktext)).toEqual([`${PDF}#annotation=oops`]);
+        expect(h.activated).toEqual([created]);
     });
 });
 

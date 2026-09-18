@@ -193,6 +193,76 @@ describe('the short source label', () => {
             'Handbuch Soziale Arbeit'
         );
     });
+
+    it('finds a year at the very end of the file name', () => {
+        expect(shortSourceLabel(at('Handbuch Soziale Arbeit', 'Otto-Handbuch-2018.pdf'))).toBe(
+            'Handbuch Soziale Arbeit 2018'
+        );
+        expect(shortSourceLabel(at('Handbuch Soziale Arbeit', 'Otto-Handbuch (2018).pdf'))).toBe(
+            'Handbuch Soziale Arbeit 2018'
+        );
+    });
+
+    it('does not state the year twice', () => {
+        // The folder already carries it; appending the file name's would repeat it.
+        expect(shortSourceLabel(at('Handbuch 2021', 'Kapitel-2021-x.pdf'))).toBe('Handbuch 2021');
+    });
+
+    it('never returns whitespace or a one-word non-title as a source', () => {
+        // A single word is a container, not a title, so the file name wins.
+        expect(shortSourceLabel('   /a.pdf')).toBe('a');
+        expect(shortSourceLabel('Lit/Einwortordner/a.pdf')).toBe('a');
+    });
+
+    it('caps a very long folder title', () => {
+        const label = shortSourceLabel(`Lit/${'Wort '.repeat(60).trim()}/a.pdf`)!;
+        expect(label.length).toBeLessThanOrEqual(49);
+        expect(label.endsWith('…')).toBe(true);
+    });
+
+    it('survives malformed folder shapes without throwing', () => {
+        for (const path of [
+            '(2021)/a.pdf',
+            'A (2021) - /a.pdf',
+            '- 2021 - x/a.pdf',
+            'x - 2021 -/a.pdf',
+            'Raw/a.pdf',
+            'Raw/Raw/a.pdf',
+            'Lib/Raw/Raw/a.pdf',
+            'Lit/, (2019) - T/a.pdf',
+            'Lit/et al. (2020) - Titel/a.pdf',
+            '/a.pdf',
+            'folder/',
+            'H:\\vault\\Lit/Meyer (2019) - T\\file.pdf',
+        ]) {
+            expect(() => shortSourceLabel(path), path).not.toThrow();
+            const label = shortSourceLabel(path);
+            expect(label === null || label.trim().length > 0, `${path} -> ${label}`).toBe(true);
+        }
+    });
+
+    it('resolves a mixed-separator path the same as a clean one', () => {
+        expect(shortSourceLabel('H:\\vault\\Lit/Meyer (2019) - T\\file.pdf')).toBe('Meyer 2019');
+    });
+
+    it('abbreviates an absurd author list instead of printing it', () => {
+        const authors = Array.from({ length: 30 }, (_, i) => `Autor${i}`).join(', ');
+        expect(shortSourceLabel(`Lit/${authors} (2020) - Titel/a.pdf`)).toBe('Autor0 et al. 2020');
+    });
+
+    it('handles "u. a." with and without the space', () => {
+        expect(shortSourceLabel('Lit/Müller u. a. (2020) - Titel/a.pdf')).toBe('Müller et al. 2020');
+        expect(shortSourceLabel('Lit/Müller u.a. (2020) - Titel/a.pdf')).toBe('Müller et al. 2020');
+    });
+
+    it('stays fast on a pathological path segment', () => {
+        // Vault segments cannot realistically be this long; the point is that the
+        // regexes do not blow up if one ever is.
+        const started = Date.now();
+        shortSourceLabel(`Lit/${' '.repeat(5000)}/f.pdf`);
+        shortSourceLabel(`Lit/${'a-'.repeat(5000)}(2021)/f.pdf`);
+        expect(Date.now() - started).toBeLessThan(2000);
+    });
 });
 
 describe('the hover text', () => {
