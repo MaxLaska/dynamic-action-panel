@@ -24,6 +24,7 @@
 
 import type { App, TFile, WorkspaceLeaf } from 'obsidian';
 import {
+    basenameOf,
     isAnnotationKey,
     metaFields,
     type LocalAnnotationRef,
@@ -216,19 +217,20 @@ function draggingAnnotationIds(view: LocalReaderView): string[] {
     if (!container || typeof container !== 'object') {
         return [];
     }
-    let frameWindow: unknown;
+    // The PROPERTY READ has to be inside the guard, not just the lookup: a
+    // cross-origin frame hands back a WindowProxy without complaint and only
+    // throws when a non-whitelisted property is touched.
     try {
         const iframe = (container as HTMLElement).querySelector?.('iframe');
-        frameWindow = iframe?.contentWindow ?? null;
+        const ids = asObject(iframe?.contentWindow)?.['_draggingAnnotationIDs'];
+        if (!Array.isArray(ids)) {
+            return [];
+        }
+        return ids.filter((id): id is string => typeof id === 'string' && isAnnotationKey(id));
     } catch {
-        // Cross-origin or detached: nothing readable here.
+        // Cross-origin, detached, or a frame that is not the reader's.
         return [];
     }
-    const ids = asObject(frameWindow)?.['_draggingAnnotationIDs'];
-    if (!Array.isArray(ids)) {
-        return [];
-    }
-    return ids.filter((id): id is string => typeof id === 'string' && isAnnotationKey(id));
 }
 
 /**
@@ -246,6 +248,8 @@ export function readDraggedLocalAnnotation(
     app: App,
     expectedId?: string
 ): LocalAnnotationRef | null {
+    const candidates: { leaf: WorkspaceLeaf; ref: LocalAnnotationRef }[] = [];
+
     for (const leaf of localReaderLeaves(app)) {
         const view = leaf.view as unknown as LocalReaderView;
         const filePath = readerFilePath(view);
@@ -261,21 +265,39 @@ export function readDraggedLocalAnnotation(
                 // This leaf does not own the id, so it is not this leaf's drag.
                 continue;
             }
-            return {
-                kind: 'local',
-                filePath,
-                fileBasename: basenameOf(filePath),
-                annotationId,
-                ...meta,
-            };
+            candidates.push({
+                leaf,
+                ref: {
+                    kind: 'local',
+                    filePath,
+                    fileBasename: basenameOf(filePath),
+                    annotationId,
+                    ...meta,
+                },
+            });
         }
     }
-    return null;
+
+    if (candidates.length === 1) {
+        return candidates[0]!.ref;
+    }
+    if (candidates.length === 0) {
+        return null;
+    }
+    // Several readers claim a drag, which happens because ZotFlow never clears
+    // these ids: every reader the user has ever dragged from still looks busy.
+    // The one the user is actually in is the most recently used leaf; without
+    // that hint there is no way to tell them apart, and taking the first in tree
+    // order would silently capture an annotation from a different document.
+    let recent: WorkspaceLeaf | null = null;
+    try {
+        recent = app.workspace.getMostRecentLeaf();
+    } catch {
+        recent = null;
+    }
+    const inRecentLeaf = candidates.filter((candidate) => candidate.leaf === recent);
+    return inRecentLeaf.length === 1 ? inRecentLeaf[0]!.ref : null;
 }
 
 /** File name without folders or extension. */
-export function basenameOf(filePath: string): string {
-    const name = filePath.slice(filePath.lastIndexOf('/') + 1);
-    const dot = name.lastIndexOf('.');
-    return dot > 0 ? name.slice(0, dot) : name;
-}
+export { basenameOf } from '@/utils/zotflowAnnotationDrop';

@@ -40,6 +40,7 @@ import {
     parseDraggedLinkText,
     resolveDroppedAnnotation,
     resolveDroppedVaultFiles,
+    resolveSlotDropDraft,
 } from '@/utils/obsidianFileDrag';
 import {
     copyToolInCategory,
@@ -104,6 +105,12 @@ interface ReaderLeafSpec {
     noDataManager?: boolean;
     /** Expose the path only through getState(), not through `file`. */
     stateOnly?: boolean;
+    /** Simulate a cross-origin frame: reading a property throws. */
+    hostileWindow?: boolean;
+    /** Simulate a data manager whose getAnnotation throws. */
+    throwingDataManager?: boolean;
+    /** Mark this leaf as the most recently used one. */
+    mostRecent?: boolean;
 }
 
 function fakeApp(options: {
@@ -118,12 +125,25 @@ function fakeApp(options: {
 
     const leaves = (options.readers ?? []).map((spec) => {
         const annotations = spec.annotations ?? [];
+        /** A cross-origin WindowProxy: an object that throws on property access. */
+        const hostile = new Proxy(
+            {},
+            {
+                get() {
+                    throw new Error('SecurityError: blocked a frame from accessing');
+                },
+            }
+        );
         const view: Record<string, unknown> = {
             getState: () => (spec.file !== null ? { file: spec.file } : {}),
             containerEl: {
                 querySelector: (selector: string) => {
                     if (selector !== 'iframe' || spec.noIframe) return null;
-                    return { contentWindow: { _draggingAnnotationIDs: spec.dragging } };
+                    return {
+                        contentWindow: spec.hostileWindow
+                            ? hostile
+                            : { _draggingAnnotationIDs: spec.dragging },
+                    };
                 },
             },
         };
@@ -132,10 +152,13 @@ function fakeApp(options: {
         }
         if (!spec.noDataManager) {
             view['dataManager'] = {
-                getAnnotation: (id: string) => annotations.find((a) => a.id === id) ?? null,
+                getAnnotation: (id: string) => {
+                    if (spec.throwingDataManager) throw new Error('reader is busy');
+                    return annotations.find((a) => a.id === id) ?? null;
+                },
             };
         }
-        return { view };
+        return { view, __mostRecent: spec.mostRecent === true };
     });
 
     return {
@@ -156,6 +179,7 @@ function fakeApp(options: {
         workspace: {
             getLeavesOfType: (type: string) =>
                 type === 'zotflow-local-zotero-reader-view' ? leaves : [],
+            getMostRecentLeaf: () => leaves.find((l) => l.__mostRecent) ?? null,
         },
         ...(options.dragManagerFiles
             ? { dragManager: { draggable: { files: options.dragManagerFiles } } }
@@ -365,17 +389,28 @@ describe('validating the library citation payload', () => {
     });
 
     it('does not let a payload poison a prototype', () => {
-        const ref = parseZotflowCitationPayload(
-            JSON.stringify({
-                type: 'zotflow-citation',
-                libraryID: 1,
-                annotations: [{ id: KEY, __proto__: { polluted: true } }],
-            })
-        );
+        // Written as raw JSON on purpose: `{__proto__: …}` in an object literal
+        // sets the prototype, so JSON.stringify would drop it and the test would
+        // prove nothing. This string really does carry a `__proto__` KEY.
+        const raw =
+            `{"type":"zotflow-citation","libraryID":1,"annotations":` +
+            `[{"id":"${KEY}","__proto__":{"polluted":true},"constructor":{"x":1}}]}`;
+        expect(raw).toContain('"__proto__"');
+
+        const ref = parseZotflowCitationPayload(raw);
+
         expect(ref?.annotationId).toBe(KEY);
         expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+        expect(Object.getPrototypeOf(ref!)).toBe(Object.prototype);
         // Only fields the parser knows are present.
         expect(Object.keys(ref!).sort()).toEqual(['annotationId', 'kind', 'libraryID']);
+    });
+
+    it('accepts libraryID 0 but not a non-finite one', () => {
+        const payload = (libraryID: unknown) =>
+            `{"type":"zotflow-citation","libraryID":${JSON.stringify(libraryID)},"annotations":[{"id":"${KEY}"}]}`;
+        expect(parseZotflowCitationPayload(payload(0))?.libraryID).toBe(0);
+        expect(parseZotflowCitationPayload(payload(null))).toBeNull();
     });
 });
 
@@ -615,10 +650,71 @@ describe('reading metadata and the dragged id from the open reader', () => {
             { file: PDF, dragging: [KEY], noIframe: true },
             { file: PDF, dragging: [KEY], noDataManager: true },
             { file: null, dragging: [KEY] },
+            // A cross-origin frame: `contentWindow` is handed over happily and
+            // only throws when a property is touched.
+            { file: PDF, annotations: [annotation], hostileWindow: true },
+            { file: PDF, annotations: [annotation], dragging: [KEY], throwingDataManager: true },
         ]) {
+            expect(() =>
+                readDraggedLocalAnnotation(annotatedVault([spec as ReaderLeafSpec]))
+            ).not.toThrow();
             expect(readDraggedLocalAnnotation(annotatedVault([spec as ReaderLeafSpec]))).toBeNull();
         }
         expect(readDraggedLocalAnnotation(fakeApp())).toBeNull();
+        // The metadata read must be just as unshakeable.
+        expect(() =>
+            readAnnotationMeta(
+                annotatedVault([{ file: PDF, annotations: [annotation], throwingDataManager: true }]),
+                PDF,
+                KEY
+            )
+        ).not.toThrow();
+    });
+
+    it('refuses to guess when two readers both claim a drag', () => {
+        // ZotFlow never clears the ids, so every reader the user ever dragged
+        // from still looks busy. Taking the first in tree order would capture an
+        // annotation from a document the user is not even looking at.
+        const other = 'other/Second.pdf';
+        const app = fakeApp({
+            files: { [PDF]: vaultFile(PDF), [NOTE]: vaultFile(NOTE) },
+            frontmatter: { [NOTE]: { 'zotflow-local-attachment': `[[${PDF}]]` } },
+            readers: [
+                { file: other, annotations: [{ id: 'KWBFL8CQ' }], dragging: ['KWBFL8CQ'] },
+                { file: PDF, annotations: [annotation], dragging: [KEY] },
+            ],
+        });
+
+        expect(readDraggedLocalAnnotation(app)).toBeNull();
+    });
+
+    it('uses the most recently used reader to break the tie', () => {
+        const other = 'other/Second.pdf';
+        const app = fakeApp({
+            files: { [PDF]: vaultFile(PDF) },
+            readers: [
+                { file: other, annotations: [{ id: 'KWBFL8CQ' }], dragging: ['KWBFL8CQ'] },
+                { file: PDF, annotations: [annotation], dragging: [KEY], mostRecent: true },
+            ],
+        });
+
+        const ref = readDraggedLocalAnnotation(app);
+        expect(ref?.filePath).toBe(PDF);
+        expect(ref?.annotationId).toBe(KEY);
+    });
+
+    it('still refuses when one reader offers two dragged ids', () => {
+        const app = annotatedVault([
+            {
+                file: PDF,
+                annotations: [annotation, { id: 'KWBFL8CQ' }],
+                dragging: [KEY, 'KWBFL8CQ'],
+            },
+        ]);
+        // Ambiguous within a single leaf too: no most-recent hint can resolve it.
+        expect(readDraggedLocalAnnotation(app)).toBeNull();
+        // Naming one of them is enough to make it unambiguous again.
+        expect(readDraggedLocalAnnotation(app, KEY)?.annotationId).toBe(KEY);
     });
 
     it('accepts a reader that exposes its file only through getState', () => {
@@ -680,11 +776,26 @@ describe('classifying a drop', () => {
         );
     });
 
-    it('does not claim a truly empty payload', () => {
+    it('claims only ZotFlow’s exact signature, never other blank payloads', () => {
+        // The reader's dragging ids are never cleared, so a leftover value is
+        // indistinguishable from a fresh one. Everything that is not exactly
+        // what ZotFlow writes must therefore be left alone, even though a reader
+        // is open and would happily resolve the stale id.
         const app = annotatedVault([
             { file: PDF, annotations: [annotation], dragging: [KEY] },
         ]);
-        expect(resolveDroppedAnnotation(app, transfer({ 'text/plain': '' }))).toBeNull();
+
+        expect(resolveDroppedAnnotation(app, transfer({ 'text/plain': ' ' }))?.annotationId).toBe(
+            KEY
+        );
+        for (const text of ['', '  ', '   ', '\t', '\n', ' \n ']) {
+            expect(resolveDroppedAnnotation(app, transfer({ 'text/plain': text })), JSON.stringify(text)).toBeNull();
+        }
+        // A lone space is only ZotFlow's if nothing else rides along.
+        expect(
+            resolveDroppedAnnotation(app, transfer({ 'text/plain': ' ', 'text/html': '<i> </i>' }))
+        ).toBeNull();
+        expect(resolveDroppedAnnotation(app, transfer({ 'text/plain': ' ', Files: '' }))).toBeNull();
         expect(resolveDroppedAnnotation(app, transfer({}))).toBeNull();
         expect(resolveDroppedAnnotation(app, null)).toBeNull();
     });
@@ -716,8 +827,33 @@ describe('classifying a drop', () => {
 
         expect(resolveDroppedAnnotation(app, transfer({ 'text/plain': embedPayload() }))).toBeNull();
         expect(resolveDroppedAnnotation(app, transfer({ 'text/plain': ' ' }))).toBeNull();
-        // And the file path still resolves it as before.
-        expect(resolveDroppedVaultFiles(app, transfer({ 'text/plain': ' ' }))[0]?.path).toBe(PDF);
+        // And the file path still resolves it as before (the drag manager wins).
+        expect(resolveDroppedVaultFiles(app, transfer({ 'text/plain': 'x' }))[0]?.path).toBe(PDF);
+    });
+
+    it('does not claim prose that merely quotes an annotation embed', () => {
+        const app = annotatedVault([{ file: PDF, annotations: [annotation] }]);
+        // A multi-line editor selection that happens to contain a source-note
+        // embed keeps its old meaning (which is: nothing).
+        expect(
+            resolveDroppedAnnotation(
+                app,
+                transfer({ 'text/plain': `see ${embedPayload()} for the argument` })
+            )
+        ).toBeNull();
+        expect(
+            resolveDroppedAnnotation(
+                app,
+                transfer({ 'text/plain': `Some heading\n\n${embedPayload()}` })
+            )
+        ).toBeNull();
+        // ZotFlow's own payload starts with the embed, including a multi-annotation one.
+        expect(
+            resolveDroppedAnnotation(
+                app,
+                transfer({ 'text/plain': `${embedPayload()}\n\n${embedPayload(NOTE, 'KWBFL8CQ')}` })
+            )?.annotationId
+        ).toBe(KEY);
     });
 
     it('leaves an ordinary block embed to the existing file handling', () => {
@@ -738,6 +874,78 @@ describe('classifying a drop', () => {
         expect(
             resolveDroppedAnnotation(annotatedVault(), lockedTransfer(['text/plain']))
         ).toBeNull();
+    });
+});
+
+// --- 7b. the draft a drop produces, including which notice is shown -----------
+//
+// This is the decision the drop hook makes, lifted out of React so it can be
+// checked directly: which tool, which icon, which message.
+
+describe('the draft a drop produces', () => {
+    const annotation: FakeAnnotation = {
+        id: KEY,
+        type: 'highlight',
+        text: 'quote',
+        pageLabel: '111',
+        position: { pageIndex: 110 },
+    };
+
+    it('announces an annotation as an annotation', () => {
+        const app = annotatedVault([{ file: PDF, annotations: [annotation] }]);
+        const draft = resolveSlotDropDraft(app, transfer({ 'text/plain': embedPayload() }));
+
+        expect(draft).toEqual({
+            name: 'p.111 · quote',
+            iconId: 'highlighter',
+            action: {
+                type: 'file',
+                parameters: { filePath: PDF, subpath: buildAnnotationSubpath(KEY, 110) },
+            },
+            noticeKey: 'slot_annotation_created',
+        });
+    });
+
+    it('announces a plain file as a created button', () => {
+        const app = fakeApp({ files: { 'notes/a.md': vaultFile('notes/a.md') } });
+        const draft = resolveSlotDropDraft(app, transfer({ 'text/plain': 'notes/a.md' }));
+
+        expect(draft).toEqual({
+            name: 'a',
+            iconId: 'file-text',
+            action: { type: 'file', parameters: { filePath: 'notes/a.md' } },
+            noticeKey: 'button_create_success',
+        });
+    });
+
+    it('maps a script inside the script folder to the script action', () => {
+        const app = fakeApp({ files: { 'scripts/test.js': vaultFile('scripts/test.js') } });
+        const draft = resolveSlotDropDraft(app, transfer({ 'text/plain': 'scripts/test.js' }), {
+            scriptFolderPath: 'scripts',
+        });
+
+        expect(draft?.action).toEqual({ type: 'script', parameters: { scriptName: 'test.js' } });
+        expect(draft?.noticeKey).toBe('button_create_success');
+    });
+
+    it('explains a script that Run script cannot address', () => {
+        const app = fakeApp({ files: { 'elsewhere/test.js': vaultFile('elsewhere/test.js') } });
+        const draft = resolveSlotDropDraft(app, transfer({ 'text/plain': 'elsewhere/test.js' }), {
+            scriptFolderPath: 'scripts',
+        });
+
+        expect(draft?.action).toEqual({
+            type: 'file',
+            parameters: { filePath: 'elsewhere/test.js' },
+        });
+        expect(draft?.noticeKey).toBe('script_outside_script_folder');
+    });
+
+    it('produces nothing for a drop it cannot make sense of', () => {
+        const app = fakeApp();
+        expect(resolveSlotDropDraft(app, transfer({ 'text/plain': 'no/such/file.md' }))).toBeNull();
+        expect(resolveSlotDropDraft(app, transfer({ 'text/plain': '' }))).toBeNull();
+        expect(resolveSlotDropDraft(app, null)).toBeNull();
     });
 });
 
@@ -769,8 +977,12 @@ describe('an annotation tool obeys the v5 registry rules', () => {
             type: 'file',
             parameters: { filePath: PDF, subpath: SUBPATH },
         });
-        // A copy is its own tool; editing one must not touch the other.
+        // Distinct definitions with distinct action objects. The `parameters`
+        // object itself is still shared (a pre-existing shallow copy in
+        // deepCopyDefinition) — harmless only because no write path mutates a
+        // stored action in place; every edit replaces it via toJSON.
         expect(next.tools['a2']).not.toBe(next.tools['a']);
+        expect(next.tools['a2']?.actions[0]).not.toBe(next.tools['a']?.actions[0]);
         expect(next.tools['a']?.actions[0]).toEqual({
             type: 'file',
             parameters: { filePath: PDF, subpath: SUBPATH },

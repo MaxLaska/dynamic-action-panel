@@ -44,7 +44,13 @@ export class FileService {
             return;
         }
 
-        this.warnIfNoViewRegistered(file.extension);
+        if (subpath) {
+            // Only warned about for a positioned open: that is the case where
+            // silence would be baffling, because the tool promised a place
+            // inside the file. A plain file tool keeps its old behaviour, and
+            // plenty of extensions legitimately have no view (`.js`, `.txt`).
+            this.warnIfNoViewRegistered(file.extension);
+        }
         await this.openFileInNewLeaf(filePath, subpath);
     }
 
@@ -121,7 +127,20 @@ export class FileService {
      * @param subpath Optional link subpath, including its leading `#`
      */
     private async openFileInNewLeaf(filePath: string, subpath?: string): Promise<void> {
-        await this.app.workspace.openLinkText(`${filePath}${subpath ?? ''}`, '', true);
+        if (!subpath) {
+            await this.app.workspace.openLinkText(filePath, '', true);
+            return;
+        }
+        try {
+            await this.app.workspace.openLinkText(`${filePath}${subpath}`, '', true);
+        } catch (error) {
+            // Obsidian hands the subpath straight to the target view, which may
+            // reject one it cannot parse (a stale or hand-edited annotation, an
+            // imported template from another vault). Same rule as the already
+            // open case: show the file rather than fail the click.
+            console.warn('[Dynamic Action Panel] Could not open at the subpath', subpath, error);
+            await this.app.workspace.openLinkText(filePath, '', true);
+        }
     }
 
     /**

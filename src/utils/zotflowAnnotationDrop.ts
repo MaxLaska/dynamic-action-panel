@@ -35,15 +35,19 @@ const ANNOTATION_KEY = '[23456789A-NP-Z]{8}';
 const ANNOTATION_KEY_RE = new RegExp(`^${ANNOTATION_KEY}$`);
 
 /**
- * The first "![[<note>#^<key>]]" in the payload. A multi-annotation drag writes
- * one per annotation; one cell is one tool, so only the first is read — the same
- * rule the file drop already follows.
+ * The leading "![[<note>#^<key>]]" of the payload. A multi-annotation drag
+ * writes one per annotation, `\n\n`-separated; one cell is one tool, so only the
+ * first is read — the same rule the file drop already follows.
+ *
+ * Anchored at the start on purpose: ZotFlow's payload IS the embed, so prose
+ * that merely quotes one (a multi-line editor selection, say) keeps its previous
+ * meaning instead of silently becoming an annotation.
  *
  * The note part may contain spaces, parentheses and folders (ZotFlow writes a
  * full vault path), so it is bounded only by the characters a wikilink target
  * cannot contain.
  */
-const EMBED_RE = new RegExp(`!\\[\\[([^\\[\\]|#]+)#\\^(${ANNOTATION_KEY})\\]\\]`);
+const EMBED_RE = new RegExp(`^!\\[\\[([^\\[\\]|#]+)#\\^(${ANNOTATION_KEY})\\]\\]`);
 
 /** Identity of an annotation, as far as a payload can carry it. */
 export interface ZotflowEmbedRef {
@@ -86,6 +90,13 @@ export function isAnnotationKey(value: string): boolean {
     return ANNOTATION_KEY_RE.test(value);
 }
 
+/** File name without folders or extension. */
+export function basenameOf(filePath: string): string {
+    const name = filePath.slice(filePath.lastIndexOf('/') + 1);
+    const dot = name.lastIndexOf('.');
+    return dot > 0 ? name.slice(0, dot) : name;
+}
+
 /**
  * The source note and annotation key named by a ZotFlow annotation drag, or
  * null when the payload is anything else (a plain wikilink, a file-explorer
@@ -95,7 +106,7 @@ export function parseZotflowEmbedLink(text: string): ZotflowEmbedRef | null {
     if (typeof text !== 'string' || text.trim().length === 0) {
         return null;
     }
-    const match = EMBED_RE.exec(text);
+    const match = EMBED_RE.exec(text.trimStart());
     if (!match) {
         return null;
     }

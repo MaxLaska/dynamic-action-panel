@@ -46,6 +46,8 @@ function harness(
         /** undefined = no registry at all; a map = extension -> view type. */
         viewTypes?: Record<string, string> | undefined;
         registryThrows?: boolean;
+        /** Make `openLinkText` throw for any link text carrying a subpath. */
+        openThrowsOnSubpath?: boolean;
     } = {}
 ): Harness {
     const files = new Set(options.files ?? []);
@@ -84,6 +86,10 @@ function harness(
             },
             openLinkText: async (linktext: string, sourcePath: string, newLeaf: unknown) => {
                 opened.push({ linktext, sourcePath, newLeaf });
+                if (options.openThrowsOnSubpath && linktext.includes('#')) {
+                    // What a view does when it cannot parse the subpath.
+                    throw new Error("Unexpected token 'o', \"oops\" is not valid JSON");
+                }
             },
         },
         ...(options.viewTypes !== undefined
@@ -212,6 +218,22 @@ describe('FileService with a subpath', () => {
         expect(h.opened).toEqual([]);
     });
 
+    it('falls back to opening the plain file when the subpath is rejected', async () => {
+        // Reachable from an imported template: any string is a valid subpath as
+        // far as the format is concerned, and the view decides whether it parses.
+        const h = harness({
+            files: [PDF],
+            viewTypes: { pdf: 'pdf' },
+            openThrowsOnSubpath: true,
+        });
+
+        await expect(
+            service(h).openFile(fileAction(PDF, '#annotation=oops'))
+        ).resolves.toBeUndefined();
+
+        expect(h.opened.map((o) => o.linktext)).toEqual([`${PDF}#annotation=oops`, PDF]);
+    });
+
     it('does not notice a missing file twice or navigate it', async () => {
         const h = harness({ files: [], viewTypes: { pdf: 'pdf' } });
         await service(h).openFile(fileAction(PDF, SUBPATH));
@@ -224,7 +246,7 @@ describe('FileService with a subpath', () => {
 // --- missing viewer ----------------------------------------------------------
 
 describe('FileService when no view is registered for the extension', () => {
-    it('says so instead of appearing to do nothing', async () => {
+    it('says so when a position was asked for, instead of appearing to do nothing', async () => {
         const h = harness({ files: [PDF], viewTypes: {} });
         await service(h).openFile(fileAction(PDF, SUBPATH));
 
@@ -233,21 +255,33 @@ describe('FileService when no view is registered for the extension', () => {
         expect(h.opened).toHaveLength(1);
     });
 
+    it('stays quiet for a plain file tool, whatever its extension', async () => {
+        // Obsidian registers no view for `.js` or `.txt`, and this plugin
+        // deliberately creates Open file tools for them (a script outside the
+        // script folder). Warning there would be noise on a supported case.
+        for (const path of ['scripts/out/test.js', 'notes/plain.txt', 'no-extension']) {
+            const h = harness({ files: [path], viewTypes: { md: 'markdown', pdf: 'pdf' } });
+            await service(h).openFile(fileAction(path));
+            expect(noticeLog, path).toEqual([]);
+            expect(h.opened, path).toHaveLength(1);
+        }
+    });
+
     it('stays quiet when a viewer exists', async () => {
         const h = harness({ files: [PDF], viewTypes: { pdf: 'zotflow-local-zotero-reader-view' } });
-        await service(h).openFile(fileAction(PDF));
+        await service(h).openFile(fileAction(PDF, SUBPATH));
 
         expect(noticeLog).toEqual([]);
     });
 
     it('stays quiet when the registry is absent or throws', async () => {
         const withoutRegistry = harness({ files: [PDF], viewTypes: undefined });
-        await service(withoutRegistry).openFile(fileAction(PDF));
+        await service(withoutRegistry).openFile(fileAction(PDF, SUBPATH));
         expect(noticeLog).toEqual([]);
         expect(withoutRegistry.opened).toHaveLength(1);
 
         const throwing = harness({ files: [PDF], viewTypes: {}, registryThrows: true });
-        await service(throwing).openFile(fileAction(PDF));
+        await service(throwing).openFile(fileAction(PDF, SUBPATH));
         expect(noticeLog).toEqual([]);
         expect(throwing.opened).toHaveLength(1);
     });

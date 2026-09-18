@@ -24,7 +24,9 @@
 // (dnd-kit) and never produces HTML5 drag events. The two cannot collide.
 
 import type { App } from 'obsidian';
-import type { DroppedVaultFile } from '@/utils/vaultFileButton';
+import type { ButtonAction } from '@/types/action';
+import { buildVaultFileButtonDraft, type DroppedVaultFile } from '@/utils/vaultFileButton';
+import { buildAnnotationButtonDraft } from '@/utils/annotationButton';
 import {
     parseZotflowCitationPayload,
     parseZotflowEmbedLink,
@@ -226,6 +228,59 @@ export function canAcceptVaultFileDrag(
     return types.includes('text/plain') || types.includes(ZOTFLOW_CITATION_MIME);
 }
 
+// --- what a drop should create ------------------------------------------------
+
+/** A tool a drop should create, plus what to tell the user about it. */
+export interface SlotDropDraft {
+    name: string;
+    /** Obsidian icon id; the caller resolves it to the stored SVG markup. */
+    iconId: string;
+    action: ButtonAction;
+    /** i18n key of the notice shown after the tool was created. */
+    noticeKey: string;
+}
+
+/**
+ * What this drop means: an annotation, a vault file, or nothing.
+ *
+ * An annotation is asked about FIRST, because it is identified either by
+ * ZotFlow's own MIME type or by a source-note embed whose note points back at
+ * the annotated file — neither of which a file drag can produce. Anything it
+ * does not claim keeps exactly its previous meaning.
+ *
+ * Kept next to the drag readers rather than in the hook so the decision can be
+ * tested without React.
+ */
+export function resolveSlotDropDraft(
+    app: App,
+    dataTransfer: DataTransfer | null,
+    options: { scriptFolderPath?: string } = {}
+): SlotDropDraft | null {
+    const annotation = resolveDroppedAnnotation(app, dataTransfer);
+    if (annotation) {
+        const draft = buildAnnotationButtonDraft(annotation);
+        return { ...draft, noticeKey: 'slot_annotation_created' };
+    }
+
+    // Only the first file: one slot is one tool, and silently filling unrelated
+    // slots is not what dropping onto THIS cell asked for.
+    const file = resolveDroppedVaultFiles(app, dataTransfer)[0];
+    if (!file) {
+        return null;
+    }
+    const draft = buildVaultFileButtonDraft(file, {
+        scriptFolderPath: options.scriptFolderPath,
+    });
+    return {
+        name: draft.name,
+        iconId: draft.iconId,
+        action: draft.action,
+        noticeKey: draft.scriptFolderMismatch
+            ? 'script_outside_script_folder'
+            : 'button_create_success',
+    };
+}
+
 // --- ZotFlow annotations ------------------------------------------------------
 
 /** One `getData` read that never throws (it is forbidden outside a drop). */
@@ -235,6 +290,16 @@ function readData(dataTransfer: DataTransfer, mime: string): string {
     } catch {
         return '';
     }
+}
+
+/**
+ * Whether `text/plain` is the ONLY thing on the DataTransfer, which is what a
+ * ZotFlow reader drag looks like. An editor selection drag also brings
+ * `text/html`, an OS drag brings `Files`, and so on.
+ */
+function isOnlyPlainText(dataTransfer: DataTransfer): boolean {
+    const types = Array.from(dataTransfer.types ?? []);
+    return types.length === 1 && types[0] === 'text/plain';
 }
 
 /**
@@ -289,10 +354,17 @@ export function resolveDroppedAnnotation(
         return readDraggedLocalAnnotation(app, embed.annotationId);
     }
 
-    // ZotFlow writes a single space when it has no source note for the file, so
-    // "whitespace but not empty" is its signature. An unrelated drag with a
-    // genuinely empty text payload is deliberately not claimed.
-    if (text.length > 0 && text.trim().length === 0) {
+    // Last resort: a file with no source note, where ZotFlow's payload carries
+    // no identity at all and the open reader is the only source.
+    //
+    // ZotFlow never clears the reader's dragging ids, so a leftover value looks
+    // exactly like a fresh one. The ownership guard inside the adapter cannot
+    // see that difference (a leaf always owns its own annotations), so the
+    // payload has to carry the weight: this path is taken only for ZotFlow's
+    // exact signature — a lone space and nothing else on the DataTransfer.
+    // Anything less specific is left alone, because inventing the wrong
+    // annotation is worse than not recognising the drag.
+    if (text === ' ' && isOnlyPlainText(dataTransfer)) {
         return readDraggedLocalAnnotation(app);
     }
     return null;
