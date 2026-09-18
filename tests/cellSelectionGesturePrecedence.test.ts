@@ -187,6 +187,46 @@ describe('the rectangle gesture keeps the single-cell click intact', () => {
     });
 });
 
+describe('the gesture draws itself, separately from the selection', () => {
+    const hook = codeOf('hooks/useCellRectangleSelection.ts');
+    const grid = codeOf('components/buttons-panel/CategoryButtonGrid.tsx');
+
+    it('publishes the block as a span, not as a second cell list', () => {
+        // The outline is ONE box over the whole block; it needs the span, and
+        // it must come from the same computation as the selected cells so the
+        // two can never disagree about where the rectangle is.
+        expect(hook).toMatch(/rectangleBounds\(drag\.anchor, cell, drag\.dimensions\)/);
+        expect(hook).toMatch(/rectangleCellKeys\(drag\.anchor, cell, drag\.dimensions\)/);
+    });
+
+    it('marks the cells a removal is dropping, and only for a removal', () => {
+        expect(hook).toMatch(/drag\.gesture === 'remove'/);
+        expect(hook).toMatch(/cellsRemovedByRectangle\(drag\.baseline, rectangle\)/);
+    });
+
+    it('drops the outline the moment the gesture ends, however it ends', () => {
+        // Released, cancelled, Escaped or torn down: `endDrag` is the one exit.
+        const endDrag = hook.slice(
+            hook.indexOf('const endDrag'),
+            hook.indexOf('const handlePointerMove')
+        );
+        expect(endDrag.length).toBeGreaterThan(0);
+        expect(endDrag).toMatch(/setPreview\(null\)/);
+    });
+
+    it('renders the outline inside the grid, above the cells and out of flow', () => {
+        expect(grid).toMatch(/rectangle\.preview && \(/);
+        expect(grid).toMatch(/<GridRectanglePreview/);
+        // Last child of the grid, so it paints above the cells in tree order.
+        const gridEl = grid.slice(grid.indexOf('const gridEl ='), grid.indexOf('const availability'));
+        expect(gridEl.indexOf('{cells}')).toBeLessThan(gridEl.indexOf('GridRectanglePreview'));
+    });
+
+    it('feeds the cells their transient "leaving" state', () => {
+        expect(grid).toMatch(/deselecting=\{rectangle\.preview\?\.removing\.has\(cellKey\)/);
+    });
+});
+
 describe('the ephemeral paint colour', () => {
     const hook = codeOf('hooks/useCellRectangleSelection.ts');
     const grid = codeOf('components/buttons-panel/CategoryButtonGrid.tsx');

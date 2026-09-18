@@ -6,11 +6,14 @@ import { gridCellColorOf } from '@/utils/gridCellSelection';
 import {
     cellAtPoint,
     cellsAddedByRectangle,
+    cellsRemovedByRectangle,
+    rectangleBounds,
     rectangleCellKeys,
     rectangleSelectionCells,
     sameCell,
     type GridAxisGeometry,
     type GridCellCoordinate,
+    type GridRectangleBounds,
     type RectangleGesture,
 } from '@/utils/gridRectangleSelection';
 
@@ -40,6 +43,25 @@ interface RectangleDrag {
     added: readonly GridCellKey[];
 }
 
+/**
+ * What a running rectangle gesture looks like, for the grid to draw.
+ *
+ * Separate from the selection itself on purpose: the SELECTION says which cells
+ * are chosen, this says what the hand is doing right now. Keeping them apart is
+ * what makes a Ctrl-drag readable — the cells it is dropping can be marked as
+ * leaving instead of merely vanishing.
+ */
+export interface CellRectanglePreview {
+    gesture: RectangleGesture;
+    /** The block the gesture currently covers, as a grid span. */
+    bounds: GridRectangleBounds;
+    /**
+     * Cells a REMOVE gesture is about to drop (baseline ∩ rectangle). Always
+     * empty for an ADD gesture, whose result is visible in the selection.
+     */
+    removing: ReadonlySet<GridCellKey>;
+}
+
 export interface CellRectangleSelection {
     /**
      * Bind to the grid's `onPointerDownCapture`.
@@ -54,6 +76,8 @@ export interface CellRectangleSelection {
      * Empty whenever nothing is pending.
      */
     paintPreview: ReadonlySet<GridCellKey>;
+    /** The running gesture, or null when none is in flight. */
+    preview: CellRectanglePreview | null;
 }
 
 export interface CellRectangleSelectionOptions {
@@ -126,6 +150,7 @@ export function useCellRectangleSelection(
     const { gridRef, enabled } = options;
 
     const [paintPreview, setPaintPreview] = React.useState<ReadonlySet<GridCellKey>>(NO_CELLS);
+    const [preview, setPreview] = React.useState<CellRectanglePreview | null>(null);
     const dragRef = React.useRef<RectangleDrag | null>(null);
     /** A committed paint the stored styles have not caught up with yet. */
     const pendingPaintRef = React.useRef<{
@@ -185,6 +210,9 @@ export function useCellRectangleSelection(
             }
             latest.current.onActiveChange(false);
         }
+        // The outline belongs to the gesture and to nothing else, so it goes
+        // the moment the gesture does — cancelled, released or torn down alike.
+        setPreview(null);
         return drag;
     }, [clearPaintPreview]);
 
@@ -237,6 +265,23 @@ export function useCellRectangleSelection(
         const rectangle = rectangleCellKeys(drag.anchor, cell, drag.dimensions);
         latest.current.onPreview(
             rectangleSelectionCells(drag.baseline, rectangle, drag.gesture)
+        );
+
+        // The gesture draws itself: one continuous outline over the block, and
+        // — for a removal — the cells that are on their way out, which the
+        // selection alone can only express by their absence.
+        const bounds = rectangleBounds(drag.anchor, cell, drag.dimensions);
+        setPreview(
+            bounds === null
+                ? null
+                : {
+                      gesture: drag.gesture,
+                      bounds,
+                      removing:
+                          drag.gesture === 'remove'
+                              ? new Set(cellsRemovedByRectangle(drag.baseline, rectangle))
+                              : NO_CELLS,
+                  }
         );
 
         // Only an ADD gesture paints, and only what it actually brought in.
@@ -403,5 +448,5 @@ export function useCellRectangleSelection(
         [gridRef]
     );
 
-    return { onPointerDownCapture, paintPreview };
+    return { onPointerDownCapture, paintPreview, preview };
 }

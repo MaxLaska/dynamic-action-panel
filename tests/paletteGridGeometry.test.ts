@@ -378,27 +378,93 @@ describe('cell colours and selection', () => {
         );
     });
 
-    it('marks a selected cell with an outline, never with the reserved channels', () => {
+    it('washes a selected cell instead of ringing it', () => {
+        // A per-cell ring says "these cells" and never "this shape": at four or
+        // five columns the rings tile and the gutters cut the block apart. The
+        // persistent state is a wash; the SHAPE is the gesture's own outline
+        // (see the rectangle-preview block below).
         const selected = rules.find((r) => /\.ocap-grid-slot--selected$/.test(r.selector));
         expect(selected, 'no selection rule').toBeTruthy();
-        // 2px inset accent: distinct from the 1px accent BORDER of a drop
-        // target and from the 1px dashed faint outline of "context-hidden".
-        expect(selected!.body).toMatch(/outline:\s*2px solid var\(--interactive-accent\)/);
-        expect(selected!.body).toMatch(/outline-offset:\s*-2px/);
-        expect(selected!.body).not.toMatch(/dashed/);
-        // An outline never takes part in layout; a border would move the cell.
+        // An inset shadow paints above the cell's background and below its
+        // contents, so a coloured cell stays coloured and the tool stays
+        // legible. It takes no part in layout, so the cell rects do not move.
+        expect(selected!.body).toMatch(/box-shadow:\s*inset[^;]*var\(--ocap-cell-selected-tint\)/);
+        expect(selected!.body).not.toMatch(/outline/);
+        // `background-color` is the cell colour and must stay visible;
+        // `border` carries the drop promises and the geometry contract.
+        expect(selected!.body).not.toMatch(/background-color/);
         expect(selected!.body).not.toMatch(/(?:^|[;\s])border/);
+    });
+
+    it('derives both selection tints from theme variables, with a fallback', () => {
+        // An undefined `var()` inside a colour makes the whole declaration
+        // invalid at computed-value time — the wash would silently not render
+        // at all. Every reference therefore carries its own fallback.
+        const grid = ruleBody(/\.ocap-palette-grid$/);
+        const selected = /--ocap-cell-selected-tint:\s*([^;]+);/.exec(grid)?.[1] ?? '';
+        expect(selected).toMatch(/hsla\(/);
+        expect(selected).toMatch(/var\(--accent-h,\s*\d/);
+        expect(selected).toMatch(/var\(--accent-s,/);
+        expect(selected).toMatch(/var\(--accent-l,/);
+        const deselect = /--ocap-cell-deselect-tint:\s*([^;]+);/.exec(grid)?.[1] ?? '';
+        expect(deselect).toMatch(/var\(--color-red-rgb,\s*\d/);
+    });
+
+    it('marks the cells a removal is about to drop, in the same channel', () => {
+        // Without this a Ctrl-drag is invisible: the cells just stop being
+        // selected, so the user cannot see which block is doing it.
+        const leaving = rules.find((r) => /\.ocap-grid-slot--deselecting$/.test(r.selector));
+        expect(leaving, 'no deselecting rule').toBeTruthy();
+        expect(leaving!.body).toMatch(
+            /box-shadow:\s*inset[^;]*var\(--ocap-cell-deselect-tint\)/
+        );
+        // It must win on a cell that is both, so it needs the extra class AND
+        // a later position than the selected rule.
+        expect(leaving!.selector).toMatch(/\.ocap-grid-slot\.ocap-grid-slot--deselecting/);
+        expect(rules.indexOf(leaving!)).toBeGreaterThan(
+            rules.findIndex((r) => /\.ocap-grid-slot--selected$/.test(r.selector))
+        );
     });
 
     it('gives the colour and selection rules no size of their own', () => {
         for (const rule of rules) {
-            if (!/--colored|--selected/.test(rule.selector)) continue;
+            if (!/--colored|--selected|--deselecting/.test(rule.selector)) continue;
             for (const match of rule.body.matchAll(sizing)) {
                 expect.fail(
                     `${rule.selector} changes ${match[1]} (${String(match[2]).trim()}) — colour and selection must not resize a cell`
                 );
             }
         }
+    });
+
+    it('draws the running gesture as ONE box on the grid tracks', () => {
+        // The shape has to read as a single rectangle, gutters included — that
+        // is the whole point of having it next to the per-cell wash.
+        const preview = ruleBody(/\.ocap-grid-rect-preview$/);
+        // Out of flow: an in-flow grid item would occupy tracks and displace
+        // the auto-placed cells.
+        expect(preview).toMatch(/position:\s*absolute/);
+        // It must never swallow the gesture it draws.
+        expect(preview).toMatch(/pointer-events:\s*none/);
+        // Placed from the grid's OWN tracks, so it is exact at any width and
+        // needs no pixel measurement from JS.
+        expect(preview).toMatch(/var\(--ocap-rect-row/);
+        expect(preview).toMatch(/var\(--ocap-rect-column/);
+        expect(preview).toMatch(/var\(--ocap-grid-row-height\)/);
+        expect(preview).toMatch(/var\(--ocap-grid-gap\)/);
+        expect(preview).toMatch(/border:\s*2px solid var\(--interactive-accent\)/);
+        // Removing reads differently from adding.
+        expect(ruleBody(/\.ocap-grid-rect-preview--remove$/)).toMatch(
+            /border-color:\s*var\(--text-error\)/
+        );
+    });
+
+    it('keeps the gap a token, so the overlay cannot drift from the grid', () => {
+        const grid = ruleBody(/\.ocap-palette-grid$/);
+        expect(grid).toMatch(/--ocap-grid-gap:\s*\d+px/);
+        expect(grid).toMatch(/gap:\s*var\(--ocap-grid-gap\)/);
+        // The overlay is positioned against the grid box itself.
+        expect(grid).toMatch(/position:\s*relative/);
     });
 
     it('anchors the corner + on the cell without taking part in layout', () => {

@@ -20,7 +20,9 @@ import type { GridDimensions } from '@/utils/categoryGrid';
 import {
     cellAtPoint,
     cellsAddedByRectangle,
+    cellsRemovedByRectangle,
     nearestTrackIndex,
+    rectangleBounds,
     rectangleCellKeys,
     rectangleSelectionCells,
     sameCell,
@@ -99,6 +101,62 @@ describe('rectangleCellKeys — the block between two cells', () => {
         // to hand back a key outside its own dimensions.
         expect(rectangleCellKeys(at(-3, -2), at(9, 9), GRID_3x5)).toHaveLength(15);
         expect(rectangleCellKeys(at(7, 7), at(8, 8), GRID_3x5)).toEqual([]);
+    });
+});
+
+describe('rectangleBounds — the shape the gesture is drawn from', () => {
+    // The outline is placed from these four integers against the grid's own
+    // tracks, so they have to agree with the cell list exactly: one rectangle
+    // the user sees, one rectangle the selection uses.
+    it('is the span of the block, not its cells', () => {
+        expect(rectangleBounds(at(1, 1), at(2, 3), GRID_4x4)).toEqual({
+            row: 1,
+            column: 1,
+            rows: 2,
+            columns: 3,
+        });
+    });
+
+    it('is direction-free, like the cell list', () => {
+        const forward = rectangleBounds(at(1, 1), at(2, 3), GRID_4x4);
+        expect(rectangleBounds(at(2, 3), at(1, 1), GRID_4x4)).toEqual(forward);
+        expect(rectangleBounds(at(1, 3), at(2, 1), GRID_4x4)).toEqual(forward);
+    });
+
+    it('spans exactly one cell when both corners are the same', () => {
+        expect(rectangleBounds(at(3, 2), at(3, 2), GRID_4x4)).toEqual({
+            row: 3,
+            column: 2,
+            rows: 1,
+            columns: 1,
+        });
+    });
+
+    it('is clipped to the grid', () => {
+        expect(rectangleBounds(at(-4, -4), at(99, 99), GRID_3x5)).toEqual({
+            row: 0,
+            column: 0,
+            rows: 3,
+            columns: 5,
+        });
+    });
+
+    it('is null when the clip leaves nothing', () => {
+        expect(rectangleBounds(at(7, 7), at(8, 8), GRID_3x5)).toBeNull();
+        expect(rectangleCellKeys(at(7, 7), at(8, 8), GRID_3x5)).toEqual([]);
+    });
+
+    it('always covers exactly as many cells as the cell list returns', () => {
+        // The one invariant that keeps the outline honest.
+        const corners = [at(0, 0), at(1, 2), at(2, 3), at(3, 1), at(3, 3)];
+        for (const a of corners) {
+            for (const b of corners) {
+                const bounds = rectangleBounds(a, b, GRID_4x4)!;
+                expect(bounds.rows * bounds.columns).toBe(
+                    rectangleCellKeys(a, b, GRID_4x4).length
+                );
+            }
+        }
     });
 });
 
@@ -305,6 +363,42 @@ describe('cellsAddedByRectangle — what an ADD gesture brings in', () => {
         const baseline = set('r0c0', 'r1c1');
         for (const cell of cellsAddedByRectangle(baseline, rect)) {
             expect(baseline.has(cell)).toBe(false);
+        }
+    });
+});
+
+describe('cellsRemovedByRectangle — what a REMOVE gesture is dropping', () => {
+    // Purely a display concern: a removal is otherwise invisible, because the
+    // cells simply stop being selected. Marking them for the length of the
+    // gesture turns the absence into a statement.
+    const rect = rectangleCellKeys(at(1, 1), at(2, 2), GRID_4x4);
+
+    it('is the rectangle intersected with the baseline, in reading order', () => {
+        expect(cellsRemovedByRectangle(set('r0c0', 'r2c2', 'r1c1'), rect)).toEqual([
+            'r1c1',
+            'r2c2',
+        ]);
+    });
+
+    it('is empty when the rectangle covers nothing selected', () => {
+        expect(cellsRemovedByRectangle(set('r0c0', 'r3c3'), rect)).toEqual([]);
+        expect(cellsRemovedByRectangle(set(), rect)).toEqual([]);
+    });
+
+    it('never reports a cell outside the baseline', () => {
+        const baseline = set('r1c1');
+        for (const cell of cellsRemovedByRectangle(baseline, rect)) {
+            expect(baseline.has(cell)).toBe(true);
+        }
+    });
+
+    it('is exactly the complement of what the removal leaves behind', () => {
+        const baseline = set('r0c0', 'r1c1', 'r1c2', 'r2c1', 'r3c3');
+        const kept = rectangleSelectionCells(baseline, rect, 'remove');
+        const leaving = cellsRemovedByRectangle(baseline, rect);
+        expect(kept.length + leaving.length).toBe(baseline.size);
+        for (const cell of leaving) {
+            expect(kept).not.toContain(cell);
         }
     });
 });

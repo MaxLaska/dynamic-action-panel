@@ -46,6 +46,14 @@ interface GridSlotCellProps {
     color?: string;
     /** Edit mode: this cell is part of the current selection. */
     selected?: boolean;
+    /**
+     * A running REMOVE rectangle is about to drop this cell.
+     *
+     * Transient, and only ever true while the pointer is down: it exists
+     * because a removal is otherwise invisible — the cell just stops being
+     * selected, so the user cannot see which block is doing it.
+     */
+    deselecting?: boolean;
     /** The button occupying the slot, if any. */
     children?: React.ReactNode;
 }
@@ -160,6 +168,7 @@ export const GridSlotCell: React.FC<GridSlotCellProps> = ({
     fileDrop,
     color,
     selected = false,
+    deselecting = false,
     children,
 }) => {
     const filled = children !== null && children !== undefined;
@@ -219,6 +228,7 @@ export const GridSlotCell: React.FC<GridSlotCellProps> = ({
         filled ? 'ocap-grid-slot--filled' : 'ocap-grid-slot--empty',
         color && 'ocap-grid-slot--colored',
         selected && 'ocap-grid-slot--selected',
+        deselecting && 'ocap-grid-slot--deselecting',
         isDropTarget && 'ocap-grid-slot--drop-target',
         fileDragOver && acceptsFiles && 'ocap-grid-slot--file-target',
     ]

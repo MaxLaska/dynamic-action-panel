@@ -98,25 +98,71 @@ export function sameCell(a: GridCellCoordinate, b: GridCellCoordinate): boolean 
 }
 
 /**
+ * The area a rectangle covers, as a grid span.
+ *
+ * This is the shape the gesture is DRAWN from: one continuous outline over the
+ * whole block, gaps included, rather than a ring around every cell. The
+ * rendering needs the span, not the cell list — four integers are enough for
+ * CSS to place a single overlay box on the grid's own tracks, so the preview
+ * stays exact at any panel width without anyone measuring pixels.
+ */
+export interface GridRectangleBounds {
+    /** Top row, zero-based. */
+    row: number;
+    /** Left column, zero-based. */
+    column: number;
+    /** How many rows the block spans (at least 1). */
+    rows: number;
+    /** How many columns the block spans (at least 1). */
+    columns: number;
+}
+
+/**
+ * The inclusive block between two coordinates, clipped to the grid.
+ *
+ * Direction-free: `r2c3 → r1c1` covers the same block as `r1c1 → r2c3`. Returns
+ * null when the clip leaves nothing — a coordinate pair entirely outside a grid
+ * that shrank mid-gesture.
+ */
+export function rectangleBounds(
+    a: GridCellCoordinate,
+    b: GridCellCoordinate,
+    dimensions: GridDimensions
+): GridRectangleBounds | null {
+    const firstRow = Math.max(0, Math.min(a.row, b.row));
+    const lastRow = Math.min(dimensions.rows - 1, Math.max(a.row, b.row));
+    const firstColumn = Math.max(0, Math.min(a.column, b.column));
+    const lastColumn = Math.min(dimensions.columns - 1, Math.max(a.column, b.column));
+    if (lastRow < firstRow || lastColumn < firstColumn) {
+        return null;
+    }
+    return {
+        row: firstRow,
+        column: firstColumn,
+        rows: lastRow - firstRow + 1,
+        columns: lastColumn - firstColumn + 1,
+    };
+}
+
+/**
  * Every cell of the inclusive rectangle between two coordinates, row-major.
  *
- * Direction-free: `r2c3 → r1c1` spans the same block as `r1c1 → r2c3`. The
- * result is clipped to the grid, so a coordinate that is out of range (a grid
- * that shrank mid-gesture) can never produce a key the grid does not have.
+ * Same block as `rectangleBounds` — they are deliberately one computation, so
+ * the outline the user sees and the cells the gesture selects can never
+ * disagree about where the rectangle is.
  */
 export function rectangleCellKeys(
     a: GridCellCoordinate,
     b: GridCellCoordinate,
     dimensions: GridDimensions
 ): GridCellKey[] {
-    const firstRow = Math.max(0, Math.min(a.row, b.row));
-    const lastRow = Math.min(dimensions.rows - 1, Math.max(a.row, b.row));
-    const firstColumn = Math.max(0, Math.min(a.column, b.column));
-    const lastColumn = Math.min(dimensions.columns - 1, Math.max(a.column, b.column));
-
+    const bounds = rectangleBounds(a, b, dimensions);
+    if (bounds === null) {
+        return [];
+    }
     const keys: GridCellKey[] = [];
-    for (let row = firstRow; row <= lastRow; row += 1) {
-        for (let column = firstColumn; column <= lastColumn; column += 1) {
+    for (let row = bounds.row; row < bounds.row + bounds.rows; row += 1) {
+        for (let column = bounds.column; column < bounds.column + bounds.columns; column += 1) {
             keys.push(gridCellKey(row, column));
         }
     }
@@ -162,4 +208,22 @@ export function cellsAddedByRectangle(
     rectangle: readonly GridCellKey[]
 ): GridCellKey[] {
     return rectangle.filter((cell) => !baseline.has(cell));
+}
+
+/**
+ * The cells a REMOVE rectangle is about to drop — the rectangle intersected
+ * with the baseline, in reading order.
+ *
+ * Purely a display concern, and the reason it exists: a removal is otherwise
+ * invisible. The cells simply stop being selected, so the user watching a
+ * Ctrl-drag sees selection disappearing without seeing WHICH block is doing it.
+ * Marking them as "on the way out" for the length of the gesture turns the
+ * absence into a statement. It never affects what is selected — that is
+ * `rectangleSelectionCells`.
+ */
+export function cellsRemovedByRectangle(
+    baseline: ReadonlySet<GridCellKey>,
+    rectangle: readonly GridCellKey[]
+): GridCellKey[] {
+    return rectangle.filter((cell) => baseline.has(cell));
 }

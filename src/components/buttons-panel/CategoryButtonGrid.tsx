@@ -14,6 +14,7 @@ import { containerDroppableId } from '@/utils/buttonDragItems';
 import { useButtonDragOptional } from '@/contexts/ButtonDragContext';
 import { ButtonDragEmptySlot } from '@/components/buttons-panel/ButtonDragEmptySlot';
 import { GridSlotCell } from '@/components/buttons-panel/GridSlotCell';
+import { GridRectanglePreview } from '@/components/buttons-panel/GridRectanglePreview';
 import {
     GridResizeEdgeZone,
     GridResizeReadout,
@@ -596,6 +597,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                     managed={managed}
                     color={color ?? undefined}
                     selected={selectedCells.has(cellKey)}
+                    deselecting={rectangle.preview?.removing.has(cellKey) ?? false}
                     onCreate={
                         creationEnabled
                             ? () => createButton(category, undefined, slot)
@@ -634,6 +636,16 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                 onClick={selectionActive ? handleGridClick : undefined}
             >
                 {cells}
+                {/* The running gesture, drawn as ONE box over the whole block
+                    (see GridRectanglePreview). It is the last child so it sits
+                    above the cells, and it is out of flow, so it cannot
+                    displace them. */}
+                {rectangle.preview && (
+                    <GridRectanglePreview
+                        bounds={rectangle.preview.bounds}
+                        gesture={rectangle.preview.gesture}
+                    />
+                )}
             </div>
         );
 

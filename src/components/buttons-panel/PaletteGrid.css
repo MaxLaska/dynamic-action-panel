@@ -21,6 +21,23 @@ body .buttons-panel .ocap-palette-grid {
        theme, 0,0,0 in a light one), so "visible against the background" stays
        true in both without hard-coding white. */
     --ocap-grid-line: rgba(var(--mono-rgb-100), 0.28);
+    /* Gutter between two cells. A token rather than a literal because the
+       rectangle-gesture overlay has to place itself on exactly these tracks
+       (see `.ocap-grid-rect-preview`), and two copies of the number would drift
+       apart the first time one of them is tuned. */
+    --ocap-grid-gap: 4px;
+    /* Wash of a SELECTED cell. An accent tint rather than a ring: the ring had
+       to be per-cell, which reads as "these cells" and never as one shape, and
+       it left a removal with nothing to show at all. Derived from Obsidian's
+       own accent components, so it follows the user's accent and both themes. */
+    --ocap-cell-selected-tint: hsla(
+        var(--accent-h, 254),
+        var(--accent-s, 80%),
+        var(--accent-l, 68%),
+        0.22
+    );
+    /* ...and the wash of a cell a removal is about to drop. */
+    --ocap-cell-deselect-tint: rgba(var(--color-red-rgb, 233, 49, 71), 0.2);
 
     display: grid;
     grid-template-columns: repeat(var(--ocap-grid-columns, 4), minmax(0, 1fr));
@@ -31,8 +48,12 @@ body .buttons-panel .ocap-palette-grid {
        below them while the drag was still held. A definite track keeps every
        slot rect fixed from drag start to drop or cancel. */
     grid-auto-rows: var(--ocap-grid-row-height);
-    gap: 4px;
+    gap: var(--ocap-grid-gap);
     width: 100%;
+    /* Positioning context for the rectangle-gesture overlay only. The overlay
+       is absolutely positioned and therefore out of flow, so it can neither
+       occupy a track nor displace an auto-placed cell. */
+    position: relative;
     align-items: stretch;
     justify-items: stretch;
     /* A Shift-drag across the grid is a rectangle SELECTION, not a text
@@ -509,18 +530,83 @@ body .buttons-panel .ocap-palette-grid .ocap-grid-slot--colored button.buttons-p
 }
 
 /* --- Cell selection -----------------------------------------------------
-   Selection is temporary and must stay readable ON a cell colour, so it takes
-   the one visual channel the grid has left: `outline`. Everything else is
-   spoken for — `border-color` carries the drop rings, `border-width` is frozen
-   by the geometry contract, `1px dashed var(--text-faint)` means
-   "hidden by its context", and `opacity` is used by the target states.
+   A selected cell is WASHED, not ringed.
 
-   An outline never takes part in layout, so the cell rects do not move, and
-   2px inset is unmistakably different from the 1px accent BORDER of a drop
-   target even when both are on the same cell. */
+   The first version drew a 2px accent outline on every selected cell. It said
+   "these cells" and never "this shape": at four or five columns the rings
+   tiled, the 4px gutters cut the block into pieces, and a Ctrl-drag had nothing
+   to show at all — its cells merely stopped being ringed, so the user could not
+   see which block was doing the removing. Selection is now a persistent STATE
+   (this wash) and the gesture is a separate, continuous OUTLINE (see
+   `.ocap-grid-rect-preview`), which is the distinction that was missing.
+
+   An INSET box-shadow is the right channel and the only free one:
+   - `background-color` is the cell colour and must stay visible;
+   - `border-color` carries the drop-target and file-target rings;
+   - `border-width` is frozen by the geometry contract;
+   - `1px dashed var(--text-faint)` already means "hidden by its context";
+   - `opacity` is used by the target states.
+   An inset shadow paints ABOVE the cell's background and BELOW its contents, so
+   a coloured cell stays recognisably coloured, the tool on it stays legible,
+   and the 1px border — the raster and the drop promises — is outside the
+   padding box the shadow is clipped to. It takes no part in layout either, so
+   the cell rects do not move. */
 body .buttons-panel .ocap-palette-grid .ocap-grid-slot--selected {
-    outline: 2px solid var(--interactive-accent);
-    outline-offset: -2px;
+    box-shadow: inset 0 0 0 999px var(--ocap-cell-selected-tint);
+}
+
+/* A running REMOVE rectangle is about to drop this cell. Same channel, a
+   different colour, so the change from "selected" to "leaving" happens in
+   place — which is the feedback a removal otherwise cannot give. Transient:
+   it exists only while the pointer is down. Later than the selected rule and
+   one class heavier, so it wins on a cell that is both. */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot.ocap-grid-slot--deselecting {
+    box-shadow: inset 0 0 0 999px var(--ocap-cell-deselect-tint);
+}
+
+/* --- The rectangle gesture ---------------------------------------------
+   ONE continuous outline over the whole block, gaps included.
+
+   Placed from four integers the gesture publishes (row, column, rows, columns)
+   against the grid's OWN track sizes, recomputed here from the same tokens the
+   grid is laid out with. So it is exact at any panel width, needs no pixel
+   measurement from JS, and spans the gutters on purpose: the cells stay
+   grid-snapped, the shape around them does not have to look it.
+
+   Absolutely positioned (out of flow, so it cannot occupy a track or displace
+   an auto-placed cell) and pointer-transparent (so it can never swallow the
+   gesture it draws). */
+.buttons-panel .ocap-palette-grid .ocap-grid-rect-preview {
+    --ocap-rect-column-size: calc(
+        (100% - (var(--ocap-grid-columns, 4) - 1) * var(--ocap-grid-gap)) /
+            var(--ocap-grid-columns, 4)
+    );
+
+    position: absolute;
+    left: calc(
+        var(--ocap-rect-column, 0) * (var(--ocap-rect-column-size) + var(--ocap-grid-gap))
+    );
+    width: calc(
+        var(--ocap-rect-columns, 1) * var(--ocap-rect-column-size) +
+            (var(--ocap-rect-columns, 1) - 1) * var(--ocap-grid-gap)
+    );
+    top: calc(
+        var(--ocap-rect-row, 0) * (var(--ocap-grid-row-height) + var(--ocap-grid-gap))
+    );
+    height: calc(
+        var(--ocap-rect-rows, 1) * var(--ocap-grid-row-height) +
+            (var(--ocap-rect-rows, 1) - 1) * var(--ocap-grid-gap)
+    );
+    box-sizing: border-box;
+    border: 2px solid var(--interactive-accent);
+    border-radius: var(--radius-s);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Removing reads in the same colour as the cells it is dropping. */
+.buttons-panel .ocap-palette-grid .ocap-grid-rect-preview--remove {
+    border-color: var(--text-error);
 }
 
 /* --- Dynamic category variants ------------------------------------------ */
