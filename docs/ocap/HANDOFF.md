@@ -12,9 +12,17 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   ausgeschrieben schreiben, `DAP` ist kein Projektbegriff. Intern gilt
   Domänensprache (Panel, Grid, Tool, Category, Variant, Cell, Template),
   kein Produktname in Identifiern.
-- **Bewusst NICHT umbenannt** (Contracts, keine Namen): Plugin-ID
-  `buttons-panel` (und damit Installationspfad + `data.json`), View-Type
-  `buttons-panel-view`, Command-IDs `buttons-panel:*`, CSS-Klassen
+- **Plugin-ID ist `dynamic-action-panel`** (seit der Identity-Migration, siehe
+  Abschnitt „Plugin identity migration" in
+  `docs/ocap/rebranding-dynamic-action-panel.md`). Damit ist der
+  Installationsordner `.obsidian/plugins/dynamic-action-panel/` und die
+  Command-IDs sind `dynamic-action-panel:*` (Obsidian leitet den Namespace aus
+  der ID ab; unsere Sub-IDs sind unverändert). Grund war **nicht** das
+  Rebranding, sondern die Update-Kollision mit dem veröffentlichten Upstream
+  `buttons-panel`. `buttons-panel` als Plugin-ID ist ab hier rein historisch.
+- **Bewusst NICHT umbenannt** (Contracts, keine Namen): View-Type
+  `buttons-panel-view` (unabhängig von der Plugin-ID — genau deshalb überlebt
+  ein gespeichertes Panel-Leaf die ID-Migration), CSS-Klassen
   `buttons-panel-*` / `ocap-*`, Custom Properties `--ocap-*`, DOM-Events
   `buttons-panel-refresh` / `-search`, die persistierten Farbwerte
   `ocap:<name>`, das Template-Format `ocap-template` / `.ocap.json` samt
@@ -37,13 +45,16 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   `src/settings/settingsMigrations.ts`. v5 ist der Tool-Registry-Refactor
   (Definition + Placement getrennt, siehe Abschnitt 2a und
   `docs/ocap/audits/2026-09-17-architecture-audit-target-model.md`).
-- **Produktiv-Vault (`A1_Nexus`) ist NOCH NICHT auf v5:** der v5-Build wurde
-  bewusst nicht dorthin deployt, weil der erste Start die produktive
-  `data.json` migrieren würde. Ein separater Deploy-Auftrag (Backup →
-  Deploy → erster v5-Start → Verifikation) steht aus. Eine byte-genaue Kopie
-  der produktiven v4-`data.json` liegt als Fixture unter
+- **Produktiv-Vault (`A1_Nexus`) läuft auf v5.** Der v5-Build ist deployt, die
+  produktive `data.json` steht auf `settingsVersion: 5`. Die byte-genaue Kopie
+  der damaligen v4-`data.json` liegt weiterhin als Fixture unter
   `tests/fixtures/data-v4-real.json` und ist in
   `tests/realDataMigration.test.ts` verlustfrei gepinnt.
+- **Produktive Installation liegt seit der Identity-Migration unter
+  `.obsidian/plugins/dynamic-action-panel/`**; die `data.json` wurde dabei
+  byte-identisch übernommen (keine Migration, kein Rewrite). Der alte Ordner
+  `buttons-panel` ist entfernt, ein vollständiges Backup liegt unter
+  `C:\Users\flash\ObsidianTestVaults\ocap-backups\`.
 - Teststand: `npm test` **602/602** (Vitest, node env, `tests/`),
   `npm run lint` 0 Probleme, `npx tsc --noEmit` grün,
   `node esbuild.config.mjs production` grün.
@@ -154,7 +165,7 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
 - **UI-Einstiege:** Kategorie-Kontextmenü (`Export template…` /
   `Import template…`), Rechtsklick auf den `+`-Add-Category-Button
   (`Import template…` — der Weg bei LEEREM Panel-Kontextmenü) und das Command
-  `buttons-panel:import-template`. Export schreibt in die **Vault-Wurzel**
+  `dynamic-action-panel:import-template`. Export schreibt in die **Vault-Wurzel**
   (sichtbar im File Explorer, direkt kopierbar); Import nutzt ein transientes
   `<input type="file">`, also den OS-Dateidialog — der braucht eine echte
   User-Geste, die alle drei Einstiege liefern.
@@ -804,11 +815,9 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   UI). Danach B (Farben rendern: `ResolvedGridView` reicht `cellStyles` heute
   NICHT bis zum Renderer durch), C (Select Mode), D (Apply Color), E (Marquee).
 
-0. **Produktiv-Deployment des v5-Builds steht aus** (bewusst nicht gemacht:
-   erster Start migriert die produktive `data.json`). Separater Auftrag:
-   Backup der kompletten Plugin-Installation inkl. v4-`data.json` → Deploy →
-   erster v5-Start → Post-Migration-Verifikation → ggf. Rollback.
-   Danach folgen die restlichen Audit-Phasen: Library-Semantik sichtbar
+0. **Produktiv-Deployment des v5-Builds ist erledigt** (Abschnitt 1), ebenso die
+   Plugin-Identity-Migration auf `dynamic-action-panel`.
+   Es folgen die restlichen Audit-Phasen: Library-Semantik sichtbar
    machen (Promote/„aus Grid entfernen, Tool behalten“) und die Farb-UI.
    Das **Export-/Import-Fundament (F5) ist gebaut** (Abschnitt 2b), das
    **Cell-Style-Datenmodell ebenfalls** (Abschnitt 2c) — KEINE Library-UI und
@@ -829,7 +838,8 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
    bewusst so belassen); bei Zellen <35 px werden Labels hart geclippt. Das
    `+` schluckt seinen eigenen Press (`pointerdown`/`mousedown`/`touchstart`),
    sonst würde ein Klick darauf die Kategorie ziehen statt das Modal zu öffnen.
-6. Packaging-/Release-Strategie + finale Manifest-ID; locked-mode Empty-State;
+6. Packaging-/Release-Strategie weiterhin offen (die Manifest-ID ist mit
+   `dynamic-action-panel` entschieden); locked-mode Empty-State;
    jsdom-Editor-Tests weiterhin offen.
 7. Restpunkte des Slot-Create-Pass:
    - Ein per Drop erzeugtes Tool bekommt ein generisches Icon

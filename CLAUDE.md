@@ -4,7 +4,7 @@
 
 Dynamic Action Panel is an independent fork-based Obsidian plugin project derived from Buttons Panel. The goal is a configurable, context-aware action surface for Obsidian that can combine persistent user tools with dynamic actions and richer React components.
 
-The project was previously called Obsidian Contextual Action Panel (OCAP). That name survives only where it is a compatibility contract — the `ocap-` CSS prefix, the `ocap:<name>` colour values, the `ocap-template` format id with its `.ocap.json` extension — and in the `docs/ocap/` path. See `docs/ocap/rebranding-dynamic-action-panel.md`. The plugin id stays `buttons-panel`.
+The project was previously called Obsidian Contextual Action Panel (OCAP). That name survives only where it is a compatibility contract — the `ocap-` CSS prefix, the `ocap:<name>` colour values, the `ocap-template` format id with its `.ocap.json` extension — and in the `docs/ocap/` path. See `docs/ocap/rebranding-dynamic-action-panel.md`. The plugin id is `dynamic-action-panel`; the older id `buttons-panel` is historical only.
 
 Repository path:
 `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`

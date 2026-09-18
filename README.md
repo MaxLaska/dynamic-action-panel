@@ -101,15 +101,17 @@ Not in the community plugin directory yet, so install manually or via BRAT.
 
 1. Build the plugin (see below) or take `main.js`, `manifest.json` and
    `styles.css` from a release.
-2. Put them in `YourVault/.obsidian/plugins/buttons-panel/`.
+2. Put them in `YourVault/.obsidian/plugins/dynamic-action-panel/`.
 3. Enable the plugin in *Settings → Community plugins*.
 
-> **Heads-up on the plugin id.** The folder and id are still `buttons-panel`,
-> so that existing installations of this fork keep their settings. That is the
-> *same* id the original Buttons Panel uses in the community directory, so the
-> two cannot be installed side by side — installing one over the other replaces
-> it. If you use upstream Buttons Panel, back up its `data.json` first. Why the
-> id stays: [`docs/ocap/rebranding-dynamic-action-panel.md`](docs/ocap/rebranding-dynamic-action-panel.md).
+> **Heads-up on the plugin id.** The id is `dynamic-action-panel`, and the
+> folder must be named after it. Earlier builds of this fork shipped as
+> `buttons-panel` — the *same* id the original Buttons Panel uses in the
+> community directory, so an upstream update could overwrite this fork. If you
+> are coming from such a build, copy your `data.json` from
+> `.obsidian/plugins/buttons-panel/` into the new folder and remove the old
+> one; nothing else has to be migrated. Background:
+> [`docs/ocap/rebranding-dynamic-action-panel.md`](docs/ocap/rebranding-dynamic-action-panel.md).
 
 **From source**
 

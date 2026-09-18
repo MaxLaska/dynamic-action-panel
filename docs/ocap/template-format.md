@@ -228,7 +228,7 @@ this build stay loadable by earlier ones.
 | --- | --- |
 | Category context menu | `Export template…`, `Import template…` |
 | Right-click on the `+` "Add category" button | `Add category`, `Import template…` |
-| Command palette | `Import template…` (`buttons-panel:import-template`) |
+| Command palette | `Import template…` (`dynamic-action-panel:import-template`) |
 
 Import uses a transient `<input type="file">` — the OS file picker — which can
 reach a file anywhere, including another vault, and is a plain DOM API rather
