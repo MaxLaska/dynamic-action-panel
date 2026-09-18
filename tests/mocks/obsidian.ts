@@ -33,9 +33,78 @@ export class TAbstractFile {
 export class TFile extends TAbstractFile {
     basename = '';
     extension = '';
+    stat = { ctime: 0, mtime: 0, size: 0 };
+}
+
+export class TFolder extends TAbstractFile {
+    children: TAbstractFile[] = [];
+    isRoot(): boolean {
+        return this.path === '' || this.path === '/';
+    }
 }
 
 export class Modal {}
+
+/**
+ * Every suggest modal that has been opened during a test, newest last. There is
+ * no jsdom here, so a test cannot click a suggestion — it takes the modal from
+ * this list and calls `getItems()` / `onChooseItem()` on it, which runs the
+ * real subclass against the real production code path. Tests clear it
+ * themselves.
+ */
+export const openedSuggestModals: FuzzySuggestModal<unknown>[] = [];
+
+export class FuzzySuggestModal<T> {
+    app: unknown;
+    limit = 50;
+    emptyStateText = '';
+    placeholder = '';
+    constructor(app: unknown) {
+        this.app = app;
+    }
+    setPlaceholder(placeholder: string): void {
+        this.placeholder = placeholder;
+    }
+    setInstructions(_instructions: unknown[]): void {}
+    getItems(): T[] {
+        return [];
+    }
+    getItemText(_item: T): string {
+        return '';
+    }
+    onChooseItem(_item: T, _evt?: unknown): void {}
+    open(): void {
+        openedSuggestModals.push(this);
+    }
+    close(): void {}
+}
+
+/**
+ * Platform flags. Unit tests run the desktop branch, which is the one with
+ * behaviour worth pinning; the mobile branch is a guard, not logic.
+ */
+export const Platform = {
+    isDesktopApp: true,
+    isMobile: false,
+    isDesktop: true,
+};
+
+/**
+ * Only ever reached through `instanceof` to decide whether an absolute path can
+ * be derived. A test's fake adapter is deliberately NOT an instance, so the
+ * code under test takes the no-absolute-path branch.
+ */
+export class FileSystemAdapter {
+    getBasePath(): string {
+        return '/vault';
+    }
+    getFullPath(normalizedPath: string): string {
+        return `/vault/${normalizedPath}`;
+    }
+    getFilePath(normalizedPath: string): string {
+        return `file:///vault/${encodeURI(normalizedPath)}`;
+    }
+}
 
 /**
  * Suggestion popups only need to EXIST for the action classes to import; the
