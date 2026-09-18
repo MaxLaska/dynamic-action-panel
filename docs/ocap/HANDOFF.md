@@ -589,6 +589,42 @@ Spezifikation: `docs/ocap/cell-selection-colors.md` §9 und §9.1.
   (`var(--accent-h, 254)` usw.): Ein undefiniertes `var()` in einer Farbe macht
   die ganze Deklaration ungültig, die Tönung fiele sonst ersatzlos aus.
 
+### 2e.2 Persistente Auswahl-Kontur (Nachtrag 2026-09-19)
+
+Spezifikation: `docs/ocap/cell-selection-colors.md` §9.2.
+
+- **Pure Kernlogik — `src/utils/gridSelectionOutline.ts`:**
+  `selectionOutlinePieces(cells, dimensions)` liefert pro ausgewählter Zelle ein
+  Stück mit `edges` (Seite zeichnen, wenn der orthogonale Nachbar **nicht**
+  ausgewählt ist) und `reach` (Seite darf in die Rinne reichen, wenn es dort
+  einen Nachbarn im Grid gibt). Row-major, damit die React-Keys stabil sind;
+  Koordinaten außerhalb der Dimensionen werden übersprungen, nicht gezeichnet.
+  `outlineEdgeCount` ist die Perimeter-Summe — nur für Tests.
+- **Warum das reicht:** Kanten statt Polygon. Loch, Inseln und einspringende
+  Ecken fallen von selbst richtig heraus. Die **gleichmäßige** halbe-Rinne-
+  Ausdehnung ist tragend: Nur zu ausgewählten Nachbarn hin auszudehnen ließe an
+  einer einspringenden Ecke eine 2-px-Kerbe stehen, weil das Stück daneben dort
+  nicht bis an denselben Punkt reicht.
+- **Rendering — `GridSelectionOutline.tsx`:** ein absolut positioniertes `div`
+  je Zelle, platziert über `--ocap-cell-row/-column` plus vier
+  `--ocap-outline-*`-Insets und ein `--ocap-outline-widths`-Shorthand
+  (`border-width` als **ein** Custom Property statt vier). Kein DOM-Messen.
+- **Gemeinsame Track-Arithmetik:** `.ocap-grid-overlay` trägt
+  `--ocap-track-width` / `--ocap-track-height`, `position: absolute`,
+  `box-sizing: border-box`, `border-style: solid`, `pointer-events: none`.
+  Kontur **und** Gesten-Rahmen benutzen sie, damit beim Tunen einer Trackgröße
+  keiner von beiden wegdriftet.
+- **Abgrenzung zur Geste:** `.ocap-grid-rect-preview` ist jetzt **gestrichelt**
+  (`border-style: dashed`), liegt per `z-index: 1` über der Kontur und reicht
+  ebenfalls eine halbe Rinne nach außen — so liegen beide auf derselben Linie,
+  statt 2 px ineinander zu schachteln.
+- Ecken: `border-radius: 0`. Bei teilweise gezeichneten Seiten rendert ein
+  Radius als Haken am Ende einer Kante ohne Partner.
+- Tests: `tests/gridSelectionOutline.test.ts` (16, darunter eine randomisierte
+  Invariante über 200 Formen: jede geteilte Kante wird von genau keinem oder
+  genau einem der beiden Nachbarn gezeichnet), `paletteGridGeometry` +2,
+  `cellSelectionGesturePrecedence` +6. Gesamt **1129**.
+
 ### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
 
 `ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&

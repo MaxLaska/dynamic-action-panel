@@ -1,10 +1,50 @@
 # OCAP – Status
 
-Last updated: 2026-09-18 (Selection readability follow-up + collapsed-category
-drag fix — implemented locally and live-smoke-tested in an isolated Obsidian;
-awaiting the user's own manual UX acceptance)
+Last updated: 2026-09-19 (Persistent selection contour — implemented locally and
+live-smoke-tested in an isolated Obsidian; awaiting the user's own manual UX
+acceptance)
 
 ## Newest work first
+
+- **Persistent selection contour (2026-09-19) — implemented locally,
+  live-smoke-tested, deployed only to the disposable smoke vault. Not pushed,
+  not in the productive vault.** The selection visuals are now three distinct
+  layers. Specification: `docs/ocap/cell-selection-colors.md` §9, §9.1, §9.2;
+  one new entry in `DECISIONS.md`.
+  - **The selection keeps an outline that survives the gesture**, and it traces
+    the REAL shape, never a bounding box. The wash alone was too soft to read as
+    a form, and the gesture's outline vanished on release — so the most
+    interesting selections, the ones built by subtracting a block from a larger
+    one, were exactly the ones with no shape to see.
+  - One rule does all of it (`src/utils/gridSelectionOutline.ts`, pure): *a cell
+    draws a border on each side whose orthogonal neighbour is not selected, and
+    every piece reaches half a gutter toward every side that has an in-grid
+    neighbour.* Following the cells' own edges makes the topology correct for
+    free — **holes get their own inner contour, disconnected islands each get
+    their own, a diagonal touch stays two shapes** — with no polygon tracing and
+    no SVG. The uniform reach is what turns tiles into one shape: neighbouring
+    pieces meet exactly in the middle of the gutter, and a concave corner closes
+    exactly for the same reason.
+  - **The gesture preview became dashed** and is drawn above the contour, so
+    "provisional" and "settled" differ in style rather than position; both sit
+    on the same gutter midline so they never nest. Both overlays now share one
+    piece of track arithmetic (`.ocap-grid-overlay`).
+  - New: `src/utils/gridSelectionOutline.ts`,
+    `src/components/buttons-panel/GridSelectionOutline.tsx`. Selection logic,
+    gesture semantics, DnD precedence, paint and persistence all untouched; no
+    schema bump.
+  - Tests: **1129/1129** (40 files; +24, incl. a randomised closed-contour
+    invariant over 200 shapes). `tsc --noEmit`, `eslint .`, `npm run build`
+    green.
+  - **Live smoke: 117/117 checks** across six stages in an isolated Obsidian
+    1.13.7 (parity 18, rectangle 19, paint 18, regression 14, visuals 26,
+    contour 22), 0 console errors. Verified live: the contour stands after
+    mouse-up; a 2×3 block draws its perimeter and no inner edge; removing the
+    middle 2×2 from a full grid yields 16 + 8 = 24 edges, i.e. the hole gets its
+    own contour; two isolated cells are two contours; adjacent pieces meet
+    within 0.75px in the gutter and neither draws the shared edge; a click in an
+    outlined gutter still behaves as before; a coloured cell keeps colour, wash
+    and contour; Escape clears all of it; locked mode shows none of it.
 
 - **Selection readability + the collapsed-category drag bug (2026-09-18, third
   round) — implemented locally, live-smoke-tested, deployed only to the

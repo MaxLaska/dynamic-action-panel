@@ -870,6 +870,49 @@ undo itself afterwards.
 **Bonus:** one fewer layout change while a drag is in flight, which slot
 geometry is better off without (the same reasoning as the definite row track).
 
+## 2026-09-19 – The selection keeps a contour of its real shape
+
+**Decision:** The current selection carries a **persistent outline** that
+survives the gesture which produced it, and that outline traces the selection's
+actual shape — never a bounding box. Holes get their own inner contour,
+disconnected islands each get their own, and a diagonal touch stays two shapes.
+
+Three layers now, three questions: the **wash** says which cells are chosen, the
+**contour** says what shape they make, and the **dashed gesture box** says what
+the hand is doing right now.
+
+**Reason:** the wash alone was too soft to read as a form, and the gesture's own
+outline disappeared on release — so the most interesting selections, the ones
+built by subtracting a block from a larger one, were exactly the ones with no
+shape to see.
+
+**How, and why it is this small:** one rule does all of it —
+
+> a cell draws a border on each side whose orthogonal neighbour is not selected,
+> and every piece reaches half a gutter toward every side that has an in-grid
+> neighbour.
+
+Following the cells' own edges means the topology is correct for free; no
+polygon is computed, no contour is traced, no SVG is needed. The uniform reach
+is what turns tiled boxes into one shape: two neighbouring pieces meet exactly
+in the middle of the gutter, and — less obviously — a CONCAVE corner closes
+exactly for the same reason. Reaching only toward *selected* neighbours would
+leave a notch there. At the grid's own boundary there is nothing to meet, so a
+piece stops at the cell edge and the contour stays inside the grid frame.
+
+**Consequences:**
+
+- corners are square: with only some sides drawn, a radius renders as a hook off
+  the end of a border with no neighbour to curve into;
+- the gesture preview became **dashed** and is drawn above the contour, so
+  "provisional" and "settled" are told apart by style rather than by position.
+  Both are placed on the same gutter midline, so where an add-rectangle happens
+  to coincide with the resulting shape they sit on one line instead of nesting;
+- both overlays share one piece of track arithmetic (`.ocap-grid-overlay`), so
+  neither can drift when a track size is tuned.
+
+The selection logic is untouched. This is presentation only.
+
 ## Open decisions
 
 The following are still open:

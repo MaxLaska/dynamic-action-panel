@@ -472,8 +472,12 @@ getrennte visuelle Kanäle:
 | Zustand | Kanal |
 |---|---|
 | **Zellfarbe** | `background-color` der Zelle |
-| **Auswahl (Zustand)** | `box-shadow: inset` — eine Akzent-Tönung über die ganze Zelle |
-| **Laufende Geste (Form)** | **ein** durchgehender Rahmen um den ganzen Block (Abschnitt 9.1) |
+| **Auswahl (Fläche)** | `box-shadow: inset` — eine Akzent-Tönung über die ganze Zelle |
+| **Auswahl (Form)** | **durchgehende** Kontur um die tatsächliche Auswahlform (Abschnitt 9.2) |
+| **Laufende Geste** | **ein** gestrichelter Rahmen um den Block der Geste (Abschnitt 9.1) |
+
+Drei Ebenen, drei Fragen: *welche Zellen sind gewählt* (Tönung), *welche Form hat die Auswahl*
+(Kontur) und *was tut die Hand gerade* (Geste).
 
 Eine rote ausgewählte Zelle ist damit gleichzeitig eindeutig rot **und** eindeutig ausgewählt.
 
@@ -510,7 +514,10 @@ Die Auswahl wird **nicht persistiert**. Sie existiert nur zur Laufzeit.
 ### 9.1 Die laufende Geste zeichnet sich selbst (2026-09-18)
 
 Während eine Rechteck-Geste läuft, zeigt das Grid zusätzlich **genau einen** Rahmen um den ganzen
-Block — **nicht** einen Rahmen pro Zelle:
+Block — **nicht** einen Rahmen pro Zelle. Er ist **gestrichelt** und liegt **über** der
+persistenten Kontur (9.2): Eine Geste ist vorläufig, bis der Zeiger oben ist, und genau das heißt
+eine gestrichelte Kante seit jeher. So müssen „was ist ausgewählt“ und „was tue ich gerade“ nie
+allein an der Position auseinandergehalten werden.
 
 - er spannt die Lücken zwischen den Zellen mit über, damit die Geste als **eine Fläche** liest.
   Dass die Auswahl darunter zellengerastert ist, bleibt davon unberührt;
@@ -529,6 +536,47 @@ ausgewählt *ist*, entscheidet weiterhin allein Abschnitt 4a.4.
 
 Der Rahmen und diese Markierung gehören ausschließlich der Geste: Loslassen, Escape,
 `pointercancel` und ein Abbau der Komponente beenden beide sofort.
+
+### 9.2 Die Auswahl hat eine bleibende Kontur (2026-09-19)
+
+Die Tönung allein war zu weich. Nach dem Loslassen verschwand der Rahmen der Geste, und übrig blieb
+eine Fläche ohne Grenze — die Auswahl war zwar zu sehen, aber nicht als **Form** zu lesen. Am
+deutlichsten dort, wo die Form am interessantesten ist: nachdem ein Block per `Strg` aus einer
+größeren Auswahl herausgeschnitten wurde.
+
+Die aktuelle Auswahl bekommt deshalb eine **dauerhafte Kontur**, die die Geste überlebt.
+
+**Sie zeichnet die tatsächliche Form nach, nie eine Bounding Box.** Die Regel dahinter ist eine
+einzige:
+
+> Eine Zelle zeichnet auf jeder Seite eine Kante, deren orthogonaler Nachbar **nicht** ausgewählt
+> ist. Jedes Stück reicht dabei eine halbe Rinne weit zu jeder Seite, die einen Nachbarn im Grid
+> hat.
+
+Mehr braucht es nicht — die Topologie fällt dabei von selbst richtig heraus:
+
+- ein voller Block ergibt **eine** geschlossene Kontur, weil die gemeinsamen Kanten im Inneren nie
+  gezeichnet werden;
+- ein **Loch** bekommt seine eigene innere Kontur, weil die Zellen ringsum Kanten nach innen haben;
+- **getrennte Inseln** bekommen je eine eigene Kontur; nichts setzt voraus, dass die Auswahl
+  zusammenhängt;
+- zwei nur **diagonal** benachbarte Zellen bleiben zwei Formen — sie teilen sich keine Kante.
+
+Die gleichmäßige halbe-Rinne-Ausdehnung ist das, was aus Kacheln eine Form macht: Zwei benachbarte
+Stücke treffen sich exakt in der Mitte der Rinne, sodass eine Zellenreihe eine ununterbrochene Linie
+ergibt. Weniger offensichtlich: Auch eine **einspringende Ecke** schließt exakt, weil das Stück über
+der Ecke und das Stück daneben denselben Punkt erreichen. Würde man nur zu ausgewählten Nachbarn hin
+ausdehnen, bliebe dort eine Kerbe.
+
+An der Außenkante des Grids gibt es keine Rinne und nichts zu treffen; dort endet ein Stück an der
+Zellkante, und die Kontur bleibt innerhalb des Grid-Rahmens.
+
+**Ecken sind eckig.** Da je nach Nachbarschaft nur einzelne Seiten gezeichnet werden, würde ein
+Radius als Haken am Ende einer Kante erscheinen, die keinen Partner zum Einkrümmen hat.
+
+Die Kontur ist reine Darstellung und liegt, wie die Geste, als zeigerdurchlässiges Overlay über dem
+Grid — sie kann weder eine Spur belegen noch einen Klick schlucken. Was ausgewählt *ist*,
+entscheidet unverändert Abschnitt 4.
 
 ---
 
