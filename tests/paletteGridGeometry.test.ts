@@ -225,3 +225,214 @@ describe('grid resize edges', () => {
         expect(readout!.body).toMatch(/transform:\s*translateY\(calc\(-100%/);
     });
 });
+
+/**
+ * Cell colours and cell selection.
+ *
+ * Both are new visual channels on a cell whose geometry is frozen, and both sit
+ * in a cascade that already promises things: the drop-target rings say where a
+ * drop lands, the dashed faint outline means "hidden by its context", and the
+ * managed ground paints filled and empty cells. Specificity is therefore a
+ * CONTRACT here, not an accident of authoring order — which is what these
+ * checks pin.
+ */
+describe('cell colours and selection', () => {
+    /** Index of the first rule whose selector matches, for order assertions. */
+    function ruleIndex(selectorPattern: RegExp): number {
+        const index = rules.findIndex((r) => selectorPattern.test(r.selector));
+        expect(index, `no rule matching ${String(selectorPattern)}`).toBeGreaterThanOrEqual(0);
+        return index;
+    }
+
+    const sizing =
+        /(?:^|[;\s])((?:min-|max-)?(?:height|width)|padding[a-z-]*|margin[a-z-]*|border(?:-[a-z]+)?-width|border)\s*:\s*([^;]+)/g;
+
+    it('defines the tint strength as ONE token on the grid', () => {
+        // One line rebalances the whole palette; nothing may hardcode an alpha.
+        expect(ruleBody(/\.ocap-palette-grid$/)).toMatch(/--ocap-cell-color-alpha:\s*[\d.]+/);
+    });
+
+    it('paints the cell colour with enough specificity to beat the managed ground', () => {
+        // `--managed --filled` and `--managed --empty` are 0-4-0, so the colour
+        // rule needs 0-4-1 — the doubled slot class is the smallest selector
+        // that gets there. Written out so a later "simplification" has to fail
+        // this test instead of silently losing the colour on managed grids.
+        const colored = rules.find((r) =>
+            /\.ocap-grid-slot\.ocap-grid-slot--colored$/.test(r.selector)
+        );
+        expect(colored, 'no cell-colour rule').toBeTruthy();
+        expect(colored!.selector).toBe(
+            'body .buttons-panel .ocap-palette-grid .ocap-grid-slot.ocap-grid-slot--colored'
+        );
+        expect(colored!.body).toMatch(/background-color:\s*var\(--ocap-cell-color\)/);
+    });
+
+    it('still lets the drop promises win over a coloured cell', () => {
+        // The colour rule (0-4-1) outranks the target rings (0-3-1), so the
+        // rings are restored explicitly — and must come AFTER the colour.
+        const restore = rules.find((r) =>
+            /--colored\.ocap-grid-slot--drop-target/.test(r.selector)
+        );
+        expect(restore, 'no drop-target restore for coloured cells').toBeTruthy();
+        expect(restore!.selector).toMatch(/--colored\.ocap-grid-slot--file-target/);
+        expect(restore!.body).toMatch(/background-color:\s*var\(--background-modifier-hover\)/);
+        expect(ruleIndex(/--colored\.ocap-grid-slot--drop-target/)).toBeGreaterThan(
+            ruleIndex(/\.ocap-grid-slot\.ocap-grid-slot--colored$/)
+        );
+    });
+
+    it('keeps a coloured cell coloured while the pointer is on it', () => {
+        // The managed empty-hover rule is 0-5-0 and would otherwise grey out
+        // exactly the cell the user is colouring.
+        const hoverKeep = rules.find((r) =>
+            /--empty\.ocap-grid-slot--colored:hover/.test(r.selector)
+        );
+        expect(hoverKeep, 'no hover override for coloured cells').toBeTruthy();
+        expect(hoverKeep!.body).toMatch(/background-color:\s*var\(--ocap-cell-color\)/);
+        // Source order decides between the two 0-5-x rules.
+        expect(ruleIndex(/--empty\.ocap-grid-slot--colored:hover/)).toBeGreaterThan(
+            ruleIndex(/--managed \.ocap-grid-slot--empty:hover$/)
+        );
+    });
+
+    it('marks a selected cell with an outline, never with the reserved channels', () => {
+        const selected = rules.find((r) => /\.ocap-grid-slot--selected$/.test(r.selector));
+        expect(selected, 'no selection rule').toBeTruthy();
+        // 2px inset accent: distinct from the 1px accent BORDER of a drop
+        // target and from the 1px dashed faint outline of "context-hidden".
+        expect(selected!.body).toMatch(/outline:\s*2px solid var\(--interactive-accent\)/);
+        expect(selected!.body).toMatch(/outline-offset:\s*-2px/);
+        expect(selected!.body).not.toMatch(/dashed/);
+        // An outline never takes part in layout; a border would move the cell.
+        expect(selected!.body).not.toMatch(/(?:^|[;\s])border/);
+    });
+
+    it('gives the colour and selection rules no size of their own', () => {
+        for (const rule of rules) {
+            if (!/--colored|--selected/.test(rule.selector)) continue;
+            for (const match of rule.body.matchAll(sizing)) {
+                expect.fail(
+                    `${rule.selector} changes ${match[1]} (${String(match[2]).trim()}) — colour and selection must not resize a cell`
+                );
+            }
+        }
+    });
+
+    it('anchors the corner + on the cell without taking part in layout', () => {
+        // `position: relative` with no offsets keeps the cell rects identical.
+        const slot = ruleBody(/^\.buttons-panel \.ocap-grid-slot$/);
+        expect(slot).toMatch(/position:\s*relative/);
+        expect(slot).not.toMatch(/(?:^|[;\s])(top|left|right|bottom):/);
+    });
+
+    it('makes the + a small corner target instead of the whole cell', () => {
+        const add = ruleBody(/button\.ocap-slot-add$/);
+        // Out of flow, so the definite row track still decides the geometry.
+        expect(add).toMatch(/position:\s*absolute/);
+        expect(add).toMatch(/top:\s*2px/);
+        expect(add).toMatch(/right:\s*2px/);
+        // A cell is ~33px wide at four columns in a 150px sidebar; a `+` that
+        // scaled with the cell would eat a quarter of the selection surface.
+        const width = /(?:^|[;\s])width:\s*([^;]+)/.exec(add)?.[1]?.trim();
+        const height = /(?:^|[;\s])height:\s*([^;]+)/.exec(add)?.[1]?.trim();
+        expect(width).toBe('18px');
+        expect(height).toBe('18px');
+        expect(width).not.toBe('100%');
+    });
+});
+
+/**
+ * The colour palette below the grid. It must not be mistaken for a grid row,
+ * and it must not be swept into the resize-edge contract.
+ */
+describe('cell colour palette bar', () => {
+    it('exists and wraps instead of overflowing a narrow sidebar', () => {
+        const bar = ruleBody(/\.ocap-cell-palette$/);
+        expect(bar).toMatch(/flex-wrap:\s*wrap/);
+        expect(bar).toMatch(/min-width:\s*0/);
+        // Below the grid, so appearing content never pushes a cell around.
+        expect(bar).toMatch(/margin-top:/);
+    });
+
+    it('is not named like a grid edge, so it stays out of the edge contract', () => {
+        const paletteRules = rules.filter((r) =>
+            /\.ocap-cell-palette|\.ocap-cell-swatch/.test(r.selector)
+        );
+        expect(paletteRules.length).toBeGreaterThan(0);
+        for (const rule of paletteRules) {
+            expect(rule.selector).not.toMatch(/ocap-grid-edge|ocap-palette-grid|ocap-grid-slot/);
+        }
+    });
+
+    it('keeps a swatch clearly smaller than a grid cell', () => {
+        const swatch = ruleBody(/button\.ocap-cell-swatch$/);
+        expect(swatch).toMatch(/width:\s*18px/);
+        expect(swatch).toMatch(/height:\s*18px/);
+        // Round, so a row of them never reads as another row of cells.
+        expect(swatch).toMatch(/border-radius:\s*50%/);
+    });
+
+    it('marks the active swatch OUTSIDE itself, so the colour stays visible', () => {
+        const active = ruleBody(/\.ocap-cell-swatch--active$/);
+        expect(active).toMatch(/outline:\s*2px solid var\(--interactive-accent\)/);
+        expect(active).toMatch(/outline-offset:\s*2px/);
+    });
+
+    it('keeps an OCCUPIED coloured cell coloured under the pointer', () => {
+        // The tool button is transparent at rest but paints an opaque ground on
+        // hover, which would hide the colour of exactly the cell the user is
+        // about to recolour. A translucent overlay keeps both readable.
+        const hover = rules.find((r) =>
+            /--colored button\.buttons-panel-simple-button:hover/.test(r.selector)
+        );
+        expect(hover, 'no hover rule for a tool on a coloured cell').toBeTruthy();
+        expect(hover!.body).toMatch(/background-color:\s*rgba\(var\(--mono-rgb-100\)/);
+        expect(hover!.body).not.toMatch(/var\(--background-modifier-hover\)/);
+    });
+});
+
+/**
+ * Escape must clear the selection WITHOUT taking the key away from anyone else.
+ *
+ * The first version of this handler was a capture-phase listener on the whole
+ * document that called `stopPropagation()` for every Escape while a selection
+ * existed. That silently disabled every other Escape handler in the app —
+ * dnd-kit's drag cancel and the grid-resize cancel both listen on the document
+ * in the BUBBLE phase, the folder's inline rename is a React handler on the
+ * root container, and Obsidian's own modals and menus are not document-capture
+ * listeners either. Clearing a selection must not be able to trap someone
+ * inside a dialog.
+ *
+ * There is no DOM in this test environment, so the rule is pinned at the source
+ * level — the same technique tests/futureSettings.test.ts uses to pin "there is
+ * exactly one place that writes settings".
+ */
+describe('the Escape handler never swallows the key', () => {
+    const source = readFileSync(
+        new URL('../src/components/buttons-panel/CellSelectionEscape.tsx', import.meta.url),
+        'utf8'
+    );
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+    it('neither stops nor cancels the event', () => {
+        expect(code).not.toMatch(/stopPropagation/);
+        expect(code).not.toMatch(/stopImmediatePropagation/);
+        expect(code).not.toMatch(/preventDefault/);
+    });
+
+    it('listens in the bubble phase, not in capture', () => {
+        // A third argument of `true` would put it back in front of everyone.
+        expect(code).toMatch(/addEventListener\('keydown',\s*onKeyDown\)/);
+        expect(code).not.toMatch(/addEventListener\('keydown',\s*onKeyDown,\s*true\)/);
+    });
+
+    it('yields to an active drag, where Escape means "cancel the drag"', () => {
+        expect(code).toMatch(/isDragging/);
+    });
+
+    it('only reacts to an Escape aimed at the panel itself', () => {
+        // An Escape meant for a modal, a suggester or the editor is none of our
+        // business.
+        expect(code).toMatch(/contains\(target\)/);
+    });
+});

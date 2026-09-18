@@ -87,6 +87,8 @@ export const Platform = {
     isDesktopApp: true,
     isMobile: false,
     isDesktop: true,
+    /** Windows/Linux branch: Ctrl is the subtractive selection modifier there. */
+    isMacOS: false,
 };
 
 /**
