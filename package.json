@@ -6,7 +6,7 @@
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/MaxLaska/obsidian-contextual-action-panel.git"
+        "url": "https://github.com/MaxLaska/dynamic-action-panel.git"
     },
     "main": "main.js",
     "type": "module",

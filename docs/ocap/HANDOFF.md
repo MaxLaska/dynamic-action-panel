@@ -23,10 +23,11 @@ abgeschlossenen Arbeiten wird diese Datei ersetzt, nicht verlängert.
   Audits steht `OCAP` weiterhin als der damalige Projektname — Historie
   nicht umschreiben.
 - Repo: `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`,
-  Fork `MaxLaska/obsidian-contextual-action-panel`, independent fork von
-  Buttons Panel 2.4.7. **Das GitHub-Repository ist noch NICHT umbenannt**;
-  empfohlener Slug `dynamic-action-panel` (manueller Schritt, siehe
-  Rebranding-Dokument).
+  Fork `MaxLaska/dynamic-action-panel`, independent fork von Buttons Panel
+  2.4.7. Das GitHub-Repository ist umbenannt, About und Topics sind gesetzt,
+  und der lokale `origin` zeigt auf
+  `https://github.com/MaxLaska/dynamic-action-panel.git`. Das Rebranding ist
+  damit vollständig abgeschlossen.
 - Branch `master`. Stand nach dem Rebranding-Pass: Working Tree sauber, fünf
   Commits (internal naming / public branding / HANDOFF / CSS- und
   Keyword-Nachzug / Review-Findings). Davor war `2ba2cf1` gepusht und `master`

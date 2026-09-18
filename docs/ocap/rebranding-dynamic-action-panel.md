@@ -62,17 +62,18 @@ migration or a broken installation.
 
 ## Repository identity
 
-The GitHub repository is still `MaxLaska/obsidian-contextual-action-panel`. It
-was **not** renamed as part of this pass, and no remote URL was repointed at a
-slug that does not exist yet.
+The repository is `MaxLaska/dynamic-action-panel`, renamed from
+`MaxLaska/obsidian-contextual-action-panel`. About and topics were set in the
+GitHub UI:
 
-Recommended, to be done manually in the GitHub UI:
-
-- **Slug:** `dynamic-action-panel`
 - **About:** Context-aware action panel for the Obsidian sidebar: grids of tools that change with the file you are working in.
 - **Topics:** `obsidian`, `obsidian-plugin`, `productivity`, `context-aware`, `action-panel`, `workflow`
 
-GitHub redirects the old slug after a rename, so the links in this repository
-keep working. Once renamed, update in one pass: `package.json`
-`repository.url`, the git remote, the contributing guide, the issue-template
-config and the attribution links in the README.
+The follow-up inside the repository is done: `package.json` `repository.url`,
+the local git remote, the contributing guide, the issue-template config,
+`CLAUDE.md` and `STATUS.md` all point at the new slug. GitHub keeps redirecting
+the old one, so older links stay usable.
+
+The upstream attribution links in the README deliberately still point at
+`TracingOrigins/obsidian-buttons-panel-plugin` — that is the original project,
+not this repository.

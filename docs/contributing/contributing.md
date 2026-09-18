@@ -17,14 +17,14 @@ We welcome contributions from the community! Here's how you can help:
 
 #### 🐛 Bug Reports
 
-- Use the [bug report template](https://github.com/MaxLaska/obsidian-contextual-action-panel/issues/new?template=bug_report.md)
+- Use the [bug report template](https://github.com/MaxLaska/dynamic-action-panel/issues/new?template=bug_report.md)
 - Include steps to reproduce
 - Describe expected vs actual behavior
 - Provide system information (OS, Obsidian version, plugin version)
 
 #### 💡 Feature Requests
 
-- Use the [feature request template](https://github.com/MaxLaska/obsidian-contextual-action-panel/issues/new?template=feature_request.md)
+- Use the [feature request template](https://github.com/MaxLaska/dynamic-action-panel/issues/new?template=feature_request.md)
 - Explain the problem you're trying to solve
 - Describe your proposed solution
 - Consider implementation complexity
@@ -47,8 +47,8 @@ We welcome contributions from the community! Here's how you can help:
 
 ```bash
 # Clone the repository
-git clone https://github.com/MaxLaska/obsidian-contextual-action-panel.git
-cd obsidian-contextual-action-panel
+git clone https://github.com/MaxLaska/dynamic-action-panel.git
+cd dynamic-action-panel
 
 # Install dependencies
 npm install
@@ -85,5 +85,5 @@ Use conventional commit format:
 
 ### 📞 Contact
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/MaxLaska/obsidian-contextual-action-panel/issues)
-- **Questions and ideas**: [Open an issue](https://github.com/MaxLaska/obsidian-contextual-action-panel/issues)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/MaxLaska/dynamic-action-panel/issues)
+- **Questions and ideas**: [Open an issue](https://github.com/MaxLaska/dynamic-action-panel/issues)

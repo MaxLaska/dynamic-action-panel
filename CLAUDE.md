@@ -10,7 +10,7 @@ Repository path:
 `H:\Dropbox\11-Projects\A1_Obsidian contextual action panel - OCAP`
 
 GitHub:
-`https://github.com/MaxLaska/obsidian-contextual-action-panel`
+`https://github.com/MaxLaska/dynamic-action-panel`
 
 Notion project main page:
 `https://app.notion.com/p/3dd8c0c7549481ab9002fba3df451a1d`
