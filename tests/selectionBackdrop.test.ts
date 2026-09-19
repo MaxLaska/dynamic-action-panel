@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, beforeAll } from 'vitest';
 import {
     SELECTION_BACKDROP_EXCLUDES,
+    SELECTION_BACKDROP_GROUPS,
     isSelectionBackdrop,
 } from '@/utils/selectionBackdrop';
 
@@ -139,13 +140,37 @@ function buildPanel() {
     const resizeEdge = frameMain.append(
         new FakeElement('button', { class: 'ocap-grid-edge ocap-grid-edge--column' })
     );
-    const palette = category.append(new FakeElement('div', { class: 'ocap-cell-palette' }));
-    const swatch = palette.append(
-        new FakeElement('button', { class: 'ocap-cell-swatch' })
+    // The colour bar: a flex row of buttons plus a count, with free space to
+    // the right of them. The row itself has no click action of its own.
+    const palette = category.append(
+        new FakeElement('div', { class: 'ocap-cell-palette', attrs: { role: 'group' } })
     );
+    const paletteCount = palette.append(
+        new FakeElement('span', { class: 'ocap-cell-palette-count' })
+    );
+    const swatches = palette.append(
+        new FakeElement('div', { class: 'ocap-cell-palette-swatches' })
+    );
+    const swatch = swatches.append(new FakeElement('button', { class: 'ocap-cell-swatch' }));
+    const swatchClear = swatches.append(
+        new FakeElement('button', { class: 'ocap-cell-swatch ocap-cell-swatch--none' })
+    );
+    // The variant bar: "Editing: [dropdown] [buttons]" and free space beside.
     const variantBar = category.append(new FakeElement('div', { class: 'ocap-variant-bar' }));
-    const variantSelect = variantBar.append(
+    const variantRow = variantBar.append(
+        new FakeElement('div', { class: 'ocap-variant-editing-row' })
+    );
+    const variantLabel = variantRow.append(
+        new FakeElement('span', { class: 'ocap-variant-editing-label' })
+    );
+    const variantSelect = variantRow.append(
         new FakeElement('select', { class: 'ocap-variant-select' })
+    );
+    const variantAction = variantRow.append(
+        new FakeElement('button', { class: 'ocap-variant-action' })
+    );
+    const variantActionIcon = variantAction.append(
+        new FakeElement('span', { class: 'ocap-variant-action-icon' })
     );
     const outside = new FakeElement('div', { class: 'workspace-leaf' });
     // Drag handles whose CLICK does something: a tab switches, a tile opens.
@@ -178,9 +203,16 @@ function buildPanel() {
         toolLabel,
         resizeEdge,
         palette,
+        paletteCount,
+        swatches,
         swatch,
+        swatchClear,
         variantBar,
+        variantRow,
+        variantLabel,
         variantSelect,
+        variantAction,
+        variantActionIcon,
         outside,
         tab,
         tabLabel,
@@ -197,6 +229,24 @@ describe('empty panel background clears; everything else keeps its meaning', () 
         expect(isSelectionBackdrop(asElement(dom.panel), panel)).toBe(true);
         expect(isSelectionBackdrop(asElement(dom.list), panel)).toBe(true);
     });
+
+    // The bug this fixes: a bar that HOLDS controls was on the exclusion list
+    // itself, so `closest` walled off its empty space too, and the user had to
+    // hunt for the thin strip between two categories to deselect.
+    const whitespace = [
+        ['the free space beside the swatches', 'palette'],
+        ['the row the swatches sit in, beside them', 'swatches'],
+        ['the count text in the colour bar', 'paletteCount'],
+        ['the free space beside the variant controls', 'variantBar'],
+        ['the row those controls sit in', 'variantRow'],
+        ['the "Editing:" label, which is text, not a control', 'variantLabel'],
+    ] as [string, keyof ReturnType<typeof buildPanel>][];
+
+    for (const [label, key] of whitespace) {
+        it(`treats ${label} as backdrop`, () => {
+            expect(isSelectionBackdrop(asElement(dom[key]), panel)).toBe(true);
+        });
+    }
 
     it('treats the free area of a category as backdrop', () => {
         // The block is the sortable item but not a drag surface any more:
@@ -216,10 +266,11 @@ describe('empty panel background clears; everything else keeps its meaning', () 
         ['the category DRAG HANDLE — its press belongs to the reorder', 'handle'],
         ['the grip icon inside the handle', 'handleIcon'],
         ['a drag handle even outside a title, by its own class', 'looseHandle'],
-        ['the colour palette', 'palette'],
         ['a palette swatch', 'swatch'],
-        ['the variant bar', 'variantBar'],
+        ['the clear swatch', 'swatchClear'],
         ['the variant dropdown', 'variantSelect'],
+        ['a variant button', 'variantAction'],
+        ['the icon inside a variant button', 'variantActionIcon'],
         ['a category TAB, which switches tabs on click', 'tab'],
         ['the label inside a tab', 'tabLabel'],
         ['a folder TILE, which opens the folder on click', 'folder'],
@@ -285,20 +336,25 @@ describe('the backdrop click never steals a drag', () => {
         // in a click on the background.
         const move = code.slice(code.indexOf('const onPointerMove'), code.indexOf('const onClick'));
         expect(move).toMatch(/if \(origin !== null && travelled\(origin, event\)\) \{\s*pressOriginRef\.current = null;/);
-        expect(code).toMatch(/panel\.addEventListener\('pointermove', onPointerMove, true\)/);
-        expect(code).toMatch(/panel\.removeEventListener\('pointermove', onPointerMove, true\)/);
+        expect(code).toMatch(/surface\.addEventListener\('pointermove', onPointerMove, true\)/);
+        expect(code).toMatch(/surface\.removeEventListener\('pointermove', onPointerMove, true\)/);
     });
 
     it('never stops the event, and never cancels it', () => {
         expect(code).not.toMatch(/stopPropagation|stopImmediatePropagation|preventDefault/);
     });
 
-    it('listens on the panel, not on the document', () => {
-        // A click in the editor, a modal or another leaf is none of our
-        // business.
-        expect(code).toMatch(/panel\.addEventListener\('click', onClick\)/);
+    it("listens on this view's content, never on the document", () => {
+        // The empty space below the last category belongs to the panel as much
+        // as the gap between two of them — but a click in the editor, a modal
+        // or another leaf is still none of our business.
+        expect(code).toMatch(
+            /const surface =\s*panel\.closest<HTMLElement>\('\.view-content\.buttons-panel'\) \?\? panel;/
+        );
+        expect(code).toMatch(/surface\.addEventListener\('click', onClick\)/);
+        expect(code).toMatch(/surface\.removeEventListener\('click', onClick\)/);
         expect(code).not.toMatch(/document\.addEventListener/);
-        expect(code).toMatch(/isSelectionBackdrop\(event\.target, panel\)/);
+        expect(code).toMatch(/isSelectionBackdrop\(event\.target, surface\)/);
     });
 
     it('does nothing at all while there is no selection', () => {
@@ -313,15 +369,45 @@ describe('the exclusion list names every control the decision lists', () => {
         }
     });
 
-    it('covers the palette, the category title, its drag handle and the variant bar', () => {
-        for (const selector of [
-            '.ocap-cell-palette',
-            '.buttons-panel-category-title',
-            '.ocap-category-drag-handle',
-            '.ocap-variant-bar',
-        ]) {
+    it('covers the category title and its drag handle', () => {
+        for (const selector of ['.buttons-panel-category-title', '.ocap-category-drag-handle']) {
             expect(SELECTION_BACKDROP_EXCLUDES).toContain(selector);
         }
+    });
+
+    it('lists no CONTAINER — a bar is not a control because it holds one', () => {
+        // The rule that keeps this list from creeping back to swallowing
+        // whitespace: an entry must be something whose own click acts.
+        const entries = [
+            ...SELECTION_BACKDROP_GROUPS.controls,
+            ...SELECTION_BACKDROP_GROUPS.grid,
+        ];
+        for (const container of [
+            '.ocap-cell-palette',
+            '.ocap-cell-palette-swatches',
+            '.ocap-variant-bar',
+            '.ocap-variant-editing-row',
+            '.buttons-panel-tabs',
+            '.buttons-panel-category',
+            '.sortable-category-item',
+        ]) {
+            expect(entries).not.toContain(container);
+        }
+    });
+
+    it('says of every entry WHY it is on the list', () => {
+        expect(SELECTION_BACKDROP_GROUPS.controls).toContain('button');
+        expect(SELECTION_BACKDROP_GROUPS.controls).toContain('.buttons-panel-category-title');
+        // The grid is not a control; its surfaces are listed because the grid
+        // decides what a press there means, not the backdrop.
+        expect(SELECTION_BACKDROP_GROUPS.grid).toEqual([
+            '[data-slot]',
+            '.ocap-grid-frame',
+            '.ocap-palette-grid',
+        ]);
+        expect(
+            [...SELECTION_BACKDROP_GROUPS.controls, ...SELECTION_BACKDROP_GROUPS.grid].join(', ')
+        ).toBe(SELECTION_BACKDROP_EXCLUDES);
     });
 
     it('covers ordinary controls wherever they sit', () => {

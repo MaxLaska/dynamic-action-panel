@@ -29,11 +29,13 @@ interface CellSelectionBackdropProps {
  *   ends near where it started — so an activated drag drops the remembered
  *   press as well, exactly as the grid does for its own cell clicks;
  * - **only genuinely inert surface counts** (`isSelectionBackdrop`). A cell, a
- *   tool, the category title, the palette, the resize frame and every ordinary
+ *   tool, the category title, a swatch, the resize frame and every ordinary
  *   control keep their own meaning; most of them stop the click themselves, and
- *   this is the backstop for the ones that do not.
+ *   this is the backstop for the ones that do not. The free space BESIDE them
+ *   — right of the swatches, right of the variant buttons, around a category —
+ *   is background, because that is what it is.
  *
- * Listening on the panel element rather than the document is deliberate: a
+ * Listening on this view's content rather than the document is deliberate: a
  * click in the editor, a modal or another leaf is none of our business, and
  * nothing here ever stops an event.
  */
@@ -66,6 +68,13 @@ export const CellSelectionBackdrop: React.FC<CellSelectionBackdropProps> = ({
         if (!hasSelection || !panel) {
             return;
         }
+
+        // The whole of THIS view's content, not just the rendered panel: the
+        // empty space below the last category belongs to the panel as much as
+        // the gap between two of them does. It stops at the view, so the
+        // editor, a modal and another leaf stay none of our business.
+        const surface =
+            panel.closest<HTMLElement>('.view-content.buttons-panel') ?? panel;
 
         const travelled = (origin: { x: number; y: number }, event: MouseEvent) => {
             const dx = event.clientX - origin.x;
@@ -101,7 +110,7 @@ export const CellSelectionBackdrop: React.FC<CellSelectionBackdropProps> = ({
             if (travelled(origin, event)) {
                 return;
             }
-            if (!isSelectionBackdrop(event.target, panel)) {
+            if (!isSelectionBackdrop(event.target, surface)) {
                 return;
             }
             clearCellSelection();
@@ -110,13 +119,13 @@ export const CellSelectionBackdrop: React.FC<CellSelectionBackdropProps> = ({
         // Capture for the press so it is recorded even where a control stops
         // the event, bubble for the click so anything that claims it first
         // (the category title, a tool, the palette) keeps its meaning.
-        panel.addEventListener('pointerdown', onPointerDown, true);
-        panel.addEventListener('pointermove', onPointerMove, true);
-        panel.addEventListener('click', onClick);
+        surface.addEventListener('pointerdown', onPointerDown, true);
+        surface.addEventListener('pointermove', onPointerMove, true);
+        surface.addEventListener('click', onClick);
         return () => {
-            panel.removeEventListener('pointerdown', onPointerDown, true);
-            panel.removeEventListener('pointermove', onPointerMove, true);
-            panel.removeEventListener('click', onClick);
+            surface.removeEventListener('pointerdown', onPointerDown, true);
+            surface.removeEventListener('pointermove', onPointerMove, true);
+            surface.removeEventListener('click', onClick);
         };
     }, [hasSelection, isDragging, panelRef, clearCellSelection]);
 
