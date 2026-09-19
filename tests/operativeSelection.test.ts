@@ -317,8 +317,10 @@ describe('the modifier cursor', () => {
     });
 
     it('only ever touches this panel, and cleans up after itself', () => {
-        expect(cursor).toMatch(/panel\.classList\.toggle\(/);
-        expect(cursor).toMatch(/panel\.classList\.remove\(SELECTION_MODIFIER_CLASS\)/);
+        // Behaviour, not just text: tests/cursorModel.test.ts runs it.
+        expect(cursor).toMatch(/panel\.setAttribute\(SELECTION_INTENT_ATTRIBUTE, gesture\)/);
+        expect(cursor).toMatch(/const clear = \(\) => panel\.removeAttribute\(SELECTION_INTENT_ATTRIBUTE\);/);
+        expect(cursor).toMatch(/return trackSelectionIntent\(panel\);/);
     });
 
     it('is suspended with the selection, never by the mode', () => {
@@ -328,8 +330,12 @@ describe('the modifier cursor', () => {
     });
 
     it('switches the grids and everything in them to the selection cursor', () => {
+        // The full cascade is checked in tests/cursorModel.test.ts.
         expect(css).toMatch(
-            /body \.buttons-panel \.buttons-panel-panel-content\.ocap-selection-modifier \.ocap-palette-grid,\s*body \.buttons-panel \.buttons-panel-panel-content\.ocap-selection-modifier \.ocap-palette-grid \* \{\s*cursor: cell;/
+            /\.buttons-panel-panel-content\[data-ocap-selection-intent='add'\] \{\s*--ocap-selection-cursor: cell;/
+        );
+        expect(css).toMatch(
+            /\.buttons-panel-panel-content\[data-ocap-selection-intent\] \.ocap-palette-grid \* \{\s*cursor: inherit;/
         );
     });
 });

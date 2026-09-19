@@ -904,16 +904,6 @@ body .buttons-panel .ocap-palette-grid .ocap-grid-slot--drop-target {
     opacity: 1;
 }
 
-/* Grid buttons advertise that they can be picked up (edit mode only). */
-.buttons-panel .ocap-palette-grid--managed .ocap-grid-slot--filled .sortable-button-item {
-    cursor: grab;
-}
-
-.buttons-panel .sortable-button-item--dragging,
-.buttons-panel .ocap-palette-grid--managed .sortable-button-item:active {
-    cursor: grabbing;
-}
-
 /* Buttons that could not be placed on a slot (hand-edited data with more
    buttons than slots). Never dropped — shown below the grid instead. */
 .buttons-panel .ocap-palette-grid-overflow {
@@ -1099,19 +1089,75 @@ body .buttons-panel button.buttons-panel-simple-button {
     outline-offset: 2px;
 }
 
-/* --- The selection cursor -----------------------------------------------
-   While Shift or Ctrl/Cmd is held (CellSelectionModifierCursor puts the class
-   on the panel), a press on a grid SELECTS: it will not run the tool, and it
-   will not move it. The cursor says so before anything is pressed — `cell`,
-   the system's own spreadsheet-selection cursor, instead of the pointer of a
-   tool or the grab hand of a movable one.
+/* --- The cursor model ---------------------------------------------------
+   The cursor says what a press does HERE, and nothing else (normative:
+   cell-selection-colors.md §4.5). Highest priority first:
 
-   Applied to the grid and to everything inside it, because the tools, the
-   drag wrappers and the `+` each set a cursor of their own. 0-4-1 beats all of
-   them: the tool's pointer (0-3-2), the grab/grabbing of the drag wrapper
-   (0-4-0) and the `+` (0-2-1). Visual only — what a press means is still
-   decided from the event itself. */
-body .buttons-panel .buttons-panel-panel-content.ocap-selection-modifier .ocap-palette-grid,
-body .buttons-panel .buttons-panel-panel-content.ocap-selection-modifier .ocap-palette-grid * {
-    cursor: cell;
+     1. a layout drag in flight          -> grabbing
+     2. Ctrl/Cmd held (remove)           -> remove cursor (a bold minus)
+     3. Shift held (add)                 -> cell (the system's bold plus)
+     4. a tool that can be moved (edit)  -> grab
+     5. otherwise the surface's own:        a tool runs -> pointer,
+                                            the `+` creates -> pointer,
+                                            a cell or gutter -> default
+
+   2 and 3 are ONE custom property, set on the panel from the modifier that
+   is actually held (CellSelectionModifierCursor, which asks `gestureOfEvent`,
+   so with both held the cursor shows what the press will really do: add).
+   Every grid surface names its own cursor only as the FALLBACK of that
+   property — the priority is built in, not left to specificity:
+
+       cursor: var(--ocap-selection-cursor, <this surface's own cursor>);
+
+   Step 1 is the one rule that has to beat everything, Obsidian's own
+   cursors included, over the whole panel and for only as long as dnd-kit
+   says a drag is active (`buttons-panel-is-dragging`, ButtonDragContext) —
+   hence the single `!important` in this file. */
+
+body .buttons-panel .buttons-panel-panel-content[data-ocap-selection-intent='add'] {
+    --ocap-selection-cursor: cell;
+}
+
+/* No native minus cursor exists (`zoom-out` is a magnifier, and means
+   something else). The minus is drawn like the plus of `cell` — white, black
+   rim, bold — with the hotspot in its middle, and falls back to `cell`
+   wherever an image cursor is not honoured. */
+body .buttons-panel .buttons-panel-panel-content[data-ocap-selection-intent='remove'] {
+    --ocap-selection-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Crect x='4.5' y='9.5' width='15' height='5' fill='white' stroke='black' stroke-width='1'/%3E%3C/svg%3E") 12 12, cell;
+}
+
+/* 5 — a cell and the gutters between cells: nothing to pick up here. */
+body .buttons-panel .ocap-palette-grid,
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot {
+    cursor: var(--ocap-selection-cursor, default);
+}
+
+/* 5 — a tool that is not movable runs on a click (locked mode, a search). */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot button.buttons-panel-simple-button {
+    cursor: var(--ocap-selection-cursor, pointer);
+}
+
+/* 5 — the `+` of an empty cell creates a tool. */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot button.ocap-slot-add {
+    cursor: var(--ocap-selection-cursor, pointer);
+}
+
+/* 4 — a tool that can be moved. The drag wrapper exists exactly when the tool
+   is draggable (CategoryButtonGrid renders SortableButtonItem only then), so
+   the hand never promises a move that cannot happen. A click still runs it. */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot .sortable-button-item,
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot .sortable-button-item button.buttons-panel-simple-button {
+    cursor: var(--ocap-selection-cursor, grab);
+}
+
+/* 2/3 — with a modifier held, whatever else sits inside the grid follows it
+   too (labels, icons, anything a theme gives a cursor of its own). */
+body .buttons-panel .buttons-panel-panel-content[data-ocap-selection-intent] .ocap-palette-grid * {
+    cursor: inherit;
+}
+
+/* 1 — a layout drag in flight owns the pointer, over the whole panel. */
+body .buttons-panel.buttons-panel-is-dragging,
+body .buttons-panel.buttons-panel-is-dragging * {
+    cursor: grabbing !important;
 }
