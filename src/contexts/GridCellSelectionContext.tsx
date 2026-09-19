@@ -53,6 +53,12 @@ interface GridCellSelectionValue {
     /** Drop the selection entirely (Escape, a click on empty background). */
     clearCellSelection: () => void;
     /**
+     * Put back a selection exactly as it was, in whichever grid — what a
+     * cancelled gesture means once a Shift rectangle can move the context in
+     * from another grid. Only ever called with a state that existed before.
+     */
+    restoreCellSelection: (state: GridCellSelectionState) => void;
+    /**
      * Announce that a VISIBLE, interactive rendering of this grid exists.
      *
      * The returned cleanup says it is gone again. The selection is dropped when
@@ -102,6 +108,7 @@ const DEFAULT_VALUE: GridCellSelectionValue = {
     selectCell: () => {},
     selectCells: () => {},
     clearCellSelection: () => {},
+    restoreCellSelection: () => {},
     registerSelectableGrid: () => () => {},
     paint: null,
     armPaint: () => {},
@@ -119,6 +126,7 @@ export const GridCellSelectionProvider: React.FC<
     selectCell,
     selectCells,
     clearCellSelection,
+    restoreCellSelection,
     registerSelectableGrid,
     paint,
     armPaint,
@@ -133,6 +141,7 @@ export const GridCellSelectionProvider: React.FC<
             selectCell,
             selectCells,
             clearCellSelection,
+            restoreCellSelection,
             registerSelectableGrid,
             paint,
             armPaint,
@@ -145,6 +154,7 @@ export const GridCellSelectionProvider: React.FC<
             selectCell,
             selectCells,
             clearCellSelection,
+            restoreCellSelection,
             registerSelectableGrid,
             paint,
             armPaint,

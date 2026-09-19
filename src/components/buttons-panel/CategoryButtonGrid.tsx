@@ -187,6 +187,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         state: cellSelectionState,
         selectCell,
         selectCells,
+        restoreCellSelection,
         registerSelectableGrid,
         paint,
         armPaint,
@@ -301,9 +302,22 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         paint,
         onPaint: (cells) => handleApplyColorToCells(cells, paint?.color ?? null),
         cellStyles,
+        // A cancelled gesture puts back the WHOLE selection as it was at the
+        // press — which, for a Shift rectangle that moved the context in from
+        // another grid, is that other grid's selection, not an empty one here.
+        onRestore: () => {
+            const before = gestureStartSelectionRef.current;
+            if (before !== null) {
+                restoreCellSelection(before);
+            }
+        },
     });
 
+    /** The panel's selection as it was when the current press started. */
+    const gestureStartSelectionRef = React.useRef<typeof cellSelectionState | null>(null);
+
     const handleGridPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+        gestureStartSelectionRef.current = cellSelectionState;
         // A modifier press is a selection gesture and nothing else: claimed
         // here, in the capture phase, so it can never reach the tool's drag
         // activator below or the category-drag handle above. The press origin

@@ -140,17 +140,38 @@ describe('a selection lives in exactly one grid', () => {
         expect(selectedCellsOf(after, GRID_A).size).toBe(0);
     });
 
-    it('Shift in another grid is inert — it cannot extend across grids', () => {
-        const before = select(GRID_A, ['r0c0', 'replace']);
+    // Since 2026-09-19: ONE active context panel-wide. Shift in another grid
+    // moves it there (the only way to start a selection in a second grid,
+    // since a plain click runs the tool); Ctrl in another grid does nothing.
+    it('Shift in another grid MOVES the one context there', () => {
+        const before = select(GRID_A, ['r0c0', 'replace'], ['r1c1', 'add']);
         const after = applyCellGesture(before, GRID_B, 'r2c2', 'add');
+        expect(after.context).toEqual(GRID_B);
+        expect(cells(after)).toEqual(['r2c2']);
+        // The old grid holds nothing any more — never two selections at once.
+        expect(selectedCellsOf(after, GRID_A).size).toBe(0);
+    });
+
+    it('Ctrl in another grid is a no-op: no context switch, nothing touched', () => {
+        const before = select(GRID_A, ['r0c0', 'replace']);
+        const after = applyCellGesture(before, GRID_B, 'r0c0', 'remove');
         expect(after).toBe(before);
         expect(after.context).toEqual(GRID_A);
     });
 
-    it('Ctrl in another grid is inert too', () => {
+    it('moves back and forth, holding exactly one context each time', () => {
+        let state = select(GRID_A, ['r0c0', 'replace']);
+        state = applyCellGesture(state, GRID_B, 'r1c1', 'add');
+        state = applyCellGesture(state, GRID_A, 'r3c3', 'add');
+        expect(state.context).toEqual(GRID_A);
+        expect(cells(state)).toEqual(['r3c3']);
+        expect(selectedCellsOf(state, GRID_B).size).toBe(0);
+    });
+
+    it('treats another VARIANT of the same category as another grid', () => {
         const before = select(GRID_A, ['r0c0', 'replace']);
-        const after = applyCellGesture(before, GRID_B, 'r0c0', 'remove');
-        expect(after).toBe(before);
+        const after = applyCellGesture(before, VARIANT_A, 'r0c0', 'add');
+        expect(after.context).toEqual(VARIANT_A);
     });
 
     it('treats a variant grid as a different grid from the static one', () => {
@@ -195,9 +216,16 @@ describe('set gestures (the palette selecting by colour)', () => {
         expect(after).toBe(NO_CELL_SELECTION);
     });
 
-    it('never reaches into another grid', () => {
+    it('Shift + swatch in another grid moves the context there, with those cells', () => {
         const before = select(GRID_A, ['r0c0', 'replace']);
-        expect(applyCellSetGesture(before, GRID_B, ['r1c1'], 'add')).toBe(before);
+        const after = applyCellSetGesture(before, GRID_B, ['r1c1', 'r2c2'], 'add');
+        expect(after.context).toEqual(GRID_B);
+        expect(cells(after)).toEqual(['r1c1', 'r2c2']);
+    });
+
+    it('a set REMOVE in another grid is a no-op', () => {
+        const before = select(GRID_A, ['r0c0', 'replace']);
+        expect(applyCellSetGesture(before, GRID_B, ['r1c1'], 'remove')).toBe(before);
     });
 });
 

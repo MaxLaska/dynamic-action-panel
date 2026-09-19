@@ -289,12 +289,17 @@ function nextState(
 /**
  * Applies ONE gesture to ONE cell.
  *
- * Cross-grid rule: a plain click always moves the selection to the clicked
- * grid, but Shift and Ctrl are inert on a grid that does not already hold the
- * selection — otherwise a modifier click in grid B would extend (or silently
- * re-home) a selection the user is looking at in grid A. A modifier on a grid
- * where nothing is selected yet still works, because there is no other
- * selection it could reach across to.
+ * Cross-grid rule (2026-09-19): there is exactly ONE active selection
+ * context in the panel, and a selection never spans two grids.
+ *
+ * - `add` (Shift) on another grid MOVES the context there: the old selection
+ *   is dropped and this grid starts a new one. Shift is how a user says
+ *   "select here", and since a plain click runs the tool, it is the only way
+ *   to begin a selection in a second grid at all;
+ * - `remove` (Ctrl/Cmd) on another grid is a NO-OP. It can only take away from
+ *   what exists, and there is nothing of this grid's to take away — it must
+ *   neither move the context nor touch the other grid's cells;
+ * - `replace` always re-homes (the palette's Ctrl + swatch).
  */
 export function applyCellGesture(
     state: GridCellSelectionState,
@@ -308,9 +313,9 @@ export function applyCellGesture(
         return nextState(state, context, new Set([cell]));
     }
 
-    // Shift/Ctrl never reach across grids.
     if (foreign) {
-        return state;
+        // Shift moves the one context here; Ctrl never reaches across.
+        return gesture === 'add' ? nextState(state, context, new Set([cell])) : state;
     }
 
     const current = selectedCellsOf(state, context);
@@ -336,6 +341,8 @@ export function applyCellGesture(
 /**
  * Applies a gesture to a whole SET of cells at once — the palette's
  * same-color selection (Ctrl replaces with, Shift adds, all cells of a color).
+ * Same cross-grid rule as `applyCellGesture`: an `add` from another grid moves
+ * the context here, a `remove` from another grid does nothing.
  */
 export function applyCellSetGesture(
     state: GridCellSelectionState,
@@ -349,7 +356,7 @@ export function applyCellSetGesture(
         return nextState(state, context, new Set(cells));
     }
     if (foreign) {
-        return state;
+        return gesture === 'add' ? nextState(state, context, new Set(cells)) : state;
     }
 
     const current = selectedCellsOf(state, context);

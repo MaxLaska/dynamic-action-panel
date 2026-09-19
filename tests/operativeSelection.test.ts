@@ -261,6 +261,79 @@ describe('Escape keeps working after the focused element is gone', () => {
     });
 });
 
+describe('one active selection context, panel-wide', () => {
+    // The pure rule lives in gridCellSelection.ts and is tested there: Shift in
+    // another grid MOVES the context, Ctrl in another grid is a no-op. These
+    // pin the pointer layer, which has to apply the same rule to rectangles.
+    const hook = codeOf('hooks/useCellRectangleSelection.ts');
+    const grid = codeOf('components/buttons-panel/CategoryButtonGrid.tsx');
+
+    it('lets a Shift rectangle start in a grid that does not hold the selection', () => {
+        // Only a REMOVE is stopped at the grid boundary.
+        expect(hook).toMatch(/if \(!owns && gesture === 'remove'\) \{\s*return true;/);
+        expect(hook).not.toMatch(/if \(!owns\) \{/);
+    });
+
+    it("never carries the other grid's armed paint colour across", () => {
+        expect(hook).toMatch(/paintAllowed: owns/);
+        expect(hook).toMatch(/drag\.gesture === 'add' && paint !== null && drag\.paintAllowed/);
+    });
+
+    it('never paints on a single Shift click that moves the context either', () => {
+        const click = grid.slice(grid.indexOf('const handleGridClickCapture'), grid.indexOf('const handleApplyColor '));
+        expect(click).toMatch(/gesture === 'add' &&\s*paint !== null &&\s*ownsSelection/);
+    });
+
+    it('cancels a context-moving gesture back to the WHOLE previous selection', () => {
+        // Its baseline in the new grid is empty; restoring that would wipe the
+        // selection the user had in the old one.
+        expect(hook).toMatch(/const restoreAll = latest\.current\.onRestore;/);
+        expect(grid).toMatch(/gestureStartSelectionRef\.current = cellSelectionState;/);
+        expect(grid).toMatch(/restoreCellSelection\(before\)/);
+    });
+});
+
+describe('the modifier cursor', () => {
+    const cursor = codeOf('components/buttons-panel/CellSelectionModifierCursor.tsx');
+    const panel = codeOf('components/buttons-panel/PanelContent.tsx');
+    const css = readFileSync(
+        new URL('../src/components/buttons-panel/PaletteGrid.css', import.meta.url),
+        'utf8'
+    );
+
+    it('asks the SAME question the grid asks, so macOS Ctrl does not count', () => {
+        expect(cursor).toMatch(/gestureOfEvent\(flags\)/);
+        expect(cursor).toMatch(/gesture === 'add' \|\| gesture === 'remove'/);
+    });
+
+    it('follows the keys, the pointer and a lost window focus', () => {
+        for (const event of ["'keydown'", "'keyup'", "'pointermove'", "'blur'"]) {
+            expect(cursor).toContain(event);
+        }
+    });
+
+    it('is visual only: it never stops or cancels an event', () => {
+        expect(cursor).not.toMatch(/stopPropagation|stopImmediatePropagation|preventDefault/);
+    });
+
+    it('only ever touches this panel, and cleans up after itself', () => {
+        expect(cursor).toMatch(/panel\.classList\.toggle\(/);
+        expect(cursor).toMatch(/panel\.classList\.remove\(SELECTION_MODIFIER_CLASS\)/);
+    });
+
+    it('is suspended with the selection, never by the mode', () => {
+        expect(cursor).toMatch(/if \(!panel \|\| !available\)/);
+        expect(cursor).not.toMatch(/interactionMode|enableEditMode/);
+        expect(panel).toMatch(/<CellSelectionModifierCursor panelRef=\{panelContentRef\} \/>/);
+    });
+
+    it('switches the grids and everything in them to the selection cursor', () => {
+        expect(css).toMatch(
+            /body \.buttons-panel \.buttons-panel-panel-content\.ocap-selection-modifier \.ocap-palette-grid,\s*body \.buttons-panel \.buttons-panel-panel-content\.ocap-selection-modifier \.ocap-palette-grid \* \{\s*cursor: cell;/
+        );
+    });
+});
+
 // --- 3. What stays edit-only -----------------------------------------------------
 
 describe('the layout stays locked in locked mode', () => {

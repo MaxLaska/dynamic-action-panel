@@ -41,6 +41,12 @@ interface RectangleDrag {
     published: boolean;
     /** Cells this ADD gesture has brought in, i.e. what a paint would colour. */
     added: readonly GridCellKey[];
+    /**
+     * The armed paint colour belongs to THIS gesture's grid. False when the
+     * gesture moves the context in from another grid: that grid's colour must
+     * not be carried over into this one.
+     */
+    paintAllowed: boolean;
 }
 
 /**
@@ -85,17 +91,29 @@ export interface CellRectangleSelectionOptions {
     gridRef: React.RefObject<HTMLElement | null>;
     /** Dimensions of exactly the grid on screen. */
     dimensions: GridDimensions;
-    /** False in locked mode, during a resize preview, in a non-selectable copy. */
+    /** False during a search, a resize preview, or in a non-selectable copy. */
     enabled: boolean;
     /**
-     * Whether THIS grid may edit the selection with a modifier.
+     * Whether THIS grid holds the panel's one active selection (or nobody does).
      *
-     * False when another grid holds it: Shift and Ctrl never reach across
-     * grids, exactly as they do not for a single click. The press is still
-     * swallowed (a modifier always means "selection", never "drag"), it simply
-     * changes nothing.
+     * When another grid holds it, the cross-grid rule applies exactly as for a
+     * single click: a Shift rectangle MOVES the context here — its baseline is
+     * empty, the other grid's selection is dropped on the first step, and the
+     * other grid's armed paint colour does not come along — while a Ctrl
+     * rectangle is a no-op. Either way the press is swallowed: a modifier
+     * always means "selection", never "drag".
      */
     owns: boolean;
+    /**
+     * Put back EXACTLY the selection that existed when the press started, in
+     * whichever grid it was — what Escape and a lost pointer mean.
+     *
+     * Restoring this grid's baseline is not enough once a Shift rectangle can
+     * start in another grid: its baseline is empty, and cancelling it would
+     * otherwise wipe the selection the user had elsewhere. Optional; without
+     * it the gesture restores this grid's baseline.
+     */
+    onRestore?: () => void;
     /** The selection of this grid right now — the baseline of the next press. */
     selectedCells: ReadonlySet<GridCellKey>;
     /** Publish the cells the gesture currently selects (replaces this grid's set). */
@@ -205,7 +223,12 @@ export function useCellRectangleSelection(
         }
         if (drag.dragging) {
             if (restore) {
-                latest.current.onPreview([...drag.baseline]);
+                const restoreAll = latest.current.onRestore;
+                if (restoreAll) {
+                    restoreAll();
+                } else {
+                    latest.current.onPreview([...drag.baseline]);
+                }
                 clearPaintPreview();
             }
             latest.current.onActiveChange(false);
@@ -287,7 +310,7 @@ export function useCellRectangleSelection(
         // Only an ADD gesture paints, and only what it actually brought in.
         const paint = latest.current.paint;
         drag.added =
-            drag.gesture === 'add' && paint !== null
+            drag.gesture === 'add' && paint !== null && drag.paintAllowed
                 ? cellsAddedByRectangle(drag.baseline, rectangle)
                 : [];
         setPaintPreview(drag.added.length > 0 ? new Set(drag.added) : NO_CELLS);
@@ -389,9 +412,11 @@ export function useCellRectangleSelection(
             // on an empty cell alike.
             event.stopPropagation();
 
-            if (!owns) {
-                // Another grid holds the selection; a modifier never reaches
-                // across. Swallowed, but without effect.
+            if (!owns && gesture === 'remove') {
+                // Another grid holds the selection, and Ctrl/Cmd can only take
+                // away from what exists — there is nothing of THIS grid's to
+                // remove. Swallowed, without effect; the context stays put.
+                // (A Shift rectangle carries on: it moves the one context here.)
                 return true;
             }
 
@@ -442,6 +467,10 @@ export function useCellRectangleSelection(
                 dragging: false,
                 published: false,
                 added: [],
+                // Moving in from another grid: that grid's armed colour stays
+                // behind (and is disarmed with it), and the baseline — this
+                // grid's cells, i.e. none — is already empty.
+                paintAllowed: owns,
             };
             return true;
         },

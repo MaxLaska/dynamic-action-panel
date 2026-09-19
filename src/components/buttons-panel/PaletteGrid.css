@@ -1098,3 +1098,20 @@ body .buttons-panel button.buttons-panel-simple-button {
     outline: 2px solid var(--interactive-accent);
     outline-offset: 2px;
 }
+
+/* --- The selection cursor -----------------------------------------------
+   While Shift or Ctrl/Cmd is held (CellSelectionModifierCursor puts the class
+   on the panel), a press on a grid SELECTS: it will not run the tool, and it
+   will not move it. The cursor says so before anything is pressed — `cell`,
+   the system's own spreadsheet-selection cursor, instead of the pointer of a
+   tool or the grab hand of a movable one.
+
+   Applied to the grid and to everything inside it, because the tools, the
+   drag wrappers and the `+` each set a cursor of their own. 0-4-1 beats all of
+   them: the tool's pointer (0-3-2), the grab/grabbing of the drag wrapper
+   (0-4-0) and the `+` (0-2-1). Visual only — what a press means is still
+   decided from the event itself. */
+body .buttons-panel .buttons-panel-panel-content.ocap-selection-modifier .ocap-palette-grid,
+body .buttons-panel .buttons-panel-panel-content.ocap-selection-modifier .ocap-palette-grid * {
+    cursor: cell;
+}

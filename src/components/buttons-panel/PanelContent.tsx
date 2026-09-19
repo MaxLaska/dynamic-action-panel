@@ -23,6 +23,7 @@ import {
 import { CellSelectionEscape } from '@/components/buttons-panel/CellSelectionEscape';
 import { CellSelectionBackdrop } from '@/components/buttons-panel/CellSelectionBackdrop';
 import { CellSelectionLayoutDragHold } from '@/components/buttons-panel/CellSelectionLayoutDragHold';
+import { CellSelectionModifierCursor } from '@/components/buttons-panel/CellSelectionModifierCursor';
 import { allowsLayoutEditing } from '@/utils/interactionMode';
 import {
     NO_CELL_SELECTION,
@@ -236,6 +237,10 @@ export const PanelContent: React.FC<PanelContentProps> = ({
 
     const clearCellSelection = React.useCallback(() => {
         setCellSelection((prev) => (prev.context === null ? prev : NO_CELL_SELECTION));
+    }, []);
+
+    const restoreCellSelection = React.useCallback((state: GridCellSelectionState) => {
+        setCellSelection(state);
     }, []);
 
     /**
@@ -458,6 +463,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 selectCell={selectCell}
                 selectCells={selectCells}
                 clearCellSelection={clearCellSelection}
+                restoreCellSelection={restoreCellSelection}
                 registerSelectableGrid={registerSelectableGrid}
                 // Selection is operative in BOTH modes; only a search suspends
                 // it, because a filtered grid does not show the stored occupancy.
@@ -491,6 +497,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 <CellSelectionEscape panelRef={panelContentRef} />
                 <CellSelectionBackdrop panelRef={panelContentRef} />
                 <CellSelectionLayoutDragHold onActiveChange={handleLayoutDragChange} />
+                <CellSelectionModifierCursor panelRef={panelContentRef} />
                 {panelContent}
             </ButtonDragProvider>
             </GridCellSelectionProvider>
