@@ -4,6 +4,7 @@ import type { ButtonConfig, CategoryConfig } from '@/types';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
 import type { App } from 'obsidian';
 import { CategoryButtonGrid } from '@/components/buttons-panel/CategoryButtonGrid';
+import { CATEGORY_DRAG_HANDLE_CLASS } from '@/components/buttons-panel/SortableCategoryBlock';
 
 interface CategoryListDragPreviewProps {
     category: CategoryConfig;
@@ -33,11 +34,15 @@ export const CategoryListDragPreview: React.FC<CategoryListDragPreviewProps> = (
 }) => {
     const iconRef = React.useRef<HTMLSpanElement>(null);
     const layoutGridRef = React.useRef<HTMLSpanElement>(null);
+    const handleRef = React.useRef<HTMLSpanElement>(null);
     const contentClass = `buttons-panel-grid ${displayStyle === 'icon_top' ? 'icon-top' : 'icon-left'}`;
 
     React.useEffect(() => {
         if (iconRef.current) {
             setIcon(iconRef.current, isOpen ? 'chevron-down' : 'chevron-right');
+        }
+        if (handleRef.current) {
+            setIcon(handleRef.current, 'grip-vertical');
         }
         if (layoutGridRef.current) {
             setIcon(layoutGridRef.current, 'layout-grid');
@@ -49,6 +54,8 @@ export const CategoryListDragPreview: React.FC<CategoryListDragPreviewProps> = (
     return (
         <div className={rootClass}>
             <div className={titleClassName}>
+                {/* Drawn, not wired: the header being dragged looks like the header. */}
+                <span className={CATEGORY_DRAG_HANDLE_CLASS} ref={handleRef} aria-hidden="true" />
                 <span className="category-icon-left" ref={layoutGridRef} />
                 {category.name}
                 <span className="category-icon" ref={iconRef} />

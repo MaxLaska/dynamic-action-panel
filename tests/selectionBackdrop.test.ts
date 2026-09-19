@@ -99,12 +99,11 @@ beforeAll(() => {
 function buildPanel() {
     const panel = new FakeElement('div', { class: 'buttons-panel-panel-content' });
     const list = panel.append(new FakeElement('div', { class: 'buttons-panel-list-mode' }));
-    // The real list block, as dnd-kit renders it: a sortable, and therefore
-    // role="button" — which is what used to hide its free area from the rule.
+    // The real list block: the sortable ITEM, but no longer its activator —
+    // dnd-kit's props (role="button" among them) live on the handle.
     const category = list.append(
         new FakeElement('div', {
-            class: 'buttons-panel-category sortable-category-item category-drag-handle',
-            attrs: { role: 'button', tabindex: '0' },
+            class: 'buttons-panel-category sortable-category-item',
         })
     );
     const title = category.append(
@@ -112,6 +111,18 @@ function buildPanel() {
             class: 'buttons-panel-category-title',
             attrs: { role: 'button' },
         })
+    );
+    const handle = title.append(
+        new FakeElement('span', {
+            class: 'ocap-category-drag-handle',
+            attrs: { role: 'button', tabindex: '0', 'aria-roledescription': 'sortable' },
+        })
+    );
+    const handleIcon = handle.append(new FakeElement('svg', { class: 'svg-icon' }));
+    // The same handle, imagined outside a title: it must not depend on the
+    // title to stay excluded.
+    const looseHandle = panel.append(
+        new FakeElement('span', { class: 'ocap-category-drag-handle' })
     );
     const frame = category.append(new FakeElement('div', { class: 'ocap-grid-frame' }));
     const frameMain = frame.append(new FakeElement('div', { class: 'ocap-grid-frame-main' }));
@@ -158,6 +169,9 @@ function buildPanel() {
         list,
         category,
         title,
+        handle,
+        handleIcon,
+        looseHandle,
         grid,
         cell,
         tool,
@@ -184,10 +198,11 @@ describe('empty panel background clears; everything else keeps its meaning', () 
         expect(isSelectionBackdrop(asElement(dom.list), panel)).toBe(true);
     });
 
-    it('treats the free area of a category as backdrop — the grab surface too', () => {
-        // The category block is also the list-view drag handle, which is
-        // exactly why the decision waits for the click (see
-        // CellSelectionBackdrop) instead of firing on the press.
+    it('treats the free area of a category as backdrop', () => {
+        // The block is the sortable item but not a drag surface any more:
+        // only its handle starts a reorder, so its free area is plain
+        // background. The decision still waits for the click (see
+        // CellSelectionBackdrop), because a press alone must destroy nothing.
         expect(isSelectionBackdrop(asElement(dom.category), panel)).toBe(true);
     });
 
@@ -198,6 +213,9 @@ describe('empty panel background clears; everything else keeps its meaning', () 
         ['the label inside a tool', 'toolLabel'],
         ['the resize edge', 'resizeEdge'],
         ['the category title', 'title'],
+        ['the category DRAG HANDLE — its press belongs to the reorder', 'handle'],
+        ['the grip icon inside the handle', 'handleIcon'],
+        ['a drag handle even outside a title, by its own class', 'looseHandle'],
         ['the colour palette', 'palette'],
         ['a palette swatch', 'swatch'],
         ['the variant bar', 'variantBar'],
@@ -261,6 +279,16 @@ describe('the backdrop click never steals a drag', () => {
         expect(code).toMatch(/Math\.sqrt/);
     });
 
+    it('forfeits the click once the press has EVER travelled past the threshold', () => {
+        // The free category area is no longer a drag surface, so no drag
+        // engine activates there; wandering off and back must still not end
+        // in a click on the background.
+        const move = code.slice(code.indexOf('const onPointerMove'), code.indexOf('const onClick'));
+        expect(move).toMatch(/if \(origin !== null && travelled\(origin, event\)\) \{\s*pressOriginRef\.current = null;/);
+        expect(code).toMatch(/panel\.addEventListener\('pointermove', onPointerMove, true\)/);
+        expect(code).toMatch(/panel\.removeEventListener\('pointermove', onPointerMove, true\)/);
+    });
+
     it('never stops the event, and never cancels it', () => {
         expect(code).not.toMatch(/stopPropagation|stopImmediatePropagation|preventDefault/);
     });
@@ -285,10 +313,11 @@ describe('the exclusion list names every control the decision lists', () => {
         }
     });
 
-    it('covers the palette, the category title and the variant bar', () => {
+    it('covers the palette, the category title, its drag handle and the variant bar', () => {
         for (const selector of [
             '.ocap-cell-palette',
             '.buttons-panel-category-title',
+            '.ocap-category-drag-handle',
             '.ocap-variant-bar',
         ]) {
             expect(SELECTION_BACKDROP_EXCLUDES).toContain(selector);

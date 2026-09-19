@@ -1,22 +1,36 @@
 import React from 'react';
+import { setIcon } from 'obsidian';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { categorySortableId } from '@/utils/categoryDragItems';
 import { useCategoryDragOptional } from '@/contexts/ButtonDragContext';
 import { suppressDragOnSelectionModifier } from '@/utils/dragSelectionGuard';
 
+/** The one place a list category can be picked up (CategoryDrag.css). */
+export const CATEGORY_DRAG_HANDLE_CLASS = 'ocap-category-drag-handle';
+
 interface SortableCategoryBlockProps {
     categoryId: string;
     className?: string;
     onClick?: React.MouseEventHandler<HTMLDivElement>;
     children: React.ReactNode;
-    renderTitle: () => React.ReactNode;
+    /** Renders the header; `handle` is the drag handle and goes first in it. */
+    renderTitle: (handle: React.ReactNode) => React.ReactNode;
     /** Placeholder preview of the whole block while dragging (the full category content) */
     renderDragPreview?: () => React.ReactNode;
 }
 
 /**
- * List view: the whole category block is sortable; a long press on any non-button area starts the drag and the expanded state is kept.
+ * List view: the whole category block is the SORTABLE ITEM — it moves, it is
+ * measured, it is what a drop lands on — but only its handle ACTIVATES a drag.
+ *
+ * The block used to be its own activator, which made every free pixel of a
+ * category (the header, the grid's gutters, the space below the palette) a
+ * grab surface, and the header both "fold" and "move". The handle separates
+ * the two: handle = move, header = fold, everything else = nothing layout-wise.
+ * dnd-kit's own mechanism does it (`setActivatorNodeRef` plus the listeners
+ * and attributes on that node); the sortable, the drop, the preview and the
+ * animation are untouched.
  */
 export const SortableCategoryBlock: React.FC<SortableCategoryBlockProps> = ({
     categoryId,
@@ -29,10 +43,11 @@ export const SortableCategoryBlock: React.FC<SortableCategoryBlockProps> = ({
     const categoryDrag = useCategoryDragOptional();
     const panelDragging = categoryDrag?.isDragging ?? false;
 
-    const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
-        id: categorySortableId(categoryId),
-        animateLayoutChanges: () => false,
-    });
+    const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition } =
+        useSortable({
+            id: categorySortableId(categoryId),
+            animateLayoutChanges: () => false,
+        });
 
     /**
      * The drag source is identified by the context's activeCategoryId rather than useSortable.isDragging,
@@ -50,17 +65,34 @@ export const SortableCategoryBlock: React.FC<SortableCategoryBlockProps> = ({
 
     /**
      * A press carrying Shift or Ctrl/Cmd is a cell-selection gesture and must
-     * not reorder the category. Presses inside a grid never reach here (the
-     * grid claims them in the capture phase); this covers the header and the
-     * block's own surface, where there is no cell to select either — the
-     * modifier simply suppresses the drag.
+     * not reorder the category, not even from the handle.
      */
     const dragListeners = suppressDragOnSelectionModifier(listeners);
+
+    const bindHandleIcon = React.useCallback((el: HTMLSpanElement | null) => {
+        setActivatorNodeRef(el);
+        if (el) {
+            setIcon(el, 'grip-vertical');
+        }
+    }, [setActivatorNodeRef]);
+
+    // The handle sits INSIDE the header, whose click folds the category. A
+    // click on the handle means nothing — it must not fold, and it is not
+    // panel background either (see selectionBackdrop).
+    const handle = (
+        <span
+            ref={bindHandleIcon}
+            className={CATEGORY_DRAG_HANDLE_CLASS}
+            {...attributes}
+            {...dragListeners}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+        />
+    );
 
     const blockClassName = [
         ...(isDragSource ? [] : [className]),
         'sortable-category-item',
-        'category-drag-handle',
         isDragSource ? 'sortable-category-item--dragging' : '',
     ]
         .filter(Boolean)
@@ -73,24 +105,36 @@ export const SortableCategoryBlock: React.FC<SortableCategoryBlockProps> = ({
             className={blockClassName}
             data-category-drag-source={isDragSource || undefined}
             onClick={onClick}
-            {...(isDragSource ? {} : attributes)}
-            {...(isDragSource ? {} : dragListeners)}
         >
             {isDragSource ? (
                 renderDragPreview ? (
                     renderDragPreview()
                 ) : (
                     <>
-                        {renderTitle()}
+                        {renderTitle(null)}
                         {children}
                     </>
                 )
             ) : (
                 <>
-                    {renderTitle()}
+                    {renderTitle(handle)}
                     {children}
                 </>
             )}
         </div>
     );
 };
+
+/**
+ * Where the handle would be, when there is none: a category that cannot be
+ * reordered right now (locked mode, a search, a tool drag in flight) keeps the
+ * handle's SPACE, empty and inert, so the header does not shift sideways when
+ * the mode changes — the same rule as the resize gutter (cell-selection-colors
+ * §19).
+ */
+export const CategoryDragHandleSpace: React.FC = () => (
+    <span
+        className={`${CATEGORY_DRAG_HANDLE_CLASS} ${CATEGORY_DRAG_HANDLE_CLASS}--inert`}
+        aria-hidden="true"
+    />
+);

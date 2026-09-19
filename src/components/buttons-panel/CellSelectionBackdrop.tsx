@@ -67,9 +67,26 @@ export const CellSelectionBackdrop: React.FC<CellSelectionBackdropProps> = ({
             return;
         }
 
+        const travelled = (origin: { x: number; y: number }, event: MouseEvent) => {
+            const dx = event.clientX - origin.x;
+            const dy = event.clientY - origin.y;
+            return Math.sqrt(dx * dx + dy * dy) > RESIZE_DRAG_THRESHOLD_PX;
+        };
+
         const onPointerDown = (event: PointerEvent) => {
             pressOriginRef.current =
                 event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+        };
+
+        // A press that ever went further than the threshold was a drag, even
+        // where no drag engine took it up (the free area of a category is no
+        // longer a drag surface) — so wandering off and coming back does not
+        // end in a click on the background either.
+        const onPointerMove = (event: PointerEvent) => {
+            const origin = pressOriginRef.current;
+            if (origin !== null && travelled(origin, event)) {
+                pressOriginRef.current = null;
+            }
         };
 
         const onClick = (event: MouseEvent) => {
@@ -81,9 +98,7 @@ export const CellSelectionBackdrop: React.FC<CellSelectionBackdropProps> = ({
             // The same euclidean threshold the drag sensor and every other
             // click check in the panel use, so "click" and "drag" stay exact
             // complements.
-            const dx = event.clientX - origin.x;
-            const dy = event.clientY - origin.y;
-            if (Math.sqrt(dx * dx + dy * dy) > RESIZE_DRAG_THRESHOLD_PX) {
+            if (travelled(origin, event)) {
                 return;
             }
             if (!isSelectionBackdrop(event.target, panel)) {
@@ -96,9 +111,11 @@ export const CellSelectionBackdrop: React.FC<CellSelectionBackdropProps> = ({
         // the event, bubble for the click so anything that claims it first
         // (the category title, a tool, the palette) keeps its meaning.
         panel.addEventListener('pointerdown', onPointerDown, true);
+        panel.addEventListener('pointermove', onPointerMove, true);
         panel.addEventListener('click', onClick);
         return () => {
             panel.removeEventListener('pointerdown', onPointerDown, true);
+            panel.removeEventListener('pointermove', onPointerMove, true);
             panel.removeEventListener('click', onClick);
         };
     }, [hasSelection, isDragging, panelRef, clearCellSelection]);

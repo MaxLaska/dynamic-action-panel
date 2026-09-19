@@ -22,9 +22,9 @@
  */
 const INTERACTIVE_SELECTOR = [
     // The grid and everything framed with it: cells, tools, the resize gutters
-    // and the size readout. A click on a cell REPLACES the selection, and a
-    // click in the 4px gutter between two cells deliberately does nothing —
-    // neither may be re-read as "clear".
+    // and the size readout. A click on a cell runs its tool (or, with a
+    // modifier, selects), and a click in the 4px gutter between two cells
+    // deliberately does nothing — neither may be re-read as "clear".
     '[data-slot]',
     '.ocap-grid-frame',
     '.ocap-palette-grid',
@@ -32,6 +32,10 @@ const INTERACTIVE_SELECTOR = [
     '.ocap-cell-palette',
     // The category title: collapse/expand, and its context menu.
     '.buttons-panel-category-title',
+    // The list category's drag handle (inside the title, named anyway): a
+    // press there belongs to the reorder, and its click means nothing at all
+    // — least of all "clear".
+    '.ocap-category-drag-handle',
     // The variant bar of a dynamic category.
     '.ocap-variant-bar',
     // Ordinary controls, wherever they are.
@@ -46,19 +50,6 @@ const INTERACTIVE_SELECTOR = [
     '[role="tab"]',
     '[contenteditable="true"]',
 ].join(', ');
-
-/**
- * A drag handle whose CLICK means nothing: the list-view category block.
- *
- * dnd-kit gives every sortable element `role="button"`, so the block matches
- * the control list above — yet a click on its free area does nothing at all;
- * it is only ever grabbed. Left as a control, that area (where the grab cursor
- * shows) silently refused to clear the selection, which is exactly the surface
- * a hand reaches for. Only the list block qualifies: a category TAB switches
- * tabs and a folder TILE opens the folder on click, so those stay controls
- * even though they are drag handles too.
- */
-const INERT_DRAG_SURFACE = '.sortable-category-item';
 
 /**
  * Whether a click on `target` landed on inert panel background.
@@ -77,12 +68,10 @@ export function isSelectionBackdrop(
     if (!panel.contains(target)) {
         return false;
     }
-    const control = target.closest(INTERACTIVE_SELECTOR);
-    // No control above the target: plain background. The nearest one being
-    // the list category block itself: its free area, which is a grab surface
-    // and nothing else. Anything inside the block that IS a control — the
-    // title, the grid, a tool — is closer than the block and wins here.
-    return control === null || control.matches(INERT_DRAG_SURFACE);
+    // The list category block is not a control: it is the sortable item, but
+    // dnd-kit's activator props (and with them `role="button"`) live on its
+    // handle, so the block's free area is plain background.
+    return target.closest(INTERACTIVE_SELECTOR) === null;
 }
 
 /** The selector itself, so a test can state the contract without a DOM. */

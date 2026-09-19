@@ -1,14 +1,36 @@
-body .buttons-panel .sortable-category-item,
-body .buttons-panel .sortable-category-item.category-drag-handle {
+/* List view: a category moves only by its handle, the first thing in its
+   header (SortableCategoryBlock). The block itself is the sortable item but no
+   longer a grab surface — its header folds, its grid is the grid, and its free
+   space is background. So only the handle refuses touch panning and only the
+   handle shows the hand; `grabbing` during the drag comes from the one drag
+   rule in PaletteGrid.css (the cursor model). */
+body .buttons-panel .buttons-panel-category-title .ocap-category-drag-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    color: var(--text-faint);
+    cursor: grab;
     touch-action: var(--bp-touch-action-item, none);
 }
 
-body .buttons-panel .sortable-category-item.category-drag-handle {
-    cursor: grab;
+body .buttons-panel .buttons-panel-category-title .ocap-category-drag-handle:hover {
+    color: var(--text-normal);
 }
 
-body .buttons-panel .sortable-category-item.category-drag-handle:active {
-    cursor: grabbing;
+body .buttons-panel .buttons-panel-category-title .ocap-category-drag-handle .svg-icon {
+    width: 14px;
+    height: 14px;
+}
+
+/* No reordering right now (locked, search, a tool drag): the handle's place
+   is kept, empty and inert, so the header never shifts with the mode. */
+body .buttons-panel .buttons-panel-category-title .ocap-category-drag-handle--inert {
+    cursor: inherit;
+    touch-action: auto;
+    pointer-events: none;
 }
 
 .buttons-panel .sortable-category-item--dragging {

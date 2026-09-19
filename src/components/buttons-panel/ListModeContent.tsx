@@ -5,7 +5,10 @@ import { setIcon } from 'obsidian';
 import { usePluginContext } from '@/contexts/PluginContext';
 import { useButtonDragOptional, useCategoryDragOptional } from '@/contexts/ButtonDragContext';
 import { CategoryButtonGrid } from '@/components/buttons-panel/CategoryButtonGrid';
-import { SortableCategoryBlock } from '@/components/buttons-panel/SortableCategoryBlock';
+import {
+    CategoryDragHandleSpace,
+    SortableCategoryBlock,
+} from '@/components/buttons-panel/SortableCategoryBlock';
 import { CategoryListDragPreview } from '@/components/buttons-panel/CategoryListDragPreview';
 import { useCategoryCreation, useButtonCreation } from '@/hooks';
 import { AddButton } from '@/components/shared/AddButton';
@@ -332,8 +335,9 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
                             titleClassName={titleClassName}
                         />
                     )}
-                    renderTitle={() => (
+                    renderTitle={(handle) => (
                         <div ref={bindTitleRef} className={titleClassName} {...titleHandlers}>
+                            {handle ?? <CategoryDragHandleSpace />}
                             {titleContent}
                         </div>
                     )}
@@ -346,6 +350,7 @@ export const ListModeContent: React.FC<ListModeContentProps> = ({
         return (
             <div key={category.id} className={categoryClassNames}>
                 <div ref={bindTitleRef} className={titleClassName} {...titleHandlers}>
+                    <CategoryDragHandleSpace />
                     {titleContent}
                 </div>
                 {buttonGridSection}
