@@ -727,6 +727,39 @@ protects the layout; using and selecting work in both modes“.
 - Tests: `tests/operativeSelection.test.ts` (38), `gridCellSelection.test.ts`
   (Modustest auf `allowsLayoutEditing` umgestellt). Gesamt **1208**.
 
+### 2i. Ein Selection-Kontext, Griff-Fläche, Modifier-Cursor (2026-09-19)
+
+Normativ: `docs/ocap/cell-selection-colors.md` §4.2, §4.4, §4.5.
+`DECISIONS.md`: „One active selection context; Shift moves it, Ctrl never
+reaches across".
+
+- **Kontextregel (pur):** `applyCellGesture` / `applyCellSetGesture` in
+  `gridCellSelection.ts` — fremdes Grid + `add` → `nextState(state, context,
+  cells)`, sonst `state` unverändert. Deckt Shift-Klick und Shift/Strg-Farbfeld
+  mit ab.
+- **Rechteck:** `useCellRectangleSelection` bricht auf einem fremden Grid nur
+  noch bei `remove` ab. `RectangleDrag.paintAllowed = owns` — die scharfe Farbe
+  des alten Kontexts wird nicht mitgenommen. Abbruch (Escape,
+  `pointercancel`) ruft `onRestore`, wenn gesetzt: `CategoryButtonGrid` merkt
+  sich die komplette Auswahl beim PointerDown (`gestureStartSelectionRef`) und
+  stellt sie über das neue `restoreCellSelection` des Selection-Contexts
+  wieder her.
+- **Einzel-Shift-Klick-Farbe** nur bei `ownsSelection`.
+- **Griff-Fläche:** `selectionBackdrop.ts` — `INERT_DRAG_SURFACE =
+  '.sortable-category-item'`; trifft `closest(INTERACTIVE_SELECTOR)` genau
+  den Kategorieblock, gilt er als Hintergrund. Tabs
+  (`.sortable-category-tab`) und Folder (`.sortable-category-folder`) bleiben
+  ausgeschlossen. Klick-vs-Drag entscheidet unverändert
+  `CellSelectionBackdrop`.
+- **Modifier-Cursor:** neu `CellSelectionModifierCursor.tsx` (in
+  `PanelContent` gemountet) setzt `ocap-selection-modifier` am
+  Panel-Content per `keydown`/`keyup`/`pointermove` (`gestureOfEvent`),
+  entfernt sie bei `blur` und Unmount; gated auf `available`, nicht auf den
+  Modus. CSS am Ende von `PaletteGrid.css`, Spezifität 0-4-1 schlägt
+  Tool-Pointer, Grab-Wrapper und `+`.
+- Tests gesamt **1224**; Live-Smoke **248/248** (neue Stage 49, Stage 2 auf
+  die neue Regel umgestellt).
+
 ### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
 
 `ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&

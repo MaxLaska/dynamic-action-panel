@@ -1032,6 +1032,44 @@ protection: tools stopped working the moment the panel was unlocked, and the
 working set of cells vanished the moment it was locked. What locking is actually
 for is the layout, and that it still protects completely.
 
+## 2026-09-19 – One active selection context; Shift moves it, Ctrl never reaches across
+
+**Decision:** The panel holds exactly one selection context at a time — the
+domain identity `(categoryId, variantId)` of one grid, never a render position.
+Across a grid boundary:
+
+- **Shift** click, Shift drag or Shift + swatch in grid B while A holds the
+  selection clears A and makes B the context with exactly the new cells.
+- **Ctrl/Cmd** click or drag in B is a **no-op**: A stays, B gets nothing, no
+  tool runs.
+- A **plain click** on a tool in B runs it; A stays.
+
+The move does not carry A's armed paint colour into B, and Escape during a
+context-moving Shift rectangle restores A's whole selection rather than leaving
+nothing.
+
+**Reason:** since a plain click no longer replaces (operative model), Shift is
+the only gesture that *starts* a selection. Keeping the old "modifiers are inert
+on a foreign grid" rule would have made every grid but the current one
+unreachable without Escape first. Ctrl can remove nothing where nothing is
+selected, so it must not discard anything elsewhere either.
+
+This **supersedes** the cross-grid bullet of `cell-selection-colors.md` §4.2
+(plain click moves the selection, Shift/Ctrl inert on a foreign grid).
+
+**Also decided in the same round:**
+
+- **The category grab surface is background.** The free area of a list
+  category block — where the grab cursor shows — clears on a short click and
+  stays a category drag above the threshold. The block carries dnd-kit's
+  `role="button"`, which had hidden it behind the exclusion list; exactly
+  `.sortable-category-item` is now treated as an inert drag surface. Tabs and
+  folder tiles are drag handles too, but their click does something, so they
+  stay excluded.
+- **A held modifier shows a selection cursor.** Shift or Ctrl/Cmd turns every
+  grid surface to `cursor: cell`, in both modes. Visual only: one class on the
+  panel content, no state, no event stopped.
+
 ## Open decisions
 
 The following are still open:

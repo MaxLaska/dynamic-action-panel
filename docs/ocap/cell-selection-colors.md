@@ -243,7 +243,8 @@ entfernt eine. Oberhalb der Schwelle rastet sie ein und bleibt ein Rechteck, auc
 zum Ausgangspunkt zurückwandert — der anschließende Klick wird dann verworfen.
 
 - **Escape** während der Geste bricht das Rechteck ab: die Auswahl kehrt auf die Baseline zurück,
-  nichts wird geschrieben. Das panelweite Escape (Auswahl leeren) tritt dafür zurück, solange eine
+  nichts wird geschrieben. Hat die Geste den Kontext aus einem anderen Grid herübergeholt (4.2),
+  wird die gesamte Auswahl von vor dem PointerDown wiederhergestellt — im alten Grid. Das panelweite Escape (Auswahl leeren) tritt dafür zurück, solange eine
   Geste läuft — sonst feuerten beide auf dieselbe Taste und der Abbruch endete in einer leeren
   statt in der ursprünglichen Auswahl.
 - **`pointercancel`** (verlorener Zeiger) wird wie Escape behandelt: sauberer Abbruch auf die
@@ -266,11 +267,30 @@ zum Ausgangspunkt zurückwandert — der anschließende Klick wird dann verworfe
 - **Klick in die Lücke zwischen zwei Zellen** (4 px): **keine Wirkung.** Weder Auswahl setzen noch
   leeren. Die Fläche ist zu klein, um Absicht zu unterstellen — und sie gehört zum Grid, ist also
   auch kein Hintergrund im Sinne von 4.4.
-- **Höchstens ein Grid trägt eine Auswahl.** Ein Linksklick in das Grid einer anderen Kategorie
-  verschiebt die Auswahl dorthin und verwirft die alte — das ist einfach „ersetzen“ über die
-  Grid-Grenze hinweg. Shift und Strg wirken **nur innerhalb des Grids, das die Auswahl bereits
-  hält**; auf ein fremdes Grid angewandt bleiben sie wirkungslos (sonst entstünde eine unsichtbare
-  Auswahl über zwei Kategorien).
+- **Genau ein aktiver Selection-Kontext, panelweit (normativ seit 2026-09-19).** Der Kontext ist die
+  fachliche Grid-Identität `(categoryId, variantId)`, nie die Render-Position. Über die
+  Grid-Grenze hinweg gilt:
+
+  | Geste in Grid B, während A die Auswahl hält | Wirkung |
+  |---|---|
+  | **Shift + Klick / Shift + Ziehen** | A wird geleert; B wird aktiver Kontext mit genau den neu gewählten Zellen |
+  | **Strg/Cmd + Klick / Strg/Cmd + Ziehen** | **No-op.** A bleibt unverändert; B bekommt nichts; kein Tool läuft |
+  | **normaler Klick auf ein Tool** | das Tool läuft; A bleibt unverändert |
+  | **Shift + Farbfeld in B** | wie Shift + Klick: der Kontext wechselt nach B (Abschnitt 8.1) |
+  | **Strg/Cmd + Farbfeld in B** | ersetzt ohnehin — der Kontext wechselt nach B (Abschnitt 8) |
+
+  Begründung: Shift ist die einzige Geste, die eine Auswahl *beginnt*; seit ein einfacher Klick
+  nicht mehr ersetzt (4.1), wäre ohne diese Regel ein Grid, das nicht schon die Auswahl hält, gar
+  nicht mehr erreichbar. Strg kann in einem Grid ohne Auswahl nichts entfernen und darf deshalb
+  auch nichts anderes verwerfen. Zwei gleichzeitige Auswahlen gibt es nie.
+
+  Der Wechsel nimmt **keine `selectionPaintColor`** mit (sie gehört dem alten Kontext, Abschnitt
+  8.2): Die ersten Zellen in B werden nicht mit A's scharfer Farbe eingefärbt. **Escape während
+  eines kontextwechselnden Shift-Rechtecks** stellt die komplette Auswahl in A wieder her, nicht
+  eine leere (Abschnitt 4a.6).
+
+  *Überholt am 2026-09-19:* Bis dahin verschob ein einfacher Linksklick die Auswahl in ein anderes
+  Grid, und Shift/Strg blieben auf einem fremden Grid wirkungslos.
 - **Mehrere Panel-Leaves** haben jeweils ihre eigene, unabhängige Auswahl.
 - **Escape** leert die Auswahl. In der Folder-View schließt Escape heute den geöffneten Ordner —
   die Auswahl hat Vorrang: erstes Escape leert die Auswahl, ein weiteres schließt den Ordner.
@@ -307,9 +327,35 @@ Kategorie-Drags zerstören. Der Druck wird nur gemerkt; erst wenn feststeht, das
 war — höchstens 4 px Weg, dieselbe Schwelle wie überall —, wird geleert. Ein Drag, der tatsächlich
 gestartet ist, verwirkt seinen Klick zusätzlich unabhängig von der Distanz.
 
+**Die freie Griff-Fläche der Kategorie gehört dazu (normativ seit 2026-09-19).** Die Fläche des
+Kategorieblocks, auf der der Grab-Cursor erscheint, ist Hintergrund: ein kurzer Klick leert die
+Auswahl, ein Ziehen über die Schwelle bleibt Kategorie-Drag/Reorder und leert nichts — auch nicht,
+wenn der Zeiger zum Ausgangspunkt zurückwandert. Technisch trägt der Block durch dnd-kit
+`role="button"`; die Ausschlussliste nimmt deshalb genau `.sortable-category-item` als inerte
+Griff-Fläche davon aus. **Tabs und Folder-Kacheln** sind ebenfalls Drag-Griffe, haben aber eine
+eigene Klick-Aktion (Tab wechseln, Ordner öffnen) und bleiben ausgeschlossen. Titel, Grid, Tools,
+Slots, Farbleiste, Resize, `+`, Links, Eingaben und Buttons ebenso.
+
 Gehört zur Selection-Session wie alles andere: `selectionPaintColor` fällt mit der Auswahl
 (Abschnitt 8.2). Ein Klick **außerhalb des Panels** — Editor, Modal, anderes Leaf — bleibt
 wirkungslos.
+
+### 4.5 Modifier-Cursor (normativ seit 2026-09-19)
+
+```
+Shift oder Strg/Cmd gehalten → Auswahl-Cursor (`cursor: cell`) auf den Grids
+```
+
+Solange Shift oder Strg/Cmd gedrückt ist, zeigen alle Grid-Flächen — Tools, leere Zellen, `+`,
+Lücken — den systemnahen Auswahl-Cursor statt Pointer oder Grab. Er sagt vor dem Klick an, dass
+jetzt ausgewählt und nicht ausgeführt oder gezogen wird. **Rein visuell:** keine neue Logik, kein
+Zustand, kein Event wird gestoppt; gilt in Locked und Edit gleichermaßen (verfügbar, solange
+Selection verfügbar ist — also nicht während einer filternden Suche).
+
+Umgesetzt als Klasse `ocap-selection-modifier` am Panel-Content, gesetzt von
+`CellSelectionModifierCursor` aus `keydown`/`keyup`/`pointermove` (dieselbe Modifier-Auflösung
+`gestureOfEvent` wie die Gesten selbst) und bei `blur` entfernt, damit nach einem Alt-Tab mit
+gehaltener Taste nichts hängen bleibt.
 
 ---
 
@@ -474,7 +520,9 @@ Shift + Klick auf Farbfeld
 
 Damit ist `Strg + Rot`, dann `Shift + Blau` = alle roten **und** blauen Zellen gemeinsam
 auswählen und in einem Zug umfärben. Konsistent mit „Shift = hinzufügen“ überall sonst, und es
-schreibt nicht.
+schreibt nicht. Auf der Farbleiste eines **anderen** Grids wechselt Shift den einen aktiven Kontext
+dorthin, genau wie ein Shift-Klick auf eine Zelle (Abschnitt 4.2). Die Farbleiste färbt immer nur
+den aktiven Kontext.
 
 Verworfen wurde „Shift = wie ein normaler Klick“: ein verrutschter Shift würde dann schreiben und
 bräche die Regel *Modifier schreibt nie*.
@@ -690,7 +738,8 @@ Die Auswahl ist **ephemer** und wird nie gespeichert. Sie ist an die **fachliche
 gebunden — `(categoryId, variantId)` —, nicht an die Position oder die Render-Identität des Grids.
 Sie wird verworfen bei:
 
-- Wechsel der Kategorie beziehungsweise Auswahl in einem anderen Grid;
+- Wechsel der Kategorie beziehungsweise Shift-Auswahl in einem anderen Grid (Abschnitt 4.2 —
+  Strg/Cmd in einem anderen Grid ist dagegen ein No-op, ein normaler Tool-Klick ebenso);
 - Wechsel der Dynamic Variant (Dropdown, ⇄-Flip, Duplicate, New, Delete);
 - jedem anderen Wechsel des Grid-Kontexts — Kategorie gelöscht, statisches Grid dynamisch gemacht,
   Grid in eine Flow-Kategorie umgewandelt, Ansicht gewechselt, Kategorie eingeklappt, Ordner

@@ -1,11 +1,31 @@
 # OCAP – Status
 
-Last updated: 2026-09-19 (The operative model — plain click uses, modifier
-selects, locked only protects the layout; implemented locally and
+Last updated: 2026-09-19 (One active selection context, grab-surface clear and
+modifier cursor on top of the operative model; implemented locally and
 live-smoke-tested in an isolated Obsidian; awaiting the user's own manual
 acceptance)
 
 ## Newest work first
+
+- **One selection context, grab-surface clear, modifier cursor (2026-09-19) —
+  implemented locally, live-smoke-tested, deployed only to the disposable smoke
+  vault. Not pushed, not in the productive vault.** Normative:
+  `cell-selection-colors.md` §4.2, §4.4, §4.5, §4a.6, §8.1, §11;
+  `DECISIONS.md` "One active selection context; Shift moves it, Ctrl never
+  reaches across".
+  - **Exactly one active context panel-wide**, keyed on `(categoryId,
+    variantId)`. Shift click / drag / swatch in another grid clears the old
+    one and starts there; Ctrl/Cmd in another grid is a no-op; a plain tool
+    click in another grid runs it and keeps the selection. The armed paint
+    colour is not carried across; Escape mid-gesture restores the old grid's
+    whole selection.
+  - **The free category grab surface clears on a click** and still reorders on
+    a drag (root cause: dnd-kit's `role="button"` on the block). Tabs and
+    folder tiles stay excluded.
+  - **Shift or Ctrl/Cmd held → `cursor: cell`** on all grid surfaces, both
+    modes, visual only.
+  - Tests **1224/1224**; `tsc`, `eslint`, build green. **Live smoke 248/248**
+    over nine stages, 0 console problems.
 
 - **The operative model (2026-09-19) — implemented locally, live-smoke-tested,
   deployed only to the disposable smoke vault. Not pushed, not in the productive
