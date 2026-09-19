@@ -1,11 +1,34 @@
 # OCAP – Status
 
-Last updated: 2026-09-19 (One active selection context, grab-surface clear and
-modifier cursor on top of the operative model; implemented locally and
+Last updated: 2026-09-19 (Honest cursors and a dedicated category drag
+handle, on top of the one-selection-context round; implemented locally and
 live-smoke-tested in an isolated Obsidian; awaiting the user's own manual
 acceptance)
 
 ## Newest work first
+
+- **Honest cursors and a category drag handle (2026-09-19) — implemented
+  locally, live-smoke-tested, deployed only to the disposable smoke vault. Not
+  pushed, not in the productive vault.** Normative:
+  `cell-selection-colors.md` §4.5 (the cursor model), §5a (the handle), §4.4,
+  §19; `DECISIONS.md` "The cursor tells the truth, and a category moves only by
+  its handle".
+  - **The cursor says what a press does here:** a drag in flight `grabbing`,
+    Ctrl/Cmd a bold minus, Shift `cell`, a movable tool `grab`, otherwise the
+    surface's own (`pointer` on a tool that runs and on the `+`, `default` on a
+    cell or gutter). Priority is one custom property with per-surface
+    fallbacks, not a specificity race; the minus is an embedded SVG data URI
+    (no native minus cursor exists); `grabbing` is the single `!important`,
+    tied to dnd-kit's active drag.
+  - **A list category moves only by a grip handle** at the head of its header,
+    before the icon. The header folds and does nothing else; grid, empty cells
+    and the free block area start no reorder. Same sortable, same reorder
+    logic — only the activator moved (`setActivatorNodeRef`). Edit-only, with
+    its space reserved in locked so the header never shifts.
+  - **Background clear:** a press that ever travelled past the threshold
+    forfeits its click, now that the free area has no drag engine to do it.
+  - Tests **1261/1261** (new `tests/cursorModel.test.ts`), `tsc`, `eslint`,
+    build green. **Live smoke 306/306** over ten stages, 0 console problems.
 
 - **One selection context, grab-surface clear, modifier cursor (2026-09-19) —
   implemented locally, live-smoke-tested, deployed only to the disposable smoke

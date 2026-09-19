@@ -327,35 +327,73 @@ Kategorie-Drags zerstören. Der Druck wird nur gemerkt; erst wenn feststeht, das
 war — höchstens 4 px Weg, dieselbe Schwelle wie überall —, wird geleert. Ein Drag, der tatsächlich
 gestartet ist, verwirkt seinen Klick zusätzlich unabhängig von der Distanz.
 
-**Die freie Griff-Fläche der Kategorie gehört dazu (normativ seit 2026-09-19).** Die Fläche des
-Kategorieblocks, auf der der Grab-Cursor erscheint, ist Hintergrund: ein kurzer Klick leert die
-Auswahl, ein Ziehen über die Schwelle bleibt Kategorie-Drag/Reorder und leert nichts — auch nicht,
-wenn der Zeiger zum Ausgangspunkt zurückwandert. Technisch trägt der Block durch dnd-kit
-`role="button"`; die Ausschlussliste nimmt deshalb genau `.sortable-category-item` als inerte
-Griff-Fläche davon aus. **Tabs und Folder-Kacheln** sind ebenfalls Drag-Griffe, haben aber eine
-eigene Klick-Aktion (Tab wechseln, Ordner öffnen) und bleiben ausgeschlossen. Titel, Grid, Tools,
-Slots, Farbleiste, Resize, `+`, Links, Eingaben und Buttons ebenso.
+**Die freie Fläche der Kategorie gehört dazu (normativ seit 2026-09-19).** Die Fläche des
+Kategorieblocks — neben und unter dem Grid — ist Hintergrund: ein kurzer Klick leert die Auswahl.
+Seit der Kategorie-Handle existiert (Abschnitt 5a) ist sie überhaupt keine Griff-Fläche mehr, also
+auch kein Sonderfall: Der Block trägt `role="button"` nicht mehr, dnd-kits Aktivator-Props sitzen
+am Handle. Ausgenommen bleiben Titel, **Handle**, Grid, Tools, Slots, Farbleiste, Resize, `+`,
+Links, Eingaben und Buttons; **Tabs und Folder-Kacheln** sind weiterhin zugleich Drag-Griffe und
+haben eine eigene Klick-Aktion (Tab wechseln, Ordner öffnen).
+
+**Ein Druck, der je weiter als die Schwelle gewandert ist, verwirkt seinen Klick** — unabhängig
+davon, ob eine Drag-Engine ihn aufgegriffen hat. Auf der freien Fläche startet seit dem Handle kein
+Drag mehr; ohne diese Regel wäre Wegziehen-und-Zurückkommen dort wieder ein Klick geworden.
 
 Gehört zur Selection-Session wie alles andere: `selectionPaintColor` fällt mit der Auswahl
 (Abschnitt 8.2). Ein Klick **außerhalb des Panels** — Editor, Modal, anderes Leaf — bleibt
 wirkungslos.
 
-### 4.5 Modifier-Cursor (normativ seit 2026-09-19)
+### 4.5 Das Cursor-Modell (normativ seit 2026-09-19, erweitert am 2026-09-19)
 
+> Der Zeiger sagt, was **an genau dieser Stelle** möglich ist — nicht mehr und nicht weniger.
+
+Die Prioritäten, von oben nach unten:
+
+| # | Zustand | Cursor |
+|---|---|---|
+| 1 | ein Layout-Drag läuft gerade | `grabbing` |
+| 2 | Strg/Cmd gehalten | **Minus** (entfernen) |
+| 3 | Shift gehalten | `cell` — das fette Plus des Systems (hinzufügen) |
+| 4 | Edit-Mode, ein Tool, das bewegt werden kann | `grab` |
+| 5 | sonst die eigene Bedeutung der Fläche | Tool ausführen `pointer`, `+` `pointer`, Zelle/Lücke `default` |
+
+Dazu gehören ausdrücklich:
+
+- **Eine leere Zelle zeigt den normalen Pfeil.** Sie ist nichts, was man greifen kann; der frühere
+  Grab-Cursor über der ganzen Kategorie hat das Gegenteil behauptet. Das `+` in ihrer Ecke bleibt
+  ein Pointer und bleibt unverändert bedienbar.
+- **Ein Tool im Edit-Mode zeigt die offene Hand** und während des Ziehens die geschlossene. Die
+  Hand hängt am Drag-Wrapper *und* an der Schaltfläche darin — vorher nur am Wrapper, weshalb der
+  Zeiger über dem Tool selbst der Pointer der Schaltfläche blieb. Sie erscheint genau dann, wenn
+  der Wrapper existiert, also wenn das Tool wirklich beweglich ist (nicht in Locked, nicht während
+  einer Suche). **Ein Klick ohne Ziehen führt weiterhin aus.**
+- **Die Modifier gelten in beiden Modi** (Selection ist operativ) und haben Vorrang vor der Hand.
+  Sind beide Tasten gedrückt, zeigt der Cursor, was der Druck wirklich täte: hinzufügen (Shift
+  gewinnt, Abschnitt 8.1) — ein Cursor, der etwas anderes verspricht als die Geste, wäre schlimmer
+  als gar keiner.
+- **Loslassen stellt sofort den darunterliegenden Cursor her.** Kein hängender Zustand nach
+  Fensterwechsel, Fokusverlust, Moduswechsel oder Unmount.
+
+**Technisch** ist die Priorität nicht der Spezifität überlassen, sondern eingebaut: Der
+Panel-Content trägt `data-ocap-selection-intent="add" | "remove"` (gesetzt von
+`CellSelectionModifierCursor` aus `keydown`/`keyup`/`pointermove`, entfernt bei `blur` und beim
+Unmount, mit derselben Modifier-Auflösung `gestureOfEvent` wie die Gesten selbst). Das Attribut
+setzt **eine** Custom Property, und jede Grid-Fläche nennt ihren eigenen Cursor nur als deren
+Fallback:
+
+```css
+cursor: var(--ocap-selection-cursor, grab);   /* ein bewegliches Tool */
+cursor: var(--ocap-selection-cursor, default); /* Zelle, Lücke */
 ```
-Shift oder Strg/Cmd gehalten → Auswahl-Cursor (`cursor: cell`) auf den Grids
-```
 
-Solange Shift oder Strg/Cmd gedrückt ist, zeigen alle Grid-Flächen — Tools, leere Zellen, `+`,
-Lücken — den systemnahen Auswahl-Cursor statt Pointer oder Grab. Er sagt vor dem Klick an, dass
-jetzt ausgewählt und nicht ausgeführt oder gezogen wird. **Rein visuell:** keine neue Logik, kein
-Zustand, kein Event wird gestoppt; gilt in Locked und Edit gleichermaßen (verfügbar, solange
-Selection verfügbar ist — also nicht während einer filternden Suche).
+Für „entfernen" gibt es **keinen nativen Cursor** — `zoom-out` ist eine Lupe und bedeutet etwas
+anderes. Also ein eingebettetes SVG als Data-URI (keine Asset-Datei), gezeichnet wie das Plus von
+`cell`: weißer Balken, schwarzer Rand, Hotspot in der Mitte, und `cell` als Fallback, falls ein
+Bild-Cursor nicht getragen wird.
 
-Umgesetzt als Klasse `ocap-selection-modifier` am Panel-Content, gesetzt von
-`CellSelectionModifierCursor` aus `keydown`/`keyup`/`pointermove` (dieselbe Modifier-Auflösung
-`gestureOfEvent` wie die Gesten selbst) und bei `blur` entfernt, damit nach einem Alt-Tab mit
-gehaltener Taste nichts hängen bleibt.
+Stufe 1 ist die einzige Regel, die alles überstimmen muss — auch Obsidians eigene Cursor, über das
+ganze Panel und nur solange dnd-kit einen Drag wirklich aktiv hat (`buttons-panel-is-dragging`).
+Sie ist deshalb das einzige `!important` des Modells.
 
 ---
 
@@ -377,6 +415,42 @@ gehaltener Taste nichts hängen bleibt.
   Koordinate hängen, und es ist dieselbe Regel, nach der ein Tool-Drag auch keine Farbe mitnimmt.
 - **Ein Drop aus einem anderen Grid** in eine ausgewählte Zelle ist unproblematisch: Die Zelle
   bleibt dieselbe ausgewählte Zelle, ihre Farbe bleibt unverändert.
+
+---
+
+## 5a. Kategorie verschieben: nur am Handle (normativ seit 2026-09-19)
+
+> **Handle = bewegen. Header = auf- und zuklappen.** Zwei Handlungen, zwei Orte.
+
+In der List-View war der **ganze Kategorieblock** der Drag-Aktivator: jeder freie Pixel neben dem
+Grid, unter der Farbleiste und im Header hat die Kategorie verschoben. Das hatte zwei Kosten. Der
+Header musste gleichzeitig klappen und verschieben, und über riesigen Flächen stand eine Greif-Hand,
+unter der nichts zu greifen war — auch über leeren Zellen, die nun wirklich nichts anbieten.
+
+```
+[⠿ Handle] [Icon] [Name] ............ [Chevron]
+```
+
+- Der Handle sitzt **ganz links im Header, vor dem Icon**, klein und eindeutig (Obsidians
+  `grip-vertical`).
+- **Nur er startet einen Reorder.** Header, Icon, Name, Grid, leere Zellen, der Raum unter dem Grid
+  und die übrige Kategoriefläche starten keinen mehr.
+- **Der Header klappt weiterhin** die Kategorie auf und zu — jetzt als seine einzige Aufgabe.
+- **Ein Klick auf den Handle tut nichts:** Er klappt nicht (er stoppt seinen Klick, bevor der Header
+  ihn sieht) und leert keine Auswahl (er steht auf der Ausschlussliste, Abschnitt 4.4).
+- **Ein Modifier unterdrückt auch am Handle den Drag** — Shift/Strg gehören der Auswahl
+  (Abschnitt 4a.5).
+- Der Handle ist eine **Layout**-Affordanz und existiert nur, wo Layout-Editing erlaubt ist: im
+  Edit-Mode ohne aktive Suche. Wie die Resize-Rinne (Abschnitt 19) bleibt sein **Platz** sonst leer
+  und zeigerdurchlässig reserviert, damit der Header beim Moduswechsel nicht springt.
+- Die Drag-Vorschau zeichnet denselben Header **mitsamt Handle**, damit das Gezogene aussieht wie
+  das Original.
+
+**Unverändert:** die Reorder-Logik selbst, Drop, Vorschau, Animation und Zustand. Es ist dieselbe
+dnd-kit-Sortable; nur der Aktivator wandert mit dem dafür vorgesehenen Mechanismus
+(`setActivatorNodeRef` plus `listeners`/`attributes`) auf den Handle. **Tabs und Folder-Kacheln**
+bleiben, wie sie sind: Dort ist das kompakte Element selbst der Griff, es gibt keine große freie
+Fläche, die etwas Falsches verspräche.
 
 ---
 
@@ -944,3 +1018,9 @@ Locked-Mode aber als leere, zeigerdurchlässige Rinne reserviert.
 
 Edit-only bleiben: Auswahlrahmen, die `+`-Ecken, die Farbleiste, die Resize-Griffe und der
 Variant-Selektor. Locked-only bleibt: das Tool ausführen.
+
+*Nachtrag 2026-09-19:* Der **Kategorie-Handle** (Abschnitt 5a) folgt derselben Regel wie die
+Resize-Rinne — nur im Edit-Mode sichtbar, sein Platz im Locked-Mode leer und zeigerdurchlässig
+reserviert, damit Icon und Name beim Sperren nicht seitlich springen. Ebenso modusabhängig ist seit
+dem Cursor-Modell (Abschnitt 4.5) die Greif-Hand über einem Tool; sie ist eine Aussage über das
+Layout, keine Änderung daran.

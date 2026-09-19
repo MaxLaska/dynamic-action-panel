@@ -760,6 +760,45 @@ reaches across".
 - Tests gesamt **1224**; Live-Smoke **248/248** (neue Stage 49, Stage 2 auf
   die neue Regel umgestellt).
 
+### 2j. Cursor-Modell und Kategorie-Handle (2026-09-19)
+
+Normativ: `docs/ocap/cell-selection-colors.md` §4.5 (Cursor-Modell), §5a
+(Handle), §4.4, §19. `DECISIONS.md`: „The cursor tells the truth, and a
+category moves only by its handle".
+
+- **Cursor-Modell** am Ende von `PaletteGrid.css`, ein Block, nach Priorität
+  kommentiert. Träger ist die Custom Property `--ocap-selection-cursor`,
+  gesetzt vom Panel-Content über `data-ocap-selection-intent="add|remove"`;
+  jede Grid-Regel nennt ihren eigenen Cursor nur als deren Fallback. Entfernt:
+  die alten Regeln `--managed .ocap-grid-slot--filled .sortable-button-item
+  {cursor:grab}` und `.sortable-button-item:active {cursor:grabbing}`.
+- **Minus-Cursor:** Data-URI-SVG (24×24, weißer Balken mit schwarzem Rand),
+  Hotspot `12 12`, Fallback `cell`. Keine Asset-Datei.
+- **Grabbing:** genau eine `!important`-Regel, gebunden an die bestehende
+  Klasse `buttons-panel-is-dragging` (`utils/touchDragLock.ts`, gesetzt von
+  `ButtonDragContext`, solange dnd-kit einen Drag aktiv hat).
+- **`CellSelectionModifierCursor`** setzt jetzt das Attribut statt einer
+  Klasse; die Effekt-Logik ist als `trackSelectionIntent(panel)` exportiert und
+  wird in `tests/cursorModel.test.ts` gegen ein Fake-Document wirklich
+  ausgeführt (Shift/Strg/Cmd, Release, Blur, Cleanup).
+- **Handle:** `SortableCategoryBlock` nutzt `setActivatorNodeRef`;
+  `attributes`/`dragListeners` sitzen am Handle-Span, nicht mehr am Block. Der
+  Block verliert die Klasse `category-drag-handle`. `renderTitle(handle)`
+  reicht ihn an `ListModeContent`, das ihn als erstes Kind des Titels rendert;
+  ohne Sortable rendert es `CategoryDragHandleSpace` (leer,
+  `pointer-events: none`) an dieselbe Stelle. `CategoryListDragPreview`
+  zeichnet den Grip mit.
+- **`selectionBackdrop.ts`:** `INERT_DRAG_SURFACE` entfällt (der Block ist
+  kein Control mehr), `.ocap-category-drag-handle` kommt auf die
+  Ausschlussliste.
+- **`CellSelectionBackdrop`:** neuer `pointermove`-Capture-Listener; ein Druck
+  verwirkt seinen Klick, sobald er je weiter als `RESIZE_DRAG_THRESHOLD_PX`
+  gewandert ist.
+- Tests gesamt **1261** (neu: `tests/cursorModel.test.ts`, 33 — inkl.
+  Spezifitätsrechnung für die Kaskade). Live-Smoke **306/306** über zehn
+  Stufen; Stufen 4/7/8/9 auf Handle bzw. Attribut umgestellt, neue Stufe 10
+  (57) liest Cursor als `getComputedStyle(elementFromPoint(...))`.
+
 ### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
 
 `ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&

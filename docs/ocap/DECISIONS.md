@@ -1070,6 +1070,66 @@ This **supersedes** the cross-grid bullet of `cell-selection-colors.md` §4.2
   grid surface to `cursor: cell`, in both modes. Visual only: one class on the
   panel content, no state, no event stopped.
 
+## 2026-09-19 – The cursor tells the truth, and a category moves only by its handle
+
+**Decision, one sentence:** the cursor says what a press does at exactly this
+spot, and the two things a category header used to do at once are separated in
+space.
+
+**The cursor model**, highest priority first:
+
+1. a layout drag in flight -> `grabbing`
+2. Ctrl/Cmd held -> a bold minus (remove from the selection)
+3. Shift held -> `cell`, the system's bold plus (add)
+4. edit mode, a tool that can be moved -> `grab`
+5. otherwise the surface's own meaning: a tool that runs and the `+` ->
+   `pointer`, a cell or a gutter -> `default`
+
+An empty cell shows the plain arrow because there is nothing there to pick up —
+the old grab hand covered whole categories and promised one. A tool in edit
+mode shows the hand on the BUTTON as well as on its drag wrapper: the pointer
+is over the button, whose own `cursor: pointer` used to win, so the movable
+thing looked like a mere click target. The hand appears exactly when the drag
+wrapper exists, i.e. when the tool really can be moved.
+
+With both modifiers held the cursor shows ADD, because that is what the press
+would do (Shift wins). A cursor that promises something other than the gesture
+is worse than none.
+
+**Priority is built in, not left to specificity.** The panel carries
+`data-ocap-selection-intent`, which sets ONE custom property, and every grid
+surface names its own cursor merely as that property's fallback:
+`cursor: var(--ocap-selection-cursor, grab)`. There is no native "minus"
+cursor (`zoom-out` is a magnifier and means something else), so it is a small
+embedded SVG data URI drawn like the plus of `cell` — white bar, black rim,
+hotspot in the middle — falling back to `cell`. Step 1 is the only rule that
+must beat everything, Obsidian's cursors included, and it is the model's only
+`!important`; it lives for exactly as long as dnd-kit reports an active drag.
+
+**The category drag handle:** in list view the whole block used to be the drag
+activator, so every free pixel moved the category and the header both folded
+and moved. A small grip (`grip-vertical`) now sits first in the header, before
+the icon, and is the only place a reorder starts. The header folds, and nothing
+else — grid, empty cells, the space below the grid and the rest of the block
+start nothing. The block stays the sortable ITEM; only the activator moves, via
+dnd-kit's own `setActivatorNodeRef`. Reorder, drop, preview, animation and
+state are untouched.
+
+A click on the handle does nothing at all: it does not fold (it stops its own
+click before the header sees it) and it does not clear the selection (it is on
+the backdrop exclusion list). A modifier suppresses the drag there too. Being a
+LAYOUT affordance it exists only where layout editing does; elsewhere its space
+stays reserved but empty and pointer-transparent, the same rule the resize
+gutter follows, so the header does not shift when the mode changes.
+
+Tabs and folder tiles keep the old arrangement: the compact element is its own
+handle and has no large free area to make a false promise.
+
+**Consequence for the background clear:** the free category area is no longer a
+drag surface, so no drag engine forfeits a click there any more. A press that
+has EVER travelled past the threshold now forfeits its click by itself, which
+keeps "wander off and come back" from clearing the selection.
+
 ## Open decisions
 
 The following are still open:
