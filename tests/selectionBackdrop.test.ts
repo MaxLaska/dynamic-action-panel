@@ -99,8 +99,13 @@ beforeAll(() => {
 function buildPanel() {
     const panel = new FakeElement('div', { class: 'buttons-panel-panel-content' });
     const list = panel.append(new FakeElement('div', { class: 'buttons-panel-list-mode' }));
+    // The real list block, as dnd-kit renders it: a sortable, and therefore
+    // role="button" — which is what used to hide its free area from the rule.
     const category = list.append(
-        new FakeElement('div', { class: 'buttons-panel-category category-drag-handle' })
+        new FakeElement('div', {
+            class: 'buttons-panel-category sortable-category-item category-drag-handle',
+            attrs: { role: 'button', tabindex: '0' },
+        })
     );
     const title = category.append(
         new FakeElement('div', {
@@ -132,6 +137,21 @@ function buildPanel() {
         new FakeElement('select', { class: 'ocap-variant-select' })
     );
     const outside = new FakeElement('div', { class: 'workspace-leaf' });
+    // Drag handles whose CLICK does something: a tab switches, a tile opens.
+    const tabs = panel.append(new FakeElement('div', { class: 'buttons-panel-tabs' }));
+    const tab = tabs.append(
+        new FakeElement('div', {
+            class: 'sortable-category-tab category-drag-handle',
+            attrs: { role: 'button' },
+        })
+    );
+    const tabLabel = tab.append(new FakeElement('span', { class: 'tab-label' }));
+    const folder = panel.append(
+        new FakeElement('div', {
+            class: 'sortable-category-folder category-drag-handle',
+            attrs: { role: 'button' },
+        })
+    );
 
     return {
         panel,
@@ -148,6 +168,9 @@ function buildPanel() {
         variantBar,
         variantSelect,
         outside,
+        tab,
+        tabLabel,
+        folder,
     };
 }
 
@@ -161,7 +184,7 @@ describe('empty panel background clears; everything else keeps its meaning', () 
         expect(isSelectionBackdrop(asElement(dom.list), panel)).toBe(true);
     });
 
-    it('treats the free area of a category as backdrop', () => {
+    it('treats the free area of a category as backdrop — the grab surface too', () => {
         // The category block is also the list-view drag handle, which is
         // exactly why the decision waits for the click (see
         // CellSelectionBackdrop) instead of firing on the press.
@@ -179,6 +202,9 @@ describe('empty panel background clears; everything else keeps its meaning', () 
         ['a palette swatch', 'swatch'],
         ['the variant bar', 'variantBar'],
         ['the variant dropdown', 'variantSelect'],
+        ['a category TAB, which switches tabs on click', 'tab'],
+        ['the label inside a tab', 'tabLabel'],
+        ['a folder TILE, which opens the folder on click', 'folder'],
     ];
 
     for (const [label, key] of controls) {

@@ -48,6 +48,19 @@ const INTERACTIVE_SELECTOR = [
 ].join(', ');
 
 /**
+ * A drag handle whose CLICK means nothing: the list-view category block.
+ *
+ * dnd-kit gives every sortable element `role="button"`, so the block matches
+ * the control list above — yet a click on its free area does nothing at all;
+ * it is only ever grabbed. Left as a control, that area (where the grab cursor
+ * shows) silently refused to clear the selection, which is exactly the surface
+ * a hand reaches for. Only the list block qualifies: a category TAB switches
+ * tabs and a folder TILE opens the folder on click, so those stay controls
+ * even though they are drag handles too.
+ */
+const INERT_DRAG_SURFACE = '.sortable-category-item';
+
+/**
  * Whether a click on `target` landed on inert panel background.
  *
  * False for anything outside `panel` as well: a click in the editor, in a modal
@@ -64,7 +77,12 @@ export function isSelectionBackdrop(
     if (!panel.contains(target)) {
         return false;
     }
-    return target.closest(INTERACTIVE_SELECTOR) === null;
+    const control = target.closest(INTERACTIVE_SELECTOR);
+    // No control above the target: plain background. The nearest one being
+    // the list category block itself: its free area, which is a grab surface
+    // and nothing else. Anything inside the block that IS a control — the
+    // title, the grid, a tool — is closer than the block and wins here.
+    return control === null || control.matches(INERT_DRAG_SURFACE);
 }
 
 /** The selector itself, so a test can state the contract without a DOM. */
