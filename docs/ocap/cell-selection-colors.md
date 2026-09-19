@@ -319,8 +319,28 @@ Schaltfläche noch einen Modus.
 Hintergrund ist nichts, was jemand rendert, sondern das, was zwischen den Dingen übrig bleibt. Die
 Kontrollen zu benennen ist die kürzere und ehrlichere Liste — und eine neue Kontrolle, die dort
 vergessen wird, fällt laut auf (ihr Klick leert zusätzlich die Auswahl) statt leise (ihr Klick
-hörte auf zu funktionieren). Ausgenommen sind: Grid, Grid-Rahmen und Zellen, Tools, Farbleiste,
-Kategorietitel, Variant-Bar und jede gewöhnliche Schaltfläche, Eingabe oder Link.
+hörte auf zu funktionieren).
+
+**Auf der Liste steht nur, was selbst eine Klick-Aktion hat (normativ seit 2026-09-20).**
+
+> Ein Container ist keine Kontrolle, nur weil er eine enthält.
+
+Die Liste wird mit `closest` ausgewertet, riegelt also jeweils den ganzen Teilbaum ab — richtig für
+eine Kontrolle (ihr Symbol und ihre Beschriftung gehören zu ihr), falsch für eine Leiste, die bloß
+Kontrollen trägt. Genau daran lag es, dass die **freie Fläche rechts neben den Farbfeldern** und
+**neben den Variant-Schaltflächen** nicht leerte: Farbleiste und Variant-Bar standen selbst auf der
+Liste. Sie stehen es nicht mehr; ihre Schaltflächen sind ohnehin `button` und bleiben ausgenommen.
+
+Ausgenommen sind damit: **Kontrollen** — Tools, Farbfelder samt `Clear`, das `+`, Resize-Griffe,
+Variant-Dropdown und dessen Schaltflächen, Tabs, Folder-Kacheln, Eingaben, Links, Kategorietitel
+(die ganze Zeile klappt) und der Kategorie-Handle — sowie **das Grid**: Zellen, Grid und Rahmen.
+Letzteres nicht, weil es Kontrollen wären, sondern weil dort das Grid entscheidet, was ein Druck
+bedeutet (Tool ausführen, mit Modifier auswählen, Datei ablegen) und die 4-px-Lücke bewusst nichts
+tut. Eine leere Zelle ist Drop-Ziel und Erzeugungsort, kein übrig gebliebener Platz.
+
+**Die Fläche reicht so weit wie die DAP-Ansicht.** Gehorcht wird auf dem `view-content` dieser
+Ansicht, nicht nur auf dem gerenderten Panel: Der leere Raum **unter der letzten Kategorie** gehört
+genauso dazu wie die Lücke zwischen zweien. Editor, Modal und andere Leaves bleiben außen vor.
 
 **Entschieden wird beim KLICK, nie beim PointerDown.** In der List-View ist genau dieser Hintergrund
 auch der Griff des Kategorie-Drags; ein Leeren beim Drücken würde die Auswahl zu Beginn jedes
@@ -328,7 +348,7 @@ Kategorie-Drags zerstören. Der Druck wird nur gemerkt; erst wenn feststeht, das
 war — höchstens 4 px Weg, dieselbe Schwelle wie überall —, wird geleert. Ein Drag, der tatsächlich
 gestartet ist, verwirkt seinen Klick zusätzlich unabhängig von der Distanz.
 
-**Die freie Fläche der Kategorie gehört dazu (normativ seit 2026-09-19).** Die Fläche des
+**Die freie Fläche der Kategorie gehört dazu (normativ seit 2026-09-19, erweitert 2026-09-20).** Die Fläche des
 Kategorieblocks — neben und unter dem Grid — ist Hintergrund: ein kurzer Klick leert die Auswahl.
 Seit der Kategorie-Handle existiert (Abschnitt 5a) ist sie überhaupt keine Griff-Fläche mehr, also
 auch kein Sonderfall: Der Block trägt `role="button"` nicht mehr, dnd-kits Aktivator-Props sitzen

@@ -1,11 +1,29 @@
 # OCAP – Status
 
-Last updated: 2026-09-20 (The colour palette now speaks the same grammar as
-the grid — plain acts, Shift adds, Ctrl/Cmd removes; implemented locally and
-live-smoke-tested in an isolated Obsidian; awaiting the user's own manual
-acceptance)
+Last updated: 2026-09-20 (Free panel surface now really clears the
+selection — beside the swatches, beside the variant controls, inside a
+category and below the last one; implemented locally and live-smoke-tested
+in an isolated Obsidian; awaiting the user's own manual acceptance)
 
 ## Newest work first
+
+- **A container is not a control (2026-09-20) — implemented locally,
+  live-smoke-tested, deployed only to the disposable smoke vault. Not pushed,
+  not in the productive vault.** Normative: `cell-selection-colors.md` §4.4;
+  `DECISIONS.md` "A container is not a control because it holds one".
+  - **The backdrop list now names only elements whose own click acts.** The
+    colour palette and the variant bar were on it as containers, so `closest`
+    walled off their whitespace and the user had to hunt for the strip between
+    two categories to deselect. Their buttons stay excluded on their own
+    account; the grid stays listed, because the grid decides what a press on a
+    cell means.
+  - **The surface is this view's `view-content`**, so the empty room below the
+    last category clears too. Editor, modal and other leaves stay out.
+  - Click-vs-drag, the travel threshold and every control's own action are
+    unchanged.
+  - Tests **1295/1295**, `tsc`, `eslint`, build green. **Live smoke 398/398**
+    over twelve stages, 0 console problems. The variant bar's whitespace is
+    covered by unit tests only — see HANDOFF §2l.
 
 - **The palette speaks the grammar of the grid (2026-09-20) — implemented
   locally, live-smoke-tested, deployed only to the disposable smoke vault. Not

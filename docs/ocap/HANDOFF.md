@@ -834,6 +834,31 @@ Normativ: `docs/ocap/cell-selection-colors.md` §8 (Grammatik), §10.1 (Tooltip)
   Intent-Store bleibt danach also „gehalten"; Stufe 11 gibt die Taste explizit
   frei. Im echten Betrieb liefert jedes Loslassen ein `keyup`.
 
+### 2l. Hintergrund-Klick: freie Fläche heißt freie Fläche (2026-09-20)
+
+Normativ: `docs/ocap/cell-selection-colors.md` §4.4. `DECISIONS.md`: „A
+container is not a control because it holds one".
+
+- **`selectionBackdrop.ts`** ist jetzt in zwei benannte Gruppen geteilt:
+  `SELF_ACTING_CONTROLS` (Kategorietitel, Handle, `button`, `a`, `input`,
+  `select`, `textarea`, `label`, Rollen, `contenteditable`) und
+  `GRID_SURFACES` (`[data-slot]`, `.ocap-grid-frame`, `.ocap-palette-grid`).
+  Entfernt: `.ocap-cell-palette` und `.ocap-variant-bar` — das waren
+  Container, und `closest` machte daraus Wände. Export
+  `SELECTION_BACKDROP_GROUPS` für den Test.
+- **`CellSelectionBackdrop`** hört auf
+  `panel.closest('.view-content.buttons-panel') ?? panel` (Variable
+  `surface`), damit auch der leere Raum unter der letzten Kategorie zählt.
+  Klick-vs-Drag, Travel-Schwelle und Drag-Verwirkung unverändert.
+- Tests gesamt **1295** (+9 in `tests/selectionBackdrop.test.ts`: Whitespace in
+  Farbleiste und Variant-Bar ist Hintergrund, deren Buttons nicht; „kein
+  Container auf der Liste"; die Gruppen erklären jeden Eintrag).
+  Live-Smoke **398/398** über zwölf Stufen, neue Stufe 12 (23).
+- **Nicht live geprüft:** die freie Fläche der Variant-Bar — das Fixture hat
+  keine dynamische Kategorie, und ein fehlerhaft geformter `StoredVariant`
+  (ohne `placements`) reißt das Rendering mit „e is not iterable" mit. Der
+  Fall ist strukturgleich zur Farbleiste und im Unit-Test abgedeckt.
+
 ### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
 
 `ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&

@@ -1182,6 +1182,33 @@ grid already uses (a swatch shows the plus and the minus like a cell does).
 Both modifiers held resolve as everywhere else — Shift wins, and tooltip and
 cursor say "add".
 
+## 2026-09-20 – A container is not a control because it holds one
+
+**Decision:** the backdrop's exclusion list names only elements whose OWN click
+does something. A bar that merely holds controls never belongs on it.
+
+The list is matched with `closest`, so every entry walls off its whole subtree.
+That is right for a control — its icon and its label are part of it — and wrong
+for a container: the colour palette and the variant bar were listed, so every
+free pixel beside their buttons stopped clearing the selection, and the user had
+to hunt for the thin strip between two categories to deselect. Both are off the
+list; their buttons are `button` elements and stay excluded on their own
+account.
+
+The grid stays on the list, and not as a control: what a press on a cell means
+is the grid's decision (run the tool, select with a modifier, drop a file), and
+the 4px gutter between two cells deliberately means nothing. An empty cell is a
+drop target and a creation spot, not leftover space. The two groups are named
+separately in the source so the reason for each entry is visible.
+
+**The surface is the whole view, not just the rendered panel.** The listener
+sits on this view's `view-content`, so the empty room below the last category
+counts like the gap between two of them. It stops at the view: the editor, a
+modal and another leaf remain none of the panel's business.
+
+Click-vs-drag is unchanged: nothing happens on the press, a click decides, and a
+press that ever travelled past the shared threshold forfeits its click.
+
 ## Open decisions
 
 The following are still open:
