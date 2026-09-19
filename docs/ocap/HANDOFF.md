@@ -799,6 +799,41 @@ category moves only by its handle".
   Stufen; Stufen 4/7/8/9 auf Handle bzw. Attribut umgestellt, neue Stufe 10
   (57) liest Cursor als `getComputedStyle(elementFromPoint(...))`.
 
+### 2k. Palette-Grammatik, Tooltip, Swatch-Cursor (2026-09-20)
+
+Normativ: `docs/ocap/cell-selection-colors.md` §8 (Grammatik), §10.1 (Tooltip),
+§7.2, §4.2, §8.2. `DECISIONS.md`: „The palette speaks the grammar of the grid".
+
+- **Pure Entscheidung:** neu `src/utils/cellPaletteAction.ts` —
+  `cellPaletteMeaning(gesture, hasSelection, isClear)` liefert `action`
+  (`apply` | `select-group` | `add-group` | `remove-group` | `none`), die
+  Selection-Geste, `writes`, `arms` und den Tooltip-Key. Einzige Stelle mit
+  Palette-Semantik; Click-Handler und Tooltip lesen dieselbe Funktion.
+- **Wichtig:** Auswählen ist `add`, nie `replace` — damit gilt die
+  Cross-Grid-Regel unverändert (ein `add` darf den einen Kontext holen, ein
+  `remove` nie). `replace` hat auf der Farbleiste keinen Aufrufer mehr und
+  bleibt nur die Rechteck-Vorschau.
+- **`CellColorPalette`** liest zusätzlich `useSelectionModifierIntent()` für
+  den Live-Tooltip; kein `shiftKey`/`ctrlKey` mehr in der Komponente.
+- **Gehaltener Modifier als Store:** `CellSelectionModifierCursor` publiziert
+  seinen Intent jetzt zusätzlich in einen Modul-Store
+  (`useSyncExternalStore`); ein zweiter Satz Key-Listener entfällt damit. Das
+  Attribut `data-ocap-selection-intent` bleibt unverändert der CSS-Träger.
+- **Cursor:** eine Regel in `PaletteGrid.css` —
+  `body .buttons-panel .ocap-cell-palette button.ocap-cell-swatch { cursor:
+  var(--ocap-selection-cursor, pointer); }`. Keine zweite Cursor-Mechanik.
+- **i18n:** `cell_color_swatch_hint` entfernt, dafür neun Keys
+  `cell_palette_tip_*` in `en`, `ru`, `zh`. Der Farbname kommt als `{color}`
+  (kleingeschrieben) aus dem bestehenden Label.
+- Tests gesamt **1286** (neu `tests/cellPaletteAction.test.ts`, 25 — inkl.
+  Durchlauf der Entscheidung gegen den echten Selection-Core und Prüfung aller
+  Locale-Strings). Live-Smoke **375/375** über elf Stufen; Stufen 4/8 auf die
+  neue Grammatik umgestellt, neue Stufe 11 (68) prüft Semantik, Tooltip-Text
+  und Swatch-Cursor in Locked und Edit.
+- Harness-Notiz: Ein Klick mit Maus-Modifier erzeugt kein `keyup`, der
+  Intent-Store bleibt danach also „gehalten"; Stufe 11 gibt die Taste explizit
+  frei. Im echten Betrieb liefert jedes Loslassen ein `keyup`.
+
 ### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
 
 `ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&

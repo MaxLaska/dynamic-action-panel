@@ -1,11 +1,34 @@
 # OCAP – Status
 
-Last updated: 2026-09-19 (Honest cursors and a dedicated category drag
-handle, on top of the one-selection-context round; implemented locally and
+Last updated: 2026-09-20 (The colour palette now speaks the same grammar as
+the grid — plain acts, Shift adds, Ctrl/Cmd removes; implemented locally and
 live-smoke-tested in an isolated Obsidian; awaiting the user's own manual
 acceptance)
 
 ## Newest work first
+
+- **The palette speaks the grammar of the grid (2026-09-20) — implemented
+  locally, live-smoke-tested, deployed only to the disposable smoke vault. Not
+  pushed, not in the productive vault.** Normative:
+  `cell-selection-colors.md` §8, §10.1, §7.2, §4.2, §8.2; `DECISIONS.md` "The
+  palette speaks the grammar of the grid".
+  - **plain = primary action, Shift = add, Ctrl/Cmd = remove**, on swatches as
+    on cells. With nothing selected a plain click selects that colour's cells
+    (clear = the uncoloured ones); with a selection it paints it. Ctrl removes
+    that group, or does nothing when there is nothing to remove from.
+  - **Supersedes `Ctrl + swatch = replace the selection`** and the asymmetry it
+    carried. Selecting is an ADD, so the one-active-context rule holds
+    unchanged across grids.
+  - **Only a plain click with a selection writes**, and only it arms the paint
+    colour.
+  - **The tooltip states this click's effect in this state** and follows the
+    held key live; the swatch wears the same plus/minus cursors as a cell, from
+    the same tracker.
+  - One pure decision (`src/utils/cellPaletteAction.ts`) feeds click, tooltip
+    and cursor.
+  - Tests **1286/1286** (new `tests/cellPaletteAction.test.ts`), `tsc`,
+    `eslint`, build green. **Live smoke 375/375** over eleven stages, 0 console
+    problems.
 
 - **Honest cursors and a category drag handle (2026-09-19) — implemented
   locally, live-smoke-tested, deployed only to the disposable smoke vault. Not

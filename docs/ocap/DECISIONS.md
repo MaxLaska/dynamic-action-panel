@@ -711,6 +711,12 @@ the need for a "select cells" sub-mode entirely.
 
 ## 2026-09-18 – A modifier on the palette never writes
 
+> **Partly superseded on 2026-09-20** by "The palette speaks the grammar of the
+> grid": `Ctrl + swatch` no longer REPLACES the selection with the colour
+> group — it removes that group from the selection, and the plain click does
+> the selecting when there is nothing to paint. The rule that only a plain
+> click can write survives, in a sharper form.
+
 **Decision:** In the color palette a **plain click is the only gesture that
 changes the configuration**. `Ctrl + swatch` replaces the selection with every
 cell of that color, `Shift + swatch` adds them to it, and both work on `No
@@ -997,8 +1003,8 @@ This **supersedes** "Edit mode manages, locked mode executes" (2026-09-18).
 mode too — and a click on an empty cell does nothing. The old rule "plain click
 = replace the selection with this cell" is gone: it collided with using the
 tools, and choosing cells is now always an explicit, modified gesture. `replace`
-survives only as a set operation (Ctrl + swatch, and a rectangle's live
-preview).
+survives only as a set operation (a rectangle's live preview; since 2026-09-20
+the palette no longer uses it either).
 
 **Who decides what a click means:** the grid, in the CAPTURE phase, before the
 tool sees it (`gridClickMeaning`, pure and mode-free): `run-tool`, `select`, or
@@ -1129,6 +1135,52 @@ handle and has no large free area to make a false promise.
 drag surface, so no drag engine forfeits a click there any more. A press that
 has EVER travelled past the threshold now forfeits its click by itself, which
 keeps "wander off and come back" from clearing the selection.
+
+## 2026-09-20 – The palette speaks the grammar of the grid
+
+**Decision:** a swatch names a GROUP of cells — the cells of that colour in the
+grid on screen, with "no colour" being the uncoloured group — and the palette
+answers the same three gestures as the grid:
+
+|                | nothing selected            | something selected        |
+|----------------|-----------------------------|---------------------------|
+| plain click    | select that colour's cells  | paint the selection       |
+| Shift + click  | add that group              | add that group            |
+| Ctrl/Cmd click | nothing to remove: no-op    | remove that group         |
+
+This **supersedes** `Ctrl + swatch = replace the selection with every cell of
+this colour` (DECISIONS, 2026-09-18) and with it the "accepted asymmetry" that
+Ctrl meant *remove* on a cell and *replace* on a swatch. It was the only place
+left in the panel where Ctrl/Cmd did not mean remove. What replace was good for
+— "give me every blue cell" — is now the plain click, and precisely where that
+click had nothing to paint anyway. Removing a colour group from a selection,
+which the old rule had left for later, falls out for free.
+
+The rule that made the bar safe to explore survives in a sharper form: **only a
+plain click with a selection present writes**, and only that one arms the
+selection's paint colour (§8.2). Building a selection out of colour groups
+never arms anything.
+
+**Selecting is an ADD, never a REPLACE.** That is what it is — an add onto an
+empty selection — and it keeps the panel-wide context rule (§4.2) intact: an
+add may move the one active context to this grid, a remove may never reach
+across. So a plain swatch click in a grid that holds no selection takes the
+context there, and Ctrl in a foreign grid stays a no-op, exactly as on cells.
+
+**The tooltip states the effect of THIS click in THIS state** — "Select all
+blue cells", "Apply blue to selection", "Add all blue cells to selection",
+"Remove all blue cells from selection" — and changes live with the keys held.
+It replaces the old three-in-one manual (`Click: apply · Ctrl+click: select
+these cells · Shift+click: add them`). With Ctrl held and nothing selected it
+says that nothing would happen, rather than promising a removal: a tooltip that
+describes a state other than the current one is the manual again.
+
+**One decision function** (`cellPaletteAction.ts`) yields the action, the
+selection gesture and the tooltip key, so the click handler and the tooltip
+cannot drift apart; the cursor follows from the same held-modifier tracker the
+grid already uses (a swatch shows the plus and the minus like a cell does).
+Both modifiers held resolve as everywhere else — Shift wins, and tooltip and
+cursor say "add".
 
 ## Open decisions
 
