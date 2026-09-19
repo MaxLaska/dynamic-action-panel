@@ -29,7 +29,10 @@ interface CellColorPaletteProps {
 /**
  * The cell color palette of ONE grid.
  *
- * It sits below the grid and is mounted for the whole of edit mode rather than
+ * It is OPERATIVE, not an edit affordance: it is available in locked and edit
+ * mode alike, because colouring and choosing cells do not change the layout.
+ *
+ * It sits below the grid and is mounted whenever selection is available rather than
  * appearing with the first selection — for two concrete reasons:
  *
  * 1. A bar that appears on the first click pushes the grid down UNDER the

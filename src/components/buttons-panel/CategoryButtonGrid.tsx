@@ -33,6 +33,8 @@ import {
 } from '@/contexts/GridCellSelectionContext';
 import {
     gridCellColorOf,
+    gridClickMeaning,
+    isClickNotDrag,
     pruneToDimensions,
     sameSelectionContext,
     type CellSelectionGesture,
@@ -189,6 +191,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         paint,
         armPaint,
         setCellGestureActive,
+        available: selectionAvailable,
     } = useGridCellSelection();
     const { applyCellColor } = useCellColorActions();
 
@@ -207,10 +210,18 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         return { categoryId: category.id, variantId: resolution.variantId };
     }, [isGrid, isDynamic, resolution.variantId, category.id]);
 
+    // Selection is OPERATIVE: it works whether the layout is locked or not, so
+    // neither the mode nor the drag gate appears here. (Gating on
+    // `sortableEnabled` used to take every grid offline for the length of a
+    // category drag — the drag provider disables button sorting while a
+    // category moves — and the selection went with it.) What remains is: this
+    // is the rendering a user can point at, it addresses a real grid, and no
+    // search is filtering the panel.
+    //
     // A resize preview renumbers cells for the length of the gesture, so no
     // selection click is accepted while one is on screen.
     const selectionEnabled =
-        selectable && enableEditMode && sortableEnabled && selectionContext !== null;
+        selectable && selectionAvailable && selectionContext !== null;
     const selectionActive = selectionEnabled && !resizeDrag.preview;
 
     const rawSelectedCells = useSelectedCellsOf(category.id, resolution.variantId);
@@ -358,26 +369,51 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         event.stopPropagation();
     };
 
-    const handleGridClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    /**
+     * What a click on this grid MEANS — decided in the capture phase, before
+     * the tool underneath gets to see it.
+     *
+     *     plain click                → the tool runs (both modes); no selection
+     *     Shift click                → add this cell;    the tool does NOT run
+     *     Ctrl/Cmd click             → remove this cell; the tool does NOT run
+     *     the click ending a drag    → nothing at all
+     *
+     * A plain click no longer touches the selection. Using a tool and choosing
+     * cells are different acts, and the modifier is what says which one is
+     * meant — in locked and edit mode alike. The capture phase is what makes
+     * that enforceable: a click this handler claims is stopped before the
+     * tool's own handler (and the `+`, and the panel's backdrop listener)
+     * can run, and a plain click it leaves alone reaches the tool untouched.
+     */
+    const handleGridClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
         if (!selectionActive || selectionContext === null) {
             return;
         }
         const origin = pressOriginRef.current;
         pressOriginRef.current = null;
-        // A keyboard activation (Enter/Space on a focused tool) reports detail 0
-        // and has no travel at all, so it means exactly what a plain click on
-        // that cell means. Everything else has to prove it was a click:
-        // the SAME euclidean distance the drag sensor uses, so the two are
-        // exact complements and no press can fall between them and do nothing.
-        if (event.detail !== 0) {
-            if (origin === null) {
-                return;
-            }
-            const dx = event.clientX - origin.x;
-            const dy = event.clientY - origin.y;
-            if (Math.sqrt(dx * dx + dy * dy) > RESIZE_DRAG_THRESHOLD_PX) {
-                return;
-            }
+
+        const gesture = gestureOfEvent(event);
+        const meaning = gridClickMeaning(
+            gesture,
+            // An activated drag has already dropped the origin (see the effect
+            // above), so its closing click cannot pass as one.
+            isClickNotDrag(
+                event.detail,
+                origin,
+                { x: event.clientX, y: event.clientY },
+                RESIZE_DRAG_THRESHOLD_PX
+            )
+        );
+        if (meaning === 'run-tool') {
+            // Left alone, so it reaches the tool, which runs in either mode.
+            return;
+        }
+        // Everything else is kept from the tool: a selection gesture, the
+        // click ending a drag (moving a tool must never also run it), the
+        // click ending a rectangle, and macOS' Ctrl secondary click.
+        event.stopPropagation();
+        if (meaning === 'ignore' || gesture === null) {
+            return;
         }
         const target = event.target as HTMLElement | null;
         const cellEl = target?.closest('[data-slot]');
@@ -388,10 +424,6 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         }
         const slot = Number(cellEl.getAttribute('data-slot'));
         if (!Number.isInteger(slot) || slot < 0) {
-            return;
-        }
-        const gesture = gestureOfEvent(event);
-        if (gesture === null) {
             return;
         }
         // Pin the variant the moment a selection starts in a dynamic category.
@@ -622,6 +654,10 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                                           // mode is the context-resolved
                                           // variant and not an edited one.
                                           variantId: resolution.variantId,
+                                          // Aimed at a tool the user could see:
+                                          // a deliberate replace, which needs
+                                          // no announcement.
+                                          replacing: button !== null,
                                       }),
                               }
                             : undefined
@@ -647,7 +683,9 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                     selectionActive ? handleGridPointerDownCapture : undefined
                 }
                 onPointerDown={selectionActive ? handleGridPointerDown : undefined}
-                onClick={selectionActive ? handleGridClick : undefined}
+                // CAPTURE, so the grid decides what a click means before the
+                // tool below runs (see handleGridClickCapture).
+                onClickCapture={selectionActive ? handleGridClickCapture : undefined}
             >
                 {cells}
                 {/* The PERSISTENT layer: the contour of what is selected right

@@ -38,7 +38,7 @@ export interface CellPaintColor {
 
 interface GridCellSelectionValue {
     state: GridCellSelectionState;
-    /** One gesture on one cell (plain click / Shift / Ctrl). */
+    /** One gesture on one cell (a Shift or Ctrl/Cmd click). */
     selectCell: (
         context: GridSelectionContextKey,
         cell: GridCellKey,
@@ -50,7 +50,7 @@ interface GridCellSelectionValue {
         cells: readonly GridCellKey[],
         gesture: CellSelectionGesture
     ) => void;
-    /** Drop the selection entirely (Escape, mode change). */
+    /** Drop the selection entirely (Escape, a click on empty background). */
     clearCellSelection: () => void;
     /**
      * Announce that a VISIBLE, interactive rendering of this grid exists.
@@ -87,6 +87,14 @@ interface GridCellSelectionValue {
      */
     cellGestureActive: boolean;
     setCellGestureActive: (active: boolean) => void;
+    /**
+     * Whether cells can be selected at all right now.
+     *
+     * NOT a mode flag: selection is operative and works in locked and edit
+     * mode alike. The one thing that suspends it is a search, because a
+     * filtered grid shows a filtered occupancy rather than the stored one.
+     */
+    available: boolean;
 }
 
 const DEFAULT_VALUE: GridCellSelectionValue = {
@@ -99,6 +107,7 @@ const DEFAULT_VALUE: GridCellSelectionValue = {
     armPaint: () => {},
     cellGestureActive: false,
     setCellGestureActive: () => {},
+    available: false,
 };
 
 const GridCellSelectionContext = createContext<GridCellSelectionValue>(DEFAULT_VALUE);
@@ -115,6 +124,7 @@ export const GridCellSelectionProvider: React.FC<
     armPaint,
     cellGestureActive,
     setCellGestureActive,
+    available,
     children,
 }) => {
     const value = React.useMemo(
@@ -128,6 +138,7 @@ export const GridCellSelectionProvider: React.FC<
             armPaint,
             cellGestureActive,
             setCellGestureActive,
+            available,
         }),
         [
             state,
@@ -139,6 +150,7 @@ export const GridCellSelectionProvider: React.FC<
             armPaint,
             cellGestureActive,
             setCellGestureActive,
+            available,
         ]
     );
     return (

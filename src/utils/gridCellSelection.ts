@@ -11,8 +11,11 @@
 //   `variantId === null` means the static grid of that category;
 // - at most one grid in the panel carries a selection — there is no hidden
 //   multi-grid selection state;
-// - the three gestures are fixed: plain click REPLACES, Shift ADDS, Ctrl/Cmd
-//   REMOVES. Shift never deselects, Ctrl never selects, and there is no toggle;
+// - the three gestures are fixed: REPLACE, ADD (Shift), REMOVE (Ctrl/Cmd).
+//   Shift never deselects, Ctrl never selects, and there is no toggle. Since
+//   2026-09-19 a plain CLICK on a cell no longer produces `replace` — it runs
+//   the tool (see `gridClickMeaning`); `replace` remains the set operation of
+//   the palette's Ctrl+swatch and of a rectangle's live preview;
 // - the selection is ephemeral UI state. Nothing here touches, reads or
 //   produces persisted settings, and no type in this module is allowed into
 //   `src/types/settings.ts`.
@@ -67,7 +70,7 @@ export const NO_CELL_SELECTION: GridCellSelectionState = {
 /**
  * The three decided gestures.
  *
- * `replace` is the plain click, `add` is Shift, `remove` is Ctrl (Cmd on
+ * `replace` is an unmodified activation, `add` is Shift, `remove` is Ctrl (Cmd on
  * macOS). There is deliberately no `toggle`.
  */
 export type CellSelectionGesture = 'replace' | 'add' | 'remove';
@@ -164,6 +167,60 @@ export function hasSelectionModifierFlags(
 ): boolean {
     const gesture = cellGestureOf(flags, isMac);
     return gesture === null || gesture !== 'replace';
+}
+
+/**
+ * What a click on a grid cell MEANS (since 2026-09-19), in either mode:
+ *
+ * - `run-tool` — a plain click. The tool on the cell runs; the selection is
+ *   not touched. Using a tool and choosing cells are different acts, and it is
+ *   the modifier, not the mode, that says which one is meant;
+ * - `select` — a Shift or Ctrl/Cmd click. It edits the selection and the tool
+ *   does NOT run;
+ * - `ignore` — nothing happens and the tool does not run either: the click
+ *   that ends a drag (a tool moved away and back releases on its own button),
+ *   the click that ends a modifier rectangle, and macOS' Ctrl secondary click.
+ *
+ * There is deliberately no mode parameter. A caller that wants one has
+ * reintroduced the old "locked executes, edit selects" model.
+ */
+export type GridClickMeaning = 'run-tool' | 'select' | 'ignore';
+
+export function gridClickMeaning(
+    gesture: CellSelectionGesture | null,
+    wasClick: boolean
+): GridClickMeaning {
+    if (!wasClick || gesture === null) {
+        return 'ignore';
+    }
+    return gesture === 'replace' ? 'run-tool' : 'select';
+}
+
+/**
+ * Whether a pointer activation was a click rather than the end of a drag.
+ *
+ * A keyboard activation (Enter/Space on a focused tool) reports `detail === 0`
+ * and never travelled, so it always is. A pointer has to prove it: it must
+ * still have a remembered press (an activated drag forgets it on purpose,
+ * because a drag that comes back ends near its start) and must have travelled
+ * no further than the drag sensor's own euclidean threshold, so "click" and
+ * "drag" stay exact complements with nothing falling between them.
+ */
+export function isClickNotDrag(
+    detail: number,
+    origin: { x: number; y: number } | null,
+    point: { x: number; y: number },
+    threshold: number
+): boolean {
+    if (detail === 0) {
+        return true;
+    }
+    if (origin === null) {
+        return false;
+    }
+    const dx = point.x - origin.x;
+    const dy = point.y - origin.y;
+    return Math.sqrt(dx * dx + dy * dy) <= threshold;
 }
 
 /** Whether two grid contexts address the same grid. */

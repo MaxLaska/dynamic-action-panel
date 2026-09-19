@@ -22,6 +22,8 @@ import {
 } from '@/contexts/GridCellSelectionContext';
 import { CellSelectionEscape } from '@/components/buttons-panel/CellSelectionEscape';
 import { CellSelectionBackdrop } from '@/components/buttons-panel/CellSelectionBackdrop';
+import { CellSelectionLayoutDragHold } from '@/components/buttons-panel/CellSelectionLayoutDragHold';
+import { allowsLayoutEditing } from '@/utils/interactionMode';
 import {
     NO_CELL_SELECTION,
     applyCellGesture,
@@ -64,7 +66,8 @@ export const PanelContent: React.FC<PanelContentProps> = ({
     const displayStyle = panelConfig.displayStyle ?? 'icon_top';
     const enableAnimation = panelConfig.enableAnimation ?? false;
     const interactionMode = panelConfig.interactionMode ?? 'edit';
-    const enableEditMode = interactionMode === 'edit';
+    // The modes differ in exactly one thing: whether the LAYOUT may change.
+    const enableEditMode = allowsLayoutEditing(interactionMode);
     const tabsWrap = panelConfig.tabsWrap ?? false;
     const listAutoCollapse = panelConfig.listAutoCollapse ?? false;
 
@@ -291,6 +294,19 @@ export const PanelContent: React.FC<PanelContentProps> = ({
      */
     const gridInstancesRef = React.useRef<GridInstanceCounter>(createGridInstanceCounter());
 
+    /**
+     * A category is being dragged — a LAYOUT gesture, during which grids are
+     * legitimately absent without being gone.
+     *
+     * Reordering a category does not change which grid a selection belongs to,
+     * yet it made the selection vanish: the dragged category's grid is swapped
+     * for its drag preview for the length of the drag, so its last rendering
+     * deregisters and the deferred check below found nobody home. While this
+     * is set the check stands down, and the drop re-asks the question once the
+     * real grid is back (see `handleLayoutDragChange`).
+     */
+    const layoutDragActiveRef = React.useRef(false);
+
     const registerSelectableGrid = React.useCallback(
         (context: GridSelectionContextKey) => {
             const release = gridInstancesRef.current.register(context);
@@ -300,6 +316,9 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 // registers again inside the same React commit, so by now the
                 // count tells a remount from a real goodbye.
                 window.setTimeout(() => {
+                    if (layoutDragActiveRef.current) {
+                        return;
+                    }
                     if (gridInstancesRef.current.liveCount(context) > 0) {
                         return;
                     }
@@ -311,25 +330,54 @@ export const PanelContent: React.FC<PanelContentProps> = ({
     );
 
     /**
+     * Start and end of a category drag, reported from inside the drag provider
+     * (see CellSelectionLayoutDragHold). On the drop, the question the
+     * deregistrations were not allowed to ask is asked once — one turn later,
+     * so the reordered grid has remounted first. If the grid really is gone by
+     * then, the selection goes with it, exactly as it would have without the
+     * drag.
+     */
+    const handleLayoutDragChange = React.useCallback((active: boolean) => {
+        layoutDragActiveRef.current = active;
+        if (active) {
+            return;
+        }
+        window.setTimeout(() => {
+            setCellSelection((prev) =>
+                prev.context !== null &&
+                gridInstancesRef.current.liveCount(prev.context) === 0
+                    ? NO_CELL_SELECTION
+                    : prev
+            );
+        }, 0);
+    }, []);
+
+    /**
      * The selection may only exist while the grid it names is the one actually
      * on screen. Checked here, against the very state the panel renders from,
-     * instead of by scattered exit() calls in every mode switch, collapse
-     * handler and variant action:
+     * instead of by scattered exit() calls in every collapse handler and
+     * variant action:
      *
-     * - edit mode only (locked has no selection, and no palette to use it);
      * - not while a search filters the panel (the grid then shows a filtered
-     *   occupancy and dragging is off too);
+     *   occupancy, not the stored one);
      * - the category still exists, is still a grid, and is still visible;
      * - the variant on screen is still exactly the one the selection names —
      *   this is what catches a context switch in Obsidian swapping the grid of
      *   a dynamic category under the pointer.
+     *
+     * The MODE is deliberately not on this list. Selection is operative and
+     * works in both modes; locking only protects the layout, so a toggle is
+     * not a change of grid and must not cost the user their selection. The
+     * variant is compared against the grid view the projection actually
+     * renders, which is right in both modes — the edited variant in edit mode,
+     * the context-resolved one in locked mode.
      */
     React.useEffect(() => {
         const context = cellSelection.context;
         if (context === null) {
             return;
         }
-        if (!enableEditMode || normalizedQuery.length > 0) {
+        if (normalizedQuery.length > 0) {
             setCellSelection(NO_CELL_SELECTION);
             return;
         }
@@ -338,11 +386,11 @@ export const PanelContent: React.FC<PanelContentProps> = ({
             setCellSelection(NO_CELL_SELECTION);
             return;
         }
-        const shownVariantId = normalizedSelection[category.id]?.current ?? null;
+        const shownVariantId = projection.gridViews.get(category.id)?.variantId ?? null;
         if (shownVariantId !== context.variantId) {
             setCellSelection(NO_CELL_SELECTION);
         }
-    }, [cellSelection.context, enableEditMode, normalizedQuery, filteredCategories, normalizedSelection]);
+    }, [cellSelection.context, normalizedQuery, filteredCategories, projection.gridViews]);
 
     // Escape clears the selection. The handler lives in CellSelectionEscape,
     // mounted inside the drag provider below, because the rule has to yield to
@@ -411,6 +459,9 @@ export const PanelContent: React.FC<PanelContentProps> = ({
                 selectCells={selectCells}
                 clearCellSelection={clearCellSelection}
                 registerSelectableGrid={registerSelectableGrid}
+                // Selection is operative in BOTH modes; only a search suspends
+                // it, because a filtered grid does not show the stored occupancy.
+                available={normalizedQuery.length === 0}
                 paint={cellPaint}
                 armPaint={setCellPaint}
                 cellGestureActive={cellGestureActive}
@@ -439,6 +490,7 @@ export const PanelContent: React.FC<PanelContentProps> = ({
             >
                 <CellSelectionEscape panelRef={panelContentRef} />
                 <CellSelectionBackdrop panelRef={panelContentRef} />
+                <CellSelectionLayoutDragHold onActiveChange={handleLayoutDragChange} />
                 {panelContent}
             </ButtonDragProvider>
             </GridCellSelectionProvider>

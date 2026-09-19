@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { GridCellStyles } from '@/types/settings';
-import { allowsCellSelection, executesToolActions } from '@/utils/interactionMode';
+import { allowsLayoutEditing } from '@/utils/interactionMode';
 import {
     NO_CELL_SELECTION,
     allGridCellKeys,
@@ -377,25 +377,13 @@ describe('the selection never becomes data', () => {
 });
 
 describe('what each interaction mode means', () => {
-    it('executes a tool ONLY in locked mode', () => {
-        // The deliberate behaviour change: edit mode manages, locked executes.
-        // A real <button> turns Enter and Space into the same click, so this one
-        // predicate covers the pointer and the keyboard alike.
-        expect(executesToolActions('locked')).toBe(true);
-        expect(executesToolActions('edit')).toBe(false);
-    });
-
-    it('selects cells ONLY in edit mode', () => {
-        expect(allowsCellSelection('edit')).toBe(true);
-        expect(allowsCellSelection('locked')).toBe(false);
-    });
-
-    it('never lets both meanings apply to one activation', () => {
-        // If a mode ever both executed and selected, a single click would run a
-        // script AND change the selection.
-        for (const mode of ['locked', 'edit'] as const) {
-            expect(executesToolActions(mode) && allowsCellSelection(mode)).toBe(false);
-        }
+    // Since 2026-09-19 the two modes differ in ONE thing: whether the layout
+    // may change. Running a tool and selecting cells are operative and work in
+    // both; what a click means is decided by the MODIFIER, not by the mode
+    // (see tests/operativeSelection.test.ts for the click contract).
+    it('allows layout editing only in edit mode', () => {
+        expect(allowsLayoutEditing('edit')).toBe(true);
+        expect(allowsLayoutEditing('locked')).toBe(false);
     });
 });
 

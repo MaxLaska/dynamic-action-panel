@@ -24,6 +24,14 @@ export interface SlotDropTarget {
      * the workspace context resolved to. Omitted for a static grid.
      */
     variantId?: string | null;
+    /**
+     * The drop landed on a cell that already held a tool, i.e. it REPLACES.
+     *
+     * A replace is silent: aiming a file at a tool the user can see is already
+     * the deliberate act, and the tool changing under the pointer is all the
+     * feedback it needs. Only a drop onto an empty cell is announced.
+     */
+    replacing?: boolean;
 }
 
 /**
@@ -35,14 +43,15 @@ export interface SlotDropTarget {
  * script) tool; an annotation dragged out of a reader becomes an Open file tool
  * pointed at the exact place inside the document.
  *
- * It works in LOCKED mode too, and that is deliberate: locked is the working
- * mode, and filing a PDF onto a slot is work, not layout. What stays edit-only
- * is everything that rearranges what is already there — move, swap, reorder,
- * resize, selection, colours, the `+`. A drop brings something IN.
+ * It works in LOCKED mode too, and that is deliberate: locked only protects the
+ * LAYOUT, and filing a PDF onto a slot is work, not layout. What stays
+ * edit-only is everything that rearranges what is already there — move, swap,
+ * reorder, resize, the `+`. A drop brings something IN.
  *
- * A drop on an OCCUPIED slot replaces it, without a confirmation: aiming a file
- * at a particular cell is already the deliberate act, and a dialog on top of it
- * would only be a second one.
+ * A drop on an OCCUPIED slot replaces it, silently: no confirmation and no
+ * notice. Aiming a file at a particular tool is already the deliberate act; a
+ * dialog on top of it would only be a second one, and the tool changing under
+ * the pointer is all the feedback a replace needs.
  *
  * Everything the decision needs is already in the gesture: the payload says what
  * the tool does, the slot says where it goes, and the variant selector says
@@ -133,7 +142,7 @@ export function useSlotFileDrop() {
                 // Only announce the new tool if it was actually committed. A
                 // configuration from a newer build refuses the write, and the
                 // funnel has already explained that.
-                if (await commitToolState(plugin, next)) {
+                if ((await commitToolState(plugin, next)) && target.replacing !== true) {
                     new Notice(t(draft.noticeKey));
                 }
             })();

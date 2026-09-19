@@ -6,7 +6,7 @@ import { RESIZE_DRAG_THRESHOLD_PX, slotColumn, slotRow } from '@/utils/categoryG
 import { hasSelectionModifier } from '@/utils/cellSelectionGesture';
 import { t, tWithParams } from '@/utils/i18n';
 
-/** Vault-file drop handling of ONE empty slot (edit mode only). */
+/** Vault-file drop handling of ONE slot, empty or filled, in either mode. */
 export interface GridSlotFileDrop {
     /** Whether this drag carries something a slot can turn into a tool. */
     canAccept: (dataTransfer: DataTransfer | null) => boolean;
@@ -18,7 +18,7 @@ interface GridSlotCellProps {
     slot: number;
     /** Column count of THIS grid — the slot index is read against it. */
     columns: number;
-    /** Registers the slot as a drop target (edit mode only). */
+    /** Registers the slot as a target of the INTERNAL layout drag (edit mode only). */
     droppableEnabled: boolean;
     /** The pointer currently targets this slot during a drag. */
     isDropTarget: boolean;

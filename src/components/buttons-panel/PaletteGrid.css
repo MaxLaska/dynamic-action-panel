@@ -1015,8 +1015,9 @@ body .buttons-panel button.buttons-panel-simple-button {
 }
 
 /* --- Cell colour palette ------------------------------------------------
-   Sits BELOW the grid and is mounted for the whole of edit mode, never
-   conjured up by the first selection. Two reasons, both about not moving
+   Operative, so present in locked AND edit mode. Sits BELOW the grid and is
+   mounted whenever selection is available, never conjured up by the first
+   selection. Two reasons, both about not moving
    things under the pointer:
 
    - a bar that appears on the first click pushes the grid down, so the next

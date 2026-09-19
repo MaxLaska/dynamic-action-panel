@@ -31,8 +31,12 @@ interface CellSelectionEscapeProps {
  *   it started", which the gesture itself does. Without standing down, both
  *   handlers would fire on the one key and the cancel would end in an empty
  *   selection instead of the baseline the user began from.
- * - **Only from inside the panel.** An Escape aimed at a modal, a suggester or
- *   the editor is none of our business.
+ * - **Only from the panel — or from nowhere.** An Escape aimed at a modal, a
+ *   suggester or the editor is none of our business. One aimed at <body>, i.e.
+ *   at nothing, is: that is where focus lands when the element that had it is
+ *   unmounted, which the panel does routinely (a replaced tool, a rebuilt
+ *   block after a mode toggle), and an Escape that silently stops working
+ *   after such a moment is indistinguishable from a broken one.
  *
  * Precedence over the folder overlay (which closes on Escape) does NOT depend
  * on this listener winning a race: the overlay checks `useHasCellSelection()`
@@ -51,12 +55,22 @@ export const CellSelectionEscape: React.FC<CellSelectionEscapeProps> = ({ panelR
         }
         const panel = panelRef.current;
         const doc = panel?.ownerDocument ?? document;
+        // Where an Escape may come from and still mean "clear": anywhere in
+        // the panel's own leaf — its toolbar included, where the mode toggle
+        // lives — or from nowhere in particular. The second case is common:
+        // the focused element is often UNMOUNTED under the user (a tool
+        // replaced by a drop, a category block rebuilt by a mode toggle), and
+        // focus then falls back to <body>. Nothing else claims an Escape
+        // aimed at <body>; a modal, a menu or the editor would hold focus
+        // themselves and are still none of our business.
+        const scope = panel?.closest('.workspace-leaf') ?? panel;
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key !== 'Escape' || isDragging) {
                 return;
             }
             const target = event.target;
-            if (!(target instanceof Node) || !panel?.contains(target)) {
+            const unfocused = target === doc.body || target === doc.documentElement;
+            if (!unfocused && (!(target instanceof Node) || !scope?.contains(target))) {
                 return;
             }
             clearCellSelection();
