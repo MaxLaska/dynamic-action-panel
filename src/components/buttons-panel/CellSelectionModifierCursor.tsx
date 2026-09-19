@@ -15,6 +15,42 @@ interface CellSelectionModifierCursorProps {
  */
 export const SELECTION_INTENT_ATTRIBUTE = 'data-ocap-selection-intent';
 
+/** `add` while Shift decides, `remove` while Ctrl/Cmd does, null otherwise. */
+export type SelectionModifierIntent = 'add' | 'remove' | null;
+
+/**
+ * The held modifier, readable by components as well as by CSS.
+ *
+ * The keys are global, and so is this: one tracker answers the question for
+ * everything that must show what a press would do — the cursor (through the
+ * attribute) and the palette's tooltip (through the hook). A second set of key
+ * listeners somewhere else is exactly the drift this avoids.
+ */
+let currentIntent: SelectionModifierIntent = null;
+const intentListeners = new Set<() => void>();
+
+function publishIntent(intent: SelectionModifierIntent): void {
+    if (currentIntent === intent) {
+        return;
+    }
+    currentIntent = intent;
+    intentListeners.forEach((listener) => listener());
+}
+
+function subscribeIntent(listener: () => void): () => void {
+    intentListeners.add(listener);
+    return () => intentListeners.delete(listener);
+}
+
+/** The modifier held right now, re-rendering the caller when it changes. */
+export function useSelectionModifierIntent(): SelectionModifierIntent {
+    return React.useSyncExternalStore(
+        subscribeIntent,
+        () => currentIntent,
+        () => null
+    );
+}
+
 /**
  * Shows, before anything is pressed, that a press will SELECT rather than use
  * or move: while Shift or Ctrl/Cmd is held, the grids wear the selection cursor.
@@ -63,11 +99,15 @@ export function trackSelectionIntent(panel: HTMLElement): () => void {
     const doc = panel.ownerDocument;
     const win = doc.defaultView;
 
-    const clear = () => panel.removeAttribute(SELECTION_INTENT_ATTRIBUTE);
+    const clear = () => {
+        panel.removeAttribute(SELECTION_INTENT_ATTRIBUTE);
+        publishIntent(null);
+    };
     const apply = (flags: SelectionModifierFlags) => {
         const gesture = gestureOfEvent(flags);
         if (gesture === 'add' || gesture === 'remove') {
             panel.setAttribute(SELECTION_INTENT_ATTRIBUTE, gesture);
+            publishIntent(gesture);
         } else {
             clear();
         }

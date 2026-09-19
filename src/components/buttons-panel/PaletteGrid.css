@@ -1150,6 +1150,13 @@ body .buttons-panel .ocap-palette-grid .ocap-grid-slot .sortable-button-item but
     cursor: var(--ocap-selection-cursor, grab);
 }
 
+/* 4/5 — a swatch speaks the same grammar as a cell: plain applies or selects
+   that colour's cells, Shift adds them, Ctrl/Cmd takes them out again. So it
+   wears the same modifier cursors, over its own pointer. */
+body .buttons-panel .ocap-cell-palette button.ocap-cell-swatch {
+    cursor: var(--ocap-selection-cursor, pointer);
+}
+
 /* 2/3 — with a modifier held, whatever else sits inside the grid follows it
    too (labels, icons, anything a theme gives a cursor of its own). */
 body .buttons-panel .buttons-panel-panel-content[data-ocap-selection-intent] .ocap-palette-grid * {

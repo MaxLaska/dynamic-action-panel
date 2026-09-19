@@ -11,6 +11,8 @@ import {
     type CellSelectionGesture,
 } from '@/utils/gridCellSelection';
 import { gestureOfEvent } from '@/utils/cellSelectionGesture';
+import { cellPaletteMeaning } from '@/utils/cellPaletteAction';
+import { useSelectionModifierIntent } from '@/components/buttons-panel/CellSelectionModifierCursor';
 import { t, tWithParams } from '@/utils/i18n';
 
 interface CellColorPaletteProps {
@@ -20,9 +22,9 @@ interface CellColorPaletteProps {
     dimensions: GridDimensions;
     /** Cells currently selected in this grid. */
     selectedCells: ReadonlySet<GridCellKey>;
-    /** Plain click: write this color (null clears) onto every selected cell. */
+    /** Paint: write this color (null clears) onto every selected cell. */
     onApply: (color: string | null) => void;
-    /** Modifier click: change the SELECTION to the cells carrying this color. */
+    /** Select: add this color's cells to the selection, or take them out of it. */
     onSelectByColor: (cells: GridCellKey[], gesture: CellSelectionGesture) => void;
 }
 
@@ -37,14 +39,15 @@ interface CellColorPaletteProps {
  *
  * 1. A bar that appears on the first click pushes the grid down UNDER the
  *    pointer, so the next Shift-click lands on the wrong cell.
- * 2. `Ctrl + swatch` is a SELECTION tool and has to work before anything is
- *    selected. A bar that only exists once a selection does could not offer it.
+ * 2. A swatch is a SELECTION tool before anything is selected: with nothing
+ *    selected, a plain click selects that colour's cells. A bar that only
+ *    exists once a selection does could not offer that.
  *
- * The one rule that makes the bar safe to explore:
- * **a modifier on a swatch never writes.** A plain click is the only gesture
- * here that changes the configuration; Shift and Ctrl only move the selection
- * around, always inside the grid on screen and never across variants or
- * categories.
+ * It speaks the grammar of the grid (`cellPaletteMeaning`): plain = the primary
+ * action, Shift = add, Ctrl/Cmd = remove. Which makes the bar safe to explore:
+ * **only a plain click on a swatch with a selection present writes anything.**
+ * Every other gesture moves the selection around, always inside the grid on
+ * screen and never across variants or categories.
  */
 export const CellColorPalette: React.FC<CellColorPaletteProps> = ({
     cellStyles,
@@ -58,6 +61,10 @@ export const CellColorPalette: React.FC<CellColorPaletteProps> = ({
         () => selectionColorSummary(cellStyles, selectedCells),
         [cellStyles, selectedCells]
     );
+    // The keys held right now, from the same tracker the cursor uses, so the
+    // tooltip below says what THIS press would do — and changes the moment a
+    // modifier goes down or up, without the mouse having to move.
+    const heldIntent = useSelectionModifierIntent();
 
     const handleClick = (
         event: React.MouseEvent<HTMLButtonElement>,
@@ -69,20 +76,15 @@ export const CellColorPalette: React.FC<CellColorPaletteProps> = ({
         if (gesture === null) {
             return;
         }
-        if (gesture === 'replace') {
-            // The ONE writing gesture. With nothing selected there is no target,
-            // so it does nothing rather than guessing one.
-            if (hasSelection) {
-                onApply(value);
-            }
+        const meaning = cellPaletteMeaning(gesture, hasSelection, value === null);
+        if (meaning.action === 'apply') {
+            onApply(value);
             return;
         }
-        // Ctrl replaces the selection with every cell of this color, Shift adds
-        // them to it — so `Ctrl red` then `Shift blue` selects both groups.
-        onSelectByColor(
-            cellsWithColor(cellStyles, dimensions, value),
-            gesture === 'remove' ? 'replace' : 'add'
-        );
+        if (meaning.gesture === null) {
+            return;
+        }
+        onSelectByColor(cellsWithColor(cellStyles, dimensions, value), meaning.gesture);
     };
 
     return (
@@ -106,6 +108,13 @@ export const CellColorPalette: React.FC<CellColorPaletteProps> = ({
                     const fill = resolveGridCellSwatchCss(entry.value);
                     const active = !summary.mixed && summary.color === entry.value;
                     const label = t(entry.labelKey);
+                    // One sentence: what a click does now. Not a manual of
+                    // everything the swatch could do in some other state.
+                    const tooltip = tWithParams(
+                        cellPaletteMeaning(heldIntent ?? 'replace', hasSelection, entry.value === null)
+                            .tooltipKey,
+                        { color: label.toLocaleLowerCase() }
+                    );
                     return (
                         <button
                             key={entry.value ?? 'none'}
@@ -124,7 +133,7 @@ export const CellColorPalette: React.FC<CellColorPaletteProps> = ({
                             }
                             aria-label={label}
                             aria-pressed={active}
-                            title={`${label} — ${t('cell_color_swatch_hint')}`}
+                            title={tooltip}
                             // Same reason the slot `+` swallows its press: in
                             // list view the whole category block is a drag
                             // handle, and a press that bubbles starts dragging

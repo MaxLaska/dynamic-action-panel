@@ -319,7 +319,7 @@ describe('the modifier cursor', () => {
     it('only ever touches this panel, and cleans up after itself', () => {
         // Behaviour, not just text: tests/cursorModel.test.ts runs it.
         expect(cursor).toMatch(/panel\.setAttribute\(SELECTION_INTENT_ATTRIBUTE, gesture\)/);
-        expect(cursor).toMatch(/const clear = \(\) => panel\.removeAttribute\(SELECTION_INTENT_ATTRIBUTE\);/);
+        expect(cursor).toMatch(/panel\.removeAttribute\(SELECTION_INTENT_ATTRIBUTE\);/);
         expect(cursor).toMatch(/return trackSelectionIntent\(panel\);/);
     });
 

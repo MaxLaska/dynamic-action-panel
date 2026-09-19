@@ -14,8 +14,9 @@
 // - the three gestures are fixed: REPLACE, ADD (Shift), REMOVE (Ctrl/Cmd).
 //   Shift never deselects, Ctrl never selects, and there is no toggle. Since
 //   2026-09-19 a plain CLICK on a cell no longer produces `replace` — it runs
-//   the tool (see `gridClickMeaning`); `replace` remains the set operation of
-//   the palette's Ctrl+swatch and of a rectangle's live preview;
+//   the tool (see `gridClickMeaning`); since 2026-09-20 the palette speaks the
+//   same three gestures too (`cellPaletteAction.ts`), so `replace` is left as
+//   the set operation of a rectangle's live preview;
 // - the selection is ephemeral UI state. Nothing here touches, reads or
 //   produces persisted settings, and no type in this module is allowed into
 //   `src/types/settings.ts`.
@@ -299,7 +300,8 @@ function nextState(
  * - `remove` (Ctrl/Cmd) on another grid is a NO-OP. It can only take away from
  *   what exists, and there is nothing of this grid's to take away — it must
  *   neither move the context nor touch the other grid's cells;
- * - `replace` always re-homes (the palette's Ctrl + swatch).
+ * - `replace` always re-homes (a rectangle's live preview, which replaces the
+ *   whole selection with baseline ± rectangle on every move).
  */
 export function applyCellGesture(
     state: GridCellSelectionState,
@@ -340,7 +342,8 @@ export function applyCellGesture(
 
 /**
  * Applies a gesture to a whole SET of cells at once — the palette's
- * same-color selection (Ctrl replaces with, Shift adds, all cells of a color).
+ * same-color selection (plain or Shift adds a colour's cells, Ctrl/Cmd takes
+ * them out again).
  * Same cross-grid rule as `applyCellGesture`: an `add` from another grid moves
  * the context here, a `remove` from another grid does nothing.
  */
