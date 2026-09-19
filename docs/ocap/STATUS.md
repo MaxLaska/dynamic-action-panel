@@ -1,10 +1,63 @@
 # OCAP – Status
 
-Last updated: 2026-09-19 (Selection clear ways + file drop in locked mode —
-implemented locally and live-smoke-tested in an isolated Obsidian; awaiting the
-user's own manual acceptance)
+Last updated: 2026-09-19 (The operative model — plain click uses, modifier
+selects, locked only protects the layout; implemented locally and
+live-smoke-tested in an isolated Obsidian; awaiting the user's own manual
+acceptance)
 
 ## Newest work first
+
+- **The operative model (2026-09-19) — implemented locally, live-smoke-tested,
+  deployed only to the disposable smoke vault. Not pushed, not in the productive
+  vault.** Normative: `docs/ocap/cell-selection-colors.md` §3 (rewritten), §4.1,
+  §10, §11, §12; `DECISIONS.md` "Locked protects the layout; using and selecting
+  work in both modes" (supersedes "Edit mode manages, locked mode executes").
+  - **Plain click = USE, modifier = SELECT, in both modes.** A plain click on a
+    tool runs it in edit mode too, and no longer replaces the selection; a click
+    on an empty cell does nothing. Shift/Ctrl(Cmd) click and drag select in
+    locked mode too, and never run the tool. The grid decides in the capture
+    phase via the pure, mode-free `gridClickMeaning` / `isClickNotDrag`. The
+    closing click of a layout drag is swallowed even when a tool returns to its
+    own cell, so moving never runs anything.
+  - **Locked = layout locked, nothing else.** `interactionMode.ts` now exports
+    one predicate, `allowsLayoutEditing`. Move/swap, category reorder, resize,
+    the `+` and the restructuring menus stay edit-only; selection, rectangles,
+    the palette, Escape/background clear and file drops work in both.
+  - **A mode toggle keeps the selection**, its contour and the armed paint
+    colour. The selection gate no longer mentions the mode or `sortableEnabled`
+    (the latter took every grid offline during any category drag — the root
+    cause of "a category reorder drops the selection"); only a search suspends
+    it (`available` on the selection context). The PanelContent guard compares
+    the variant the projection actually renders, right in both modes.
+  - **A category reorder keeps the selection** — including when the dragged
+    category is the one holding it: its grid is swapped for the preview during
+    the drag, so the deferred "is it gone?" check stands down while a category
+    drag is active (`CellSelectionLayoutDragHold`) and re-asks after the drop.
+  - **Escape works after the focused element was unmounted** (a replaced tool, a
+    block rebuilt by a toggle): it now counts from anywhere in the panel's leaf
+    or from `<body>`. Found by the live run, not by review.
+  - **A drop onto an occupied cell is silent** (no confirm, no warning, no
+    success notice); a drop onto an empty cell keeps its notice. The grid tells
+    the hook via `replacing`.
+  - No schema bump, no template bump, no second create path, no outbound drag.
+  - Tests: **1208/1208** (43 files; +36, incl. `tests/operativeSelection.test.ts`
+    with the pure click decision). `tsc --noEmit`, `eslint .`, `npm run build`
+    green.
+  - **Live smoke: 198/198** across eight stages in an isolated Obsidian 1.13.7,
+    0 console errors. New stage (55): in BOTH modes a plain click runs the tool
+    and selects nothing, Shift/Ctrl click select and do not run it, rectangles,
+    palette apply / Ctrl- / Shift-swatch, Escape and background clear; a toggle
+    in either direction keeps selection, contour and paint colour; dragging the
+    category that holds the selection, and the other one, keeps it; in edit a
+    plain drag moves and does not run; in locked a plain drag moves nothing and
+    there are no resize edges; an empty-cell drop is announced and a replacing
+    drop is silent. The seven older stages were adapted where they encoded the
+    old click model (selection-starting clicks became Shift-clicks; "edit click
+    selects" became "edit click runs"; "locked shows no selection" became
+    "locked keeps it").
+  - Harness note: a fresh scratch vault now shows Obsidian's "trust the author"
+    prompt; the run accepts it inside the disposable instance (the copy's only
+    plugin is this build).
 
 - **Two productivity additions (2026-09-19) — implemented locally,
   live-smoke-tested, deployed only to the disposable smoke vault. Not pushed,

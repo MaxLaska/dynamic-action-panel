@@ -682,6 +682,51 @@ Spezifikation: `docs/ocap/cell-selection-colors.md` §3 (Präzisierung),
   Hook (unidentifizierte Annotation, volles Grid, Erfolg). Keine
   Overwrite-Warnung, kein Confirm.
 
+### 2h. Das operative Modell (2026-09-19)
+
+Normativ: `docs/ocap/cell-selection-colors.md` §3. `DECISIONS.md`: „Locked
+protects the layout; using and selecting work in both modes“.
+
+- **Modusprädikat:** `src/utils/interactionMode.ts` exportiert nur noch
+  `allowsLayoutEditing(mode)`; `executesToolActions`/`allowsCellSelection`
+  sind entfernt. `PanelContent.enableEditMode` = `allowsLayoutEditing(...)`.
+- **Tool-Ausführung:** `useButtonClickHandler` hat keinen Mode-Guard mehr.
+  Was einen Klick vom Tool fernhält, entscheidet das Grid in
+  `handleGridClickCapture` (`onClickCapture`) über die puren Funktionen
+  `gridClickMeaning(gesture, wasClick)` und `isClickNotDrag(detail, origin,
+  point, threshold)` in `gridCellSelection.ts`. `run-tool` → durchlassen;
+  alles andere → `stopPropagation()` (React stoppt damit auch die native
+  Propagation am Root, sodass weder der Button-`onClick` noch der
+  Backdrop-Listener am Panel feuern). Der Klick am Ende eines Layout-Drags
+  wird verschluckt, weil der aktivierte Drag den Ursprung verwirft — das
+  behebt nebenbei einen alten Fall (Tool weg- und zurückgezogen → lief).
+- **Selection-Gate:** `selectionEnabled = selectable && selectionAvailable &&
+  selectionContext !== null`. `selectionAvailable` kommt aus dem
+  Selection-Context (`available`, von PanelContent = keine Suche aktiv). Kein
+  Modus, kein `sortableEnabled` mehr: letzteres ist während eines
+  Kategorie-Drags false (`ButtonDragContext`: `buttonEnabled = enabled &&
+  !isCategoryDragActive`) und nahm damit alle Grids vom Netz.
+- **Guard in PanelContent:** kein `!enableEditMode`-Clear mehr; die Variant
+  wird gegen `projection.gridViews.get(id)?.variantId` geprüft (in Locked die
+  kontextaufgelöste, in Edit die gewählte).
+- **Kategorie-Reorder:** Während eines Kategorie-Drags ersetzt
+  `SortableCategoryBlock` beim Drag-Source die Kinder durch die Vorschau
+  (`selectable={false}`) — das echte Grid deregistriert sich.
+  `CellSelectionLayoutDragHold` (innerhalb des Drag-Providers) meldet
+  `categoryDrag.isDragging` an `PanelContent.handleLayoutDragChange`; solange
+  aktiv, übergeht die verzögerte Deregistrierungsprüfung, und beim Drop wird
+  einmal nachgefragt (`setTimeout 0`, nach dem Remount).
+- **Escape:** `CellSelectionEscape` akzeptiert jetzt auch `<body>` als Ziel
+  und alles innerhalb von `panel.closest('.workspace-leaf')`. Anlass: der
+  fokussierte Button wird oft ungemountet (Drop-Replace, Toggle-Remount),
+  Fokus fällt auf `<body>`, Escape tat dann nichts. Live gefunden.
+- **Stiller Replace:** `SlotDropTarget.replacing` (vom Grid: `button !==
+  null`); Erfolgs-Notice nur bei `replacing !== true`.
+- **Palette:** unverändert, nur das Mount-Gate (`selectionActive`) ist nicht
+  mehr modusgebunden → in Locked sichtbar.
+- Tests: `tests/operativeSelection.test.ts` (38), `gridCellSelection.test.ts`
+  (Modustest auf `allowsLayoutEditing` umgestellt). Gesamt **1208**.
+
 ### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
 
 `ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&

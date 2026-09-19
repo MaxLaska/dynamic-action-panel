@@ -1,6 +1,7 @@
 # Dynamic Action Panel – Cell Selection & Cell Colors (Produktspezifikation v1)
 
-- **Datum:** 2026-09-18 (zweite Runde am selben Tag: Abschnitte 4a, 8.2 und 19)
+- **Datum:** 2026-09-18 (zweite Runde am selben Tag: Abschnitte 4a, 8.2 und 19; 2026-09-19: das
+  operative Modell in Abschnitt 3 — normal klicken = benutzen, Modifier = auswählen, in beiden Modi)
 - **Status:** Produktspezifikation, **implementiert** (Umsetzungsstand: Abschnitt 18). Keine
   Datei-/Format-Änderung, kein `settingsVersion`-Bump.
 - **Grundlage:** Nutzerentscheidungen vom 2026-09-18 (hier als beschlossen geführt) plus die
@@ -15,8 +16,9 @@
 
 ## 1. Zweck und Abgrenzung
 
-Der Nutzer soll im Edit Mode eine oder mehrere **Grid-Zellen** auswählen und ihnen anschließend
-eine Farbe geben können. Leere Zellen sind dabei gleichwertige Auswahlziele.
+Der Nutzer soll eine oder mehrere **Grid-Zellen** auswählen und ihnen anschließend eine Farbe geben
+können — seit 2026-09-19 in **beiden** Modi (Abschnitt 3). Leere Zellen sind dabei gleichwertige
+Auswahlziele.
 
 Selection ist ausdrücklich ein **allgemeiner Mechanismus**, kein Teil des Farbfeatures.
 Cell Colors sind der erste Consumer; weitere folgen (Abschnitt 14). Die UX darf deshalb an keiner
@@ -48,48 +50,60 @@ vollständiges Grid mit eigenen Farben.
 
 ## 3. Moduskontrakt
 
+> **Normativ seit 2026-09-19 — das operative Modell.**
+>
+> ```
+> normal klicken   = Tool BENUTZEN          (Locked und Edit)
+> Modifier         = Zellen AUSWÄHLEN       (Locked und Edit)
+> Locked / Edit    = Layout geschützt / Layout editierbar — sonst nichts
+> ```
+>
+> Selection ist eine **operative Arbeitsfunktion**, keine Edit-Funktion. Der Moduswechsel ändert
+> nur, ob das **Layout** verändert werden darf. Die Tabelle unten ist die geltende Fassung; die
+> Absätze darunter halten fest, wie es dazu kam.
+
 Das Panel kennt genau zwei Interaktionsmodi (`InteractionMode = 'locked' | 'edit'`; der frühere
-dritte Modus `sort` wurde in Settings-Version 4 in `edit` aufgelöst).
+dritte Modus `sort` wurde in Settings-Version 4 in `edit` aufgelöst). Die einzige Frage, die sie
+unterscheidet, ist `allowsLayoutEditing(mode)` (`src/utils/interactionMode.ts`).
 
-| | Locked Mode | Edit Mode |
+| | Locked (Layout geschützt) | Edit (Layout editierbar) |
 |---|---|---|
-| Linksklick auf Tool | **führt das Tool aus** | **wählt die Zelle aus** — führt nichts aus |
-| Linksklick auf leere Zelle | ohne Wirkung | wählt die Zelle aus |
-| Rechtsklick auf Tool | ohne Wirkung | Kontextmenü (Bearbeiten, Kopieren, Löschen) — unverändert |
-| Drag | aus | Move/Swap — unverändert |
-| Zellfarben sichtbar | **ja** | ja |
-| Selection möglich | nein | ja |
-| `+` auf leerer Zelle | nein | ja |
-| **Datei auf eine Zelle droppen** | **ja** (seit 2026-09-19) | ja |
+| Klick auf Tool | **führt das Tool aus** | **führt das Tool aus** |
+| Klick auf leere Zelle | ohne Wirkung | ohne Wirkung |
+| Enter/Leertaste auf fokussiertem Tool | führt aus | führt aus |
+| Shift + Klick / Ziehen | Zelle / Rechteck **hinzufügen** — Tool läuft nicht | ebenso |
+| Strg/Cmd + Klick / Ziehen | Zelle / Rechteck **entfernen** — Tool läuft nicht | ebenso |
+| Farbleiste (Färben, Select-by-Colour) | **ja** | ja |
+| Escape / Klick auf leeren Hintergrund | Auswahl leeren | ebenso |
+| Datei auf eine Zelle droppen (auch ersetzen) | **ja** | ja |
+| Zellfarben sichtbar | ja | ja |
+| Tool verschieben / tauschen | **nein** | ja |
+| Kategorie umsortieren | **nein** | ja |
+| Grid-Größe ändern | **nein** | ja |
+| `+` auf leerer Zelle, Kontextmenüs | **nein** | ja |
+| Moduswechsel verwirft die Auswahl | **nein** | **nein** |
 
-**Präzisierung 2026-09-19 — Locked ist der ARBEITSMODUS.** Eine Datei aus Obsidian auf eine Zelle
-zu ziehen erzeugt dort auch im Locked Mode ein Tool, ohne Umweg über den Edit Mode; ein Drop auf
-eine **belegte** Zelle ersetzt sie, ohne Rückfrage (das Zielen ist die bewusste Handlung). Was
-Edit-only bleibt, ist alles, was **Vorhandenes umsortiert**: Move, Swap, Category-Reorder, Resize,
-Selection, Zellfarben und das `+`. Ein Drop bringt etwas **herein** — die Unterscheidung verläuft
-zwischen *hinein* und *umräumen*, nicht zwischen den Modi. Technisch fällt sie mit der
-Ereignisart zusammen: Ein Datei-Drop ist ein nativer HTML5-Drag von außen, der plugin-interne Drag
-ist zeigerbasiert und bleibt gesperrt.
+**Warum.** Das vorige Modell — Locked *konsumiert*, Edit *verwaltet* — hatte zwei Kosten, die im
+Alltag schwerer wogen als sein Schutz: Tools funktionierten nicht mehr, sobald man entsperrte, und
+die Auswahl verschwand, sobald man sperrte. Der Schutz, um den es eigentlich ging, ist der des
+**Layouts**; den behält Locked vollständig. Die Gefahr, gegen die das alte Modell gebaut war — ein
+verrutschter Klick startet beim Umräumen ein Script —, ist jetzt anders gelöst: Ein **Drag** führt
+nie aus (der abschließende Klick eines Layout-Drags wird verschluckt, auch wenn das Tool an seinen
+Ausgangsplatz zurückkehrt), und ein **Modifier-Klick** führt nie aus.
 
-**Beschlossene Verhaltensänderung:** Im Edit Mode führt ein Klick ein Tool nicht mehr aus. Bisher
-tat er das (es gibt im Bestand keinerlei Mode-Guard), was ein Unfall des Upstream-Codes war und die
-gefährlichere der beiden Bedeutungen darstellte — ein verrutschter Klick konnte ein Script starten.
+**Wer entscheidet, was ein Klick bedeutet.** Das Grid, in der **Capture-Phase**, bevor das Tool
+den Klick sieht (`gridClickMeaning` in `src/utils/gridCellSelection.ts`): `run-tool` für einen
+einfachen Klick, `select` für Shift/Strg/Cmd, `ignore` für den Klick am Ende eines Drags oder
+Rechtecks und für den macOS-Sekundärklick. Die Funktion hat bewusst **keinen** Modus-Parameter.
 
-**Akzeptierte Konsequenzen:**
+### 3.1 Historie dieses Abschnitts
 
-- Ein Tool testet man, indem man in den Locked Mode schaltet. Es gibt dafür keinen Ersatzpfad im
-  Edit Mode, und es soll auch keinen geben (kein „Ausführen“ im Kontextmenü).
-- Bestandsnutzer erleben eine stille Verhaltensänderung. Es gibt **keine** einmalige Hinweismeldung;
-  der Auswahlrahmen auf der geklickten Zelle plus die dauerhaft sichtbare Farbleiste erklären das
-  neue Verhalten beim ersten Klick selbst.
-- **Tastatur:** Ein per Tab fokussiertes Tool darf im Edit Mode auch mit Enter oder Leertaste
-  **nichts ausführen**. Die Regel gilt für die Bedeutung des Aktivierens, nicht für die Eingabeart.
-  **Präzisierung aus der Umsetzung (2026-09-18):** Eine Tastaturaktivierung ist nicht wirkungslos,
-  sondern bedeutet dasselbe wie ein Klick auf dieselbe Zelle — sie wählt sie aus, und mit
-  gehaltenem Shift bzw. Strg gelten dieselben drei Gesten. Das ist keine Umdeutung der Gesten,
-  sondern ihre konsequente Anwendung auf die gleichwertige Eingabeart, und es ist deutlich besser
-  als eine tote Taste. Eine **Navigation** der Auswahl per Pfeiltasten gibt es weiterhin nicht
-  (Abschnitt 15).
+- **2026-09-18:** Edit führt nichts aus, ein Klick wählt die Zelle aus; Locked hat keine Auswahl.
+- **2026-09-19 (früher am Tag):** Präzisierung „Locked ist der Arbeitsmodus“ — Datei-Drop auch im
+  Locked Mode, Ersetzen ohne Rückfrage (`DECISIONS.md`).
+- **2026-09-19:** das operative Modell oben. Es **ersetzt** den Stand vom 2026-09-18: „Klick im
+  Edit Mode wählt aus“, „Enter/Leertaste im Edit Mode wählen aus“ und „Locked hat keine Auswahl“
+  gelten nicht mehr.
 
 ---
 
@@ -98,27 +112,33 @@ gefährlichere der beiden Bedeutungen darstellte — ein verrutschter Klick konn
 Die Auswahl bezieht sich auf **Zellen**. Leere und belegte Zellen verhalten sich vollkommen
 identisch; der Auswahlmechanismus weiß nicht, ob eine Zelle belegt ist.
 
-### 4.1 Die drei Gesten
+### 4.1 Die Gesten (normativ seit 2026-09-19)
 
 ```
-Normal  = ersetzen
+Normal  = Tool benutzen — KEINE Selection
 Shift   = hinzufügen
-Strg    = entfernen
+Strg    = entfernen      (macOS: Cmd)
 ```
 
 | Geste | Zelle ist nicht ausgewählt | Zelle ist ausgewählt |
 |---|---|---|
-| **Linksklick** | Auswahl verwerfen, nur diese Zelle auswählen | Auswahl verwerfen, nur diese Zelle auswählen (bleibt also ausgewählt) |
-| **Shift + Linksklick** | Zelle zur Auswahl **hinzufügen** | **keine Änderung** |
-| **Strg + Linksklick** | **keine Änderung** | Zelle aus der Auswahl **entfernen** |
+| **Linksklick** | Tool läuft (leere Zelle: nichts); Auswahl **unverändert** | Tool läuft; Auswahl **unverändert** |
+| **Shift + Linksklick** | Zelle zur Auswahl **hinzufügen** — Tool läuft nicht | **keine Änderung** — Tool läuft nicht |
+| **Strg + Linksklick** | **keine Änderung** — Tool läuft nicht | Zelle aus der Auswahl **entfernen** — Tool läuft nicht |
+
+Gilt in **beiden** Modi. Existiert noch keine Auswahl, beginnt ein Shift-Klick sie natürlich mit
+genau dieser Zelle.
 
 Das ist das klassische Selection-Modell aus Desktop- und DCC-Anwendungen. Ausdrücklich gilt:
 
 - **Shift wählt niemals ab.** Es ist rein additiv.
 - **Strg wählt niemals aus.** Es ist rein subtraktiv.
-- **Es gibt kein Toggle.** Ein zweiter Linksklick auf die einzige ausgewählte Zelle lässt sie
-  ausgewählt — er ersetzt die Auswahl durch sich selbst. Diese Regel ist ausdrücklich festgehalten,
-  damit sich später kein Toggle-Verhalten einschleicht.
+- **Es gibt kein Toggle.** Diese Regel ist ausdrücklich festgehalten, damit sich später kein
+  Toggle-Verhalten einschleicht.
+- **Ein einfacher Klick ersetzt die Auswahl nicht mehr.** *Überholt am 2026-09-19:* Bis dahin hieß
+  es „Normal = ersetzen“ — ein Klick verwarf die Auswahl und wählte nur diese Zelle. Das kollidierte
+  mit dem Benutzen der Tools und ist ersatzlos entfallen. Der Mengen-Operator „ersetzen“ lebt nur
+  noch in `Strg + Farbfeld` (Abschnitt 8) fort.
 - **Ein Modifier-KLICK betrifft genau eine Zelle.** Die geometrische Bedeutung von Shift/Strg
   entsteht ausschließlich durch Ziehen (Abschnitt 4a); ein Shift-Klick ist nie eine
   Von-bis-Auswahl.
@@ -620,11 +640,13 @@ entscheidet unverändert Abschnitt 4.
 
 ## 10. Die Farbleiste
 
-**Ort:** beim Grid, im Edit Mode, **unterhalb des Grids**. Nicht schwebend über den Zellen (das
+**Ort:** beim Grid, **unterhalb des Grids** — seit 2026-09-19 in **beiden** Modi, denn Färben und
+Auswählen verändern das Layout nicht (Abschnitt 3). Nicht schwebend über den Zellen (das
 verdeckt genau die Zellen, die sie färbt) und nicht in der globalen Navigationsleiste (ein
 panelweites Bedienelement für eine Geste, die einem einzelnen Grid gehört).
 
-**Sichtbarkeit: dauerhaft im Edit Mode**, nicht erst bei bestehender Auswahl. Zwei konkrete Gründe:
+**Sichtbarkeit: dauerhaft, solange Auswahl möglich ist** (also nicht während einer Suche), nicht erst
+bei bestehender Auswahl. *Überholt:* bis 2026-09-19 „dauerhaft im Edit Mode“. Zwei konkrete Gründe:
 
 1. Eine Leiste, die bei der ersten Auswahl erscheint, **verschiebt das Grid unter dem Zeiger**. Der
    unmittelbar folgende Shift-Klick landet dann auf der falschen Zelle. Dauerhaft montiert bewegt
@@ -664,15 +686,26 @@ nicht manuell erprobt ist. Sie bleibt ein Polish-Kandidat.
 
 ## 11. Lebensdauer der Auswahl
 
-Die Auswahl ist **ephemer** und wird nie gespeichert. Sie wird verworfen bei:
+Die Auswahl ist **ephemer** und wird nie gespeichert. Sie ist an die **fachliche Grid-Identität**
+gebunden — `(categoryId, variantId)` —, nicht an die Position oder die Render-Identität des Grids.
+Sie wird verworfen bei:
 
-- Verlassen des Edit Mode;
 - Wechsel der Kategorie beziehungsweise Auswahl in einem anderen Grid;
 - Wechsel der Dynamic Variant (Dropdown, ⇄-Flip, Duplicate, New, Delete);
 - jedem anderen Wechsel des Grid-Kontexts — Kategorie gelöscht, statisches Grid dynamisch gemacht,
   Grid in eine Flow-Kategorie umgewandelt, Ansicht gewechselt, Kategorie eingeklappt, Ordner
   geschlossen, Plugin oder View neu geladen;
-- Escape.
+- einer Suche, die das Panel filtert (das Grid zeigt dann nicht die gespeicherte Belegung);
+- Escape oder einem Klick auf leeren Hintergrund.
+
+**Kein Grund zum Verwerfen (seit 2026-09-19):**
+
+- **ein Moduswechsel Locked ↔ Edit.** Selection ist operativ, der Modus schützt nur das Layout; ein
+  Wechsel ändert das Grid nicht. Auswahl, Kontur und `selectionPaintColor` bleiben stehen. *Überholt:*
+  Bis dahin stand an erster Stelle dieser Liste „Verlassen des Edit Mode“.
+- **ein Kategorie-Reorder.** Das Grid bleibt dasselbe, nur seine Position ändert sich. Während des
+  Drags ersetzt die Vorschau das gezogene Grid; die Verwerfungsprüfung wartet deshalb, bis der Drop
+  das echte Grid zurückgebracht hat, und fragt dann erneut.
 
 **Es gibt keine unsichtbaren Auswahlen.** Eine Auswahl existiert nur, solange das Grid, zu dem sie
 gehört, sichtbar und bedienbar ist. Es wird insbesondere **keine** Auswahl pro Variant aufbewahrt und
@@ -693,8 +726,10 @@ ab, wird die Auswahl verworfen statt umadressiert.
 
 ## 12. Farben außerhalb des Edit Mode
 
-Zellfarben sind **Inhalt** und deshalb in **jedem** Modus sichtbar, auch im Locked Mode. Nur die
-Auswahl und die Bearbeitungs-Affordances (`+`, Kontextmenüs, Drag, Farbleiste) gehören dem Edit Mode.
+Zellfarben sind **Inhalt** und deshalb in **jedem** Modus sichtbar, auch im Locked Mode. Seit
+2026-09-19 sind auch die **Auswahl und die Farbleiste** in beiden Modi verfügbar (Abschnitt 3);
+dem Edit Mode gehören nur noch die **Layout**-Affordances: `+`, Kontextmenüs, Layout-Drag, Resize.
+*Überholt:* Bis dahin standen Auswahl und Farbleiste in dieser Aufzählung der Edit-only-Elemente.
 
 **Konsequenz, bewusst so gewollt:** Eine leere, aber gefärbte Zelle ist im Locked Mode als farbige
 Kachel sichtbar, obwohl dort kein Tool steht. Das ist kein Nebeneffekt, sondern eine Fähigkeit:
@@ -764,7 +799,8 @@ wird es **nicht** gebaut.
 - Undo-System
 - große Batch-Action-Leiste
 - neue Delete-Selected- oder Move-Selected-Logik
-- Auswahl im Locked Mode; „Run selected“
+- „Run selected“ (*Auswahl im Locked Mode* stand hier bis 2026-09-19 — sie ist jetzt normativ
+  vorgesehen, Abschnitt 3)
 - Auswahl in Flow-Kategorien (sie haben keine Zellen)
 - Änderung am Template-Format, an Export/Import oder an `settingsVersion`
 

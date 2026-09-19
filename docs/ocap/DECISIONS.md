@@ -559,6 +559,8 @@ it is a backup.
 
 ## 2026-09-18 – Edit mode manages, locked mode executes
 
+> **Superseded on 2026-09-19** by "Locked protects the layout; using and selecting work in both modes" below. Kept for the record of why the operative model exists.
+
 **Decision:** A normal activation of a tool in **edit mode no longer runs its
 actions** — neither a left click nor Enter/Space on the focused tool. Edit mode
 is the management surface, where activating a cell means **selecting** it;
@@ -950,7 +952,8 @@ implied: the mode where the panel is *used*.
 
 **The line is not between the modes, it is between bringing something IN and
 rearranging what is already there.** A drop brings something in. Moving,
-swapping, reordering, resizing, selecting, colouring and the `+` rearrange, and
+swapping, reordering, resizing and the `+` rearrange (selecting and colouring
+were listed here too until the operative model below moved them out), and
 all of them stay edit-only.
 
 That line happens to coincide with a technical one, which is what keeps it
@@ -973,6 +976,61 @@ commit it has always been; only the gate moved. The renderer now also tells the
 hook which variant the drop landed on, because in locked mode there is no
 editing selection and the old fallback ("the first variant") would file the tool
 into a grid nobody was looking at.
+
+## 2026-09-19 – Locked protects the layout; using and selecting work in both modes
+
+**Decision:** The two modes differ in exactly one thing — whether the LAYOUT may
+change (`allowsLayoutEditing`). Everything operative works the same in both:
+
+    plain click       = USE the tool         (locked AND edit)
+    Shift / Ctrl(Cmd) = SELECT cells         (locked AND edit)
+    locked / edit     = layout locked / layout editable
+
+Selection, rectangles, the colour palette, select-by-colour, Escape and the
+background clear, and file drops are available in locked mode. Edit adds the
+spatial manipulation of what is already there: move, swap, category reorder,
+resize, the `+`, and the restructuring context menus.
+
+This **supersedes** "Edit mode manages, locked mode executes" (2026-09-18).
+
+**A plain click no longer touches the selection.** It runs the tool — in edit
+mode too — and a click on an empty cell does nothing. The old rule "plain click
+= replace the selection with this cell" is gone: it collided with using the
+tools, and choosing cells is now always an explicit, modified gesture. `replace`
+survives only as a set operation (Ctrl + swatch, and a rectangle's live
+preview).
+
+**Who decides what a click means:** the grid, in the CAPTURE phase, before the
+tool sees it (`gridClickMeaning`, pure and mode-free): `run-tool`, `select`, or
+`ignore` for the click that ends a drag or a rectangle and for macOS' Ctrl
+secondary click. The protection the old model existed for — a slipped click
+starting a script while rearranging — is kept by a different, narrower rule: a
+DRAG never runs a tool (its closing click is swallowed even when the tool comes
+back to its own cell), and a MODIFIER click never runs one.
+
+**A mode toggle is not a change of grid.** The selection is bound to the
+domain-level grid identity `(categoryId, variantId)`, not to a mode and not to a
+render position, so toggling keeps the selection, its contour and the armed
+paint colour. The same holds for a category reorder: the dragged category's
+grid is replaced by its preview for the length of the drag, so the deferred
+"is this grid gone?" check stands down while a category drag is active and asks
+again once the drop has remounted the real grid. (Before, gating selection on
+`sortableEnabled` took every grid offline during any category drag, because the
+drag provider pauses button sorting while a category moves.) Real context
+changes — another category, variant or grid, a search, Escape, the background
+click — still end it.
+
+**Escape from nowhere.** With the selection now outliving a toggle, pressing
+Escape right after one is normal — and a toggle rebuilds the category blocks,
+unmounting whatever had focus, which then falls back to `<body>`. Escape now
+counts when it comes from anywhere in the panel's leaf (toolbar included) or
+from `<body>`; a modal, a menu or the editor still hold focus themselves and are
+still left alone.
+
+**Reason:** the previous split had two everyday costs that outweighed its
+protection: tools stopped working the moment the panel was unlocked, and the
+working set of cells vanished the moment it was locked. What locking is actually
+for is the layout, and that it still protects completely.
 
 ## Open decisions
 
