@@ -26,7 +26,14 @@ import {
     RESIZE_DRAG_THRESHOLD_PX,
     gridCellKeyOfSlot,
     isGridCategory,
+    parseGridCellKey,
 } from '@/utils/categoryGrid';
+import {
+    GridCellKeyProvider,
+    GridTargetResolverProvider,
+    type GridTargetResolver,
+} from '@/contexts/GridContextTarget';
+import { resolveContextTarget } from '@/utils/contextTarget';
 import {
     useGridCellSelection,
     useSelectedCellsOf,
@@ -623,6 +630,53 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
             ? buttonDrag.dropTargetSlot.slot
             : null;
 
+    /**
+     * What a right click in THIS grid is about — the tool under the pointer,
+     * or the selection it belongs to (`resolveContextTarget`).
+     *
+     * Read from a ref rather than closed over, so the answer describes the
+     * selection at the moment the menu opens and not at the render that
+     * produced the handler. The resolver itself is stable, which keeps every
+     * tool in the grid from re-rendering whenever a cell is selected.
+     *
+     * It ANSWERS only. Nothing on this path writes the selection: a right
+     * click reads it, and a click outside it leaves it exactly as it was.
+     */
+    const contextTargetRef = React.useRef({
+        selectedCells,
+        slots: gridSlots,
+        columns: dimensions.columns,
+    });
+    contextTargetRef.current = {
+        selectedCells,
+        slots: gridSlots,
+        columns: dimensions.columns,
+    };
+
+    const resolveTarget = React.useCallback<GridTargetResolver>(
+        (clickedCell, clickedToolId) => {
+            const { selectedCells: cells, slots, columns } = contextTargetRef.current;
+            return resolveContextTarget({
+                clickedCell,
+                clickedToolId,
+                selectedCells: cells,
+                // A selected cell that holds nothing, or holds something this
+                // grid no longer has, answers null and contributes no id.
+                toolIdOfCell: (cell) => {
+                    if (slots === null) {
+                        return null;
+                    }
+                    const position = parseGridCellKey(cell);
+                    if (position === null || position.column >= columns) {
+                        return null;
+                    }
+                    return slots[position.row * columns + position.column]?.id ?? null;
+                },
+            });
+        },
+        []
+    );
+
     const renderButton = (
         button: ButtonConfig,
         index: number,
@@ -741,7 +795,18 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                             : undefined
                     }
                 >
-                    {button ? renderButton(button, slot, 'none') : null}
+                    {/* The cell the tool sits in, so a right click on it can
+                        be resolved without going looking in the DOM.
+
+                        The provider wraps the TOOL, never the empty case: a
+                        cell reads "filled" from whether it was given children,
+                        so an always-present wrapper would fill all sixteen of
+                        them — no `+`, no empty-cell tooltip, no file target. */}
+                    {button ? (
+                        <GridCellKeyProvider value={cellKey}>
+                            {renderButton(button, slot, 'none')}
+                        </GridCellKeyProvider>
+                    ) : null}
                 </GridSlotCell>
             );
         });
@@ -858,7 +923,10 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
             .filter((id): id is string => id !== null);
 
         return (
-            <>
+            // Everything below can ask what a right click is about. A tool in
+            // the overflow row is inside the provider but inside no cell, so it
+            // resolves as a plain tool context — which is what it is.
+            <GridTargetResolverProvider value={resolveTarget}>
                 {manageable && isDynamic && (
                     <VariantSelector
                         category={category}
@@ -901,7 +969,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                     would have to guess a slot. `children` (the callers' add
                     entry) is therefore deliberately not rendered here — flow
                     categories below still use it. */}
-            </>
+            </GridTargetResolverProvider>
         );
     }
 
