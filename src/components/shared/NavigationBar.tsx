@@ -138,6 +138,8 @@ export interface NavigationBarProps {
     onChangeInteractionMode: (mode: InteractionMode) => void;
     /** Called to open the settings */
     onOpenSettings: () => void;
+    /** Called to open the controls reference */
+    onOpenHelp: () => void;
     /** Called when the search query changes (in-memory filtering only, nothing is persisted) */
     onSearchChange?: (query: string) => void;
 }
@@ -159,6 +161,7 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
     onChangeStyle,
     onChangeInteractionMode,
     onOpenSettings,
+    onOpenHelp,
     onSearchChange,
 }) => {
     const [isSearchOpen, setIsSearchOpen] = React.useState(false);
@@ -286,6 +289,12 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
                     label={styleLabel}
                     className="style-btn"
                     options={styleOptions}
+                />
+                <NavIconButton
+                    icon="help-circle"
+                    label={t('help_button_label')}
+                    className="help-btn"
+                    onClick={onOpenHelp}
                 />
                 <NavIconButton
                     icon="settings"

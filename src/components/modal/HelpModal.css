@@ -1,0 +1,68 @@
+/* HelpModal.css
+ * The controls reference. Two columns — gesture, then what it does — on
+ * Obsidian's own variables, so it follows the theme without knowing one.
+ */
+
+.ocap-help-modal {
+    /* Long enough to read in one go, short enough to stay a modal. */
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* The SECTION is the grid, not the row: one shared column means every
+ * description in a section starts at the same x, instead of each row sizing
+ * its own gesture chip and stepping the text along with it. */
+.ocap-help-modal .ocap-help-section {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) 1fr;
+    align-items: baseline;
+    gap: 6px 12px;
+}
+
+.ocap-help-modal .ocap-help-section + .ocap-help-section {
+    margin-top: 16px;
+}
+
+.ocap-help-modal .ocap-help-section-title {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-semibold);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* The row exists for the markup, not for the layout: its two children are the
+ * grid items. */
+.ocap-help-modal .ocap-help-row {
+    display: contents;
+}
+
+.ocap-help-modal .ocap-help-gesture {
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    line-height: 1.4;
+    padding: 1px 6px;
+    border-radius: var(--radius-s);
+    background-color: var(--background-modifier-border);
+    color: var(--text-normal);
+    white-space: nowrap;
+    justify-self: start;
+}
+
+.ocap-help-modal .ocap-help-description {
+    font-size: var(--font-ui-small);
+    color: var(--text-normal);
+}
+
+/* Narrow panes: the two columns stack rather than squeezing the text. */
+@media (max-width: 400px) {
+    .ocap-help-modal .ocap-help-section {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
+    .ocap-help-modal .ocap-help-description {
+        margin-bottom: 4px;
+    }
+}

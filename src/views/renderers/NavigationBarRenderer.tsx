@@ -5,6 +5,7 @@ import { ButtonsPanelPlugin } from '@/types/plugin';
 import { PanelConfig } from '@/types';
 import { ReactRoot } from '@/utils/ReactRoot';
 import { NavigationBar } from '@/components/shared/NavigationBar';
+import { HelpModal } from '@/components/modal/HelpModal';
 import { canMutateSettings } from '@/utils/settingsWriteGuard';
 
 /**
@@ -90,6 +91,9 @@ export class NavigationBarRenderer {
                         activateSettingsView?: () => void;
                     };
                     pluginWithSettings.activateSettingsView?.();
+                }}
+                onOpenHelp={() => {
+                    new HelpModal(this.plugin.app).open();
                 }}
                 onSearchChange={(query) => {
                     activeDocument.dispatchEvent(
