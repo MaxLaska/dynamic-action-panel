@@ -44,13 +44,16 @@ interface CellSelectionEscapeProps {
  * the same phase, where `stopPropagation` would do nothing between them anyway.
  */
 export const CellSelectionEscape: React.FC<CellSelectionEscapeProps> = ({ panelRef }) => {
-    const { state, clearCellSelection, cellGestureActive } = useGridCellSelection();
+    const { state, clearCellSelection, cellGestureActive, paint } = useGridCellSelection();
     const buttonDrag = useButtonDragOptional();
-    const hasSelection = state.cells.size > 0;
+    // An armed paint colour is a selection session too, even before it has any
+    // cells: a plain swatch click chooses a colour with nothing selected, and
+    // Escape has to be able to say "never mind" to that as well.
+    const hasSession = state.cells.size > 0 || paint !== null;
     const isDragging = (buttonDrag?.isDragging ?? false) || cellGestureActive;
 
     React.useEffect(() => {
-        if (!hasSelection) {
+        if (!hasSession) {
             return;
         }
         const panel = panelRef.current;
@@ -79,7 +82,7 @@ export const CellSelectionEscape: React.FC<CellSelectionEscapeProps> = ({ panelR
         return () => {
             doc.removeEventListener('keydown', onKeyDown);
         };
-    }, [hasSelection, isDragging, panelRef, clearCellSelection]);
+    }, [hasSession, isDragging, panelRef, clearCellSelection]);
 
     return null;
 };

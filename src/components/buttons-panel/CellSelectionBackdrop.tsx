@@ -42,10 +42,12 @@ interface CellSelectionBackdropProps {
 export const CellSelectionBackdrop: React.FC<CellSelectionBackdropProps> = ({
     panelRef,
 }) => {
-    const { state, clearCellSelection, cellGestureActive } = useGridCellSelection();
+    const { state, clearCellSelection, cellGestureActive, paint } = useGridCellSelection();
     const buttonDrag = useButtonDragOptional();
     const categoryDrag = useCategoryDragOptional();
-    const hasSelection = state.cells.size > 0;
+    // An armed paint colour counts as a live session: a click on free
+    // background says "never mind" to it as well.
+    const hasSession = state.cells.size > 0 || paint !== null;
     const isDragging =
         (buttonDrag?.isDragging ?? false) ||
         (categoryDrag?.isDragging ?? false) ||
@@ -65,7 +67,7 @@ export const CellSelectionBackdrop: React.FC<CellSelectionBackdropProps> = ({
 
     React.useEffect(() => {
         const panel = panelRef.current;
-        if (!hasSelection || !panel) {
+        if (!hasSession || !panel) {
             return;
         }
 
@@ -127,7 +129,7 @@ export const CellSelectionBackdrop: React.FC<CellSelectionBackdropProps> = ({
             surface.removeEventListener('pointermove', onPointerMove, true);
             surface.removeEventListener('click', onClick);
         };
-    }, [hasSelection, isDragging, panelRef, clearCellSelection]);
+    }, [hasSession, isDragging, panelRef, clearCellSelection]);
 
     return null;
 };

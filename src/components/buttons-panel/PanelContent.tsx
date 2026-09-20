@@ -237,6 +237,10 @@ export const PanelContent: React.FC<PanelContentProps> = ({
 
     const clearCellSelection = React.useCallback(() => {
         setCellSelection((prev) => (prev.context === null ? prev : NO_CELL_SELECTION));
+        // "Never mind" means the chosen colour too. Said here rather than left
+        // to the context watcher below, because a colour can be armed with
+        // nothing selected — and then there is no context change to notice.
+        setCellPaint(null);
     }, []);
 
     const restoreCellSelection = React.useCallback((state: GridCellSelectionState) => {
@@ -278,10 +282,24 @@ export const PanelContent: React.FC<PanelContentProps> = ({
      * object: `applyCellGesture` hands back a fresh context object whenever the
      * cells change, so watching identity would disarm the colour on the very
      * gesture that is supposed to carry it.
+     *
+     * The ONE transition that keeps it (2026-09-20): from NO selection to
+     * some. A colour may now be armed with nothing selected — that is exactly
+     * what a plain swatch click does — and the very next gesture, the
+     * Shift-click that starts the selection, is the one that has to carry it.
+     * Disarming there would make "choose a colour, then paint with it"
+     * impossible. Every other change of context still disarms, an explicit
+     * clear (Escape, background click) included.
      */
     const selectionContextKey =
         cellSelection.context === null ? null : gridContextKey(cellSelection.context);
+    const previousContextKeyRef = React.useRef<string | null>(selectionContextKey);
     React.useEffect(() => {
+        const previous = previousContextKeyRef.current;
+        previousContextKeyRef.current = selectionContextKey;
+        if (previous === selectionContextKey || previous === null) {
+            return;
+        }
         setCellPaint(null);
     }, [selectionContextKey]);
 

@@ -1,14 +1,18 @@
 // cellPaletteAction.ts
 // What a click on a colour swatch means — the palette's whole grammar, pure.
 //
-// The palette follows the SAME grammar as the grid (cell-selection-colors.md
-// §8): plain = the primary action, Shift = add, Ctrl/Cmd = remove. The primary
-// action depends on whether there is something to act on:
+// A swatch is a PAINT colour; the modifiers are the grid's own grammar applied
+// to the cells that carry it (cell-selection-colors.md §8):
 //
-//     nothing selected + plain  ->  select this colour's cells
-//     something selected + plain -> paint them this colour
+//     plain                      -> choose this paint colour, and paint the
+//                                   selection with it if there is one
 //     Shift                      -> add this colour's cells to the selection
 //     Ctrl/Cmd                   -> remove them from it (nothing to remove: no-op)
+//
+// A plain click therefore always means the same thing — "paint with this" —
+// whether or not something is selected. With nothing selected it only arms the
+// colour, and the next Shift gesture in the grid carries it onto the cells it
+// brings in: choose a colour, then work with it.
 //
 // One function, so the click handler, the tooltip and the cursor cannot drift
 // into three slightly different readings of the same question. It knows nothing
@@ -21,8 +25,8 @@ import type { CellSelectionGesture } from '@/utils/gridCellSelection';
 export type CellPaletteAction =
     /** Write this colour onto the selected cells (the ONE writing gesture). */
     | 'apply'
-    /** Make this colour's cells the selection. */
-    | 'select-group'
+    /** Choose this colour for what comes next, without writing anything. */
+    | 'arm'
     /** Add this colour's cells to the selection. */
     | 'add-group'
     /** Take this colour's cells out of the selection. */
@@ -34,10 +38,9 @@ export interface CellPaletteMeaning {
     action: CellPaletteAction;
     /**
      * The set gesture to hand to the selection, or null when the click does
-     * not change the selection. `select-group` is an ADD onto an empty
-     * selection rather than a REPLACE: that is literally what it is, and it
-     * keeps the one cross-grid rule intact — an add may move the one active
-     * context to this grid, a remove may never reach across (§4.2).
+     * not change the selection at all — which a plain click never does any
+     * more. A modifier's `add` may move the one active context to this grid,
+     * its `remove` may never reach across (§4.2).
      */
     gesture: CellSelectionGesture | null;
     /** Whether the click writes cell colours. Exactly `action === 'apply'`. */
@@ -95,10 +98,14 @@ export function cellPaletteMeaning(
               };
     }
 
-    // Plain click. With a selection it paints it — the only gesture in the
-    // palette that changes the configuration, and the only one that arms the
-    // paint colour. Without one there is nothing to paint, so the swatch is
-    // what it looks like: the name of a group of cells.
+    // Plain click: choose this colour. With a selection it also paints it —
+    // the only gesture in the whole palette that writes. Without one it just
+    // arms, and the next additive gesture in the grid carries it.
+    //
+    // It deliberately never selects: reading a plain click as "find me every
+    // red cell" made the same gesture mean two unrelated things depending on
+    // a state the user cannot see. Fetching a colour's cells is what the
+    // modifiers are for, and they say so on every surface of the panel.
     return hasSelection
         ? {
               action: 'apply',
@@ -108,12 +115,10 @@ export function cellPaletteMeaning(
               tooltipKey: isClear ? 'cell_palette_tip_clear' : 'cell_palette_tip_apply',
           }
         : {
-              action: 'select-group',
-              gesture: 'add',
+              action: 'arm',
+              gesture: null,
               writes: false,
-              arms: false,
-              tooltipKey: isClear
-                  ? 'cell_palette_tip_select_uncolored'
-                  : 'cell_palette_tip_select',
+              arms: true,
+              tooltipKey: isClear ? 'cell_palette_tip_arm_uncolored' : 'cell_palette_tip_arm',
           };
 }

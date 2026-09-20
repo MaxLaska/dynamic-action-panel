@@ -1,29 +1,31 @@
 // tests/cellPaletteAction.test.ts
 //
-// The palette speaks the grammar of the grid (cell-selection-colors.md §8):
+// A swatch is a PAINT colour (cell-selection-colors.md §8):
 //
-//     plain, nothing selected    -> select this colour's cells
-//     plain, something selected  -> paint them this colour   (the only write)
-//     Shift                      -> add this colour's cells
-//     Ctrl/Cmd                   -> remove them; with nothing selected, no-op
+//     plain                      -> choose this colour; paint the selection
+//                                   with it if there is one
+//     Shift                      -> add this colour's cells to the selection
+//     Ctrl/Cmd                   -> remove them; nothing selected: no-op
 //
-// Three layers: the pure decision, the sentence it produces in every shipped
-// locale, and the wiring that makes click, tooltip and cursor read that one
-// decision instead of three private copies of it.
+// A plain click therefore always means the same thing, selection or not. The
+// rule it replaces — "with nothing selected, a plain click selects that
+// colour's cells" — made one gesture mean two unrelated things depending on a
+// state the user cannot see.
+//
+// Four layers: the pure decision, the set operations against the real
+// selection core, the sentence in every shipped locale, and the wiring that
+// makes click, tooltip, cursor and the armed marker read that one decision.
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import {
-    cellPaletteMeaning,
-    type CellPaletteAction,
-} from '@/utils/cellPaletteAction';
+import { cellPaletteMeaning, type CellPaletteAction } from '@/utils/cellPaletteAction';
 import {
     applyCellSetGesture,
     cellsWithColor,
     NO_CELL_SELECTION,
     type GridCellSelectionState,
 } from '@/utils/gridCellSelection';
-import { t, tWithParams } from '@/utils/i18n';
+import { tWithParams } from '@/utils/i18n';
 
 const COLOUR = false;
 const CLEAR = true;
@@ -36,14 +38,25 @@ const action = (
 // --- 1. The decision ---------------------------------------------------------------
 
 describe('what a click on a swatch means', () => {
-    it('with NOTHING selected, a plain click selects that colour group', () => {
-        expect(action('replace', false)).toBe('select-group');
-        expect(action('replace', false, CLEAR)).toBe('select-group');
+    it('with NOTHING selected, a plain click chooses the paint colour', () => {
+        expect(action('replace', false)).toBe('arm');
+        expect(action('replace', false, CLEAR)).toBe('arm');
     });
 
-    it('with a selection, a plain click paints it', () => {
+    it('...and selects nothing at all while doing it', () => {
+        // The gesture it hands the selection is the whole story: none.
+        expect(cellPaletteMeaning('replace', false, COLOUR).gesture).toBeNull();
+        expect(cellPaletteMeaning('replace', false, CLEAR).gesture).toBeNull();
+    });
+
+    it('...and writes nothing', () => {
+        expect(cellPaletteMeaning('replace', false, COLOUR).writes).toBe(false);
+    });
+
+    it('with a selection, a plain click paints it — and chooses the colour too', () => {
         expect(action('replace', true)).toBe('apply');
         expect(action('replace', true, CLEAR)).toBe('apply');
+        expect(cellPaletteMeaning('replace', true, COLOUR).writes).toBe(true);
     });
 
     it('Shift adds the colour group, selection or not', () => {
@@ -58,34 +71,44 @@ describe('what a click on a swatch means', () => {
     });
 
     it('...and does nothing at all when there is nothing to remove from', () => {
-        // It must not start a selection (that is Shift's job) and must not
-        // write. The old rule — Ctrl REPLACES the selection with the colour
-        // group — is gone; that is now the plain click's job.
         expect(action('remove', false)).toBe('none');
         expect(action('remove', false, CLEAR)).toBe('none');
         expect(cellPaletteMeaning('remove', false, COLOUR).gesture).toBeNull();
     });
 
-    it('only the plain click on a selection writes, and only it arms the paint', () => {
-        const writes: CellPaletteAction[] = [];
-        const arms: CellPaletteAction[] = [];
+    it('a MODIFIER never writes and never changes the chosen colour', () => {
+        // Red armed, then Shift+blue: the blue cells join the selection and
+        // red stays the colour the next added cell will get.
+        for (const gesture of ['add', 'remove'] as const) {
+            for (const hasSelection of [false, true]) {
+                for (const isClear of [false, true]) {
+                    const meaning = cellPaletteMeaning(gesture, hasSelection, isClear);
+                    expect(meaning.writes).toBe(false);
+                    expect(meaning.arms).toBe(false);
+                }
+            }
+        }
+    });
+
+    it('only the plain click arms, and only with a selection does it write', () => {
+        const arming: CellPaletteAction[] = [];
+        const writing: CellPaletteAction[] = [];
         for (const gesture of ['replace', 'add', 'remove'] as const) {
             for (const hasSelection of [false, true]) {
                 for (const isClear of [false, true]) {
                     const meaning = cellPaletteMeaning(gesture, hasSelection, isClear);
-                    if (meaning.writes) writes.push(meaning.action);
-                    if (meaning.arms) arms.push(meaning.action);
+                    if (meaning.arms) arming.push(meaning.action);
+                    if (meaning.writes) writing.push(meaning.action);
                 }
             }
         }
-        expect([...new Set(writes)]).toEqual(['apply']);
-        expect([...new Set(arms)]).toEqual(['apply']);
+        expect([...new Set(arming)].sort()).toEqual(['apply', 'arm']);
+        expect([...new Set(writing)]).toEqual(['apply']);
     });
 
-    it('never hands the selection a REPLACE — an add may move the one context, a remove may not', () => {
-        // `select-group` is an add onto an empty selection. Expressed as a
-        // replace it would re-home the panel-wide context from any grid, which
-        // is exactly what the cross-grid rule reserves for Shift (§4.2).
+    it('never hands the selection a REPLACE', () => {
+        // An add may move the one active context to this grid; a remove may
+        // never reach across (§4.2). A replace would re-home it silently.
         for (const gesture of ['replace', 'add', 'remove'] as const) {
             for (const hasSelection of [false, true]) {
                 expect(cellPaletteMeaning(gesture, hasSelection, COLOUR).gesture).not.toBe(
@@ -93,11 +116,10 @@ describe('what a click on a swatch means', () => {
                 );
             }
         }
-        expect(cellPaletteMeaning('replace', false, COLOUR).gesture).toBe('add');
     });
 });
 
-// --- 2. The same decision, driving the real selection core -------------------------
+// --- 2. The set operations, against the real selection core ------------------------
 
 describe('the decision applied to a real selection', () => {
     const dimensions = { rows: 2, columns: 2 };
@@ -110,22 +132,29 @@ describe('the decision applied to a real selection', () => {
         // r1c1 has no colour at all
     };
 
-    /** One swatch click, end to end: decision -> cells -> new selection. */
+    /** One swatch click, end to end. */
     function click(
         state: GridCellSelectionState,
         gesture: 'replace' | 'add' | 'remove',
         colour: string | null,
         context = here
-    ): { state: GridCellSelectionState; painted: string[] | null } {
-        const selected = state.context && state.context.categoryId === context.categoryId
-            ? state.cells
-            : new Set<string>();
+    ): {
+        state: GridCellSelectionState;
+        painted: string[] | null;
+        armed: string | null | undefined;
+    } {
+        const selected =
+            state.context && state.context.categoryId === context.categoryId
+                ? state.cells
+                : new Set<string>();
         const meaning = cellPaletteMeaning(gesture, selected.size > 0, colour === null);
-        if (meaning.action === 'apply') {
-            return { state, painted: [...selected].sort() };
-        }
+        const armed = meaning.arms ? colour : undefined;
         if (meaning.gesture === null) {
-            return { state, painted: null };
+            return {
+                state,
+                painted: meaning.writes ? [...selected].sort() : null,
+                armed,
+            };
         }
         return {
             state: applyCellSetGesture(
@@ -135,59 +164,72 @@ describe('the decision applied to a real selection', () => {
                 meaning.gesture
             ),
             painted: null,
+            armed,
         };
     }
 
-    it('plain click with nothing selected selects the colour group', () => {
-        const { state, painted } = click(NO_CELL_SELECTION, 'replace', 'ocap:blue');
-        expect([...state.cells].sort()).toEqual(['r0c0', 'r0c1']);
-        expect(state.context).toEqual(here);
+    it('a plain click with nothing selected leaves the selection empty and arms', () => {
+        const { state, painted, armed } = click(NO_CELL_SELECTION, 'replace', 'ocap:red');
+        expect(state).toBe(NO_CELL_SELECTION);
         expect(painted).toBeNull();
+        expect(armed).toBe('ocap:red');
     });
 
-    it('plain click on clear selects the uncoloured cells', () => {
-        const { state } = click(NO_CELL_SELECTION, 'replace', null);
-        expect([...state.cells]).toEqual(['r1c1']);
+    it('a plain click on clear with nothing selected arms "no colour"', () => {
+        const { state, armed } = click(NO_CELL_SELECTION, 'replace', null);
+        expect(state).toBe(NO_CELL_SELECTION);
+        expect(armed).toBeNull();
     });
 
-    it('Shift then adds a second group, keeping the first', () => {
-        const first = click(NO_CELL_SELECTION, 'replace', 'ocap:blue').state;
-        const second = click(first, 'add', 'ocap:red').state;
-        expect([...second.cells].sort()).toEqual(['r0c0', 'r0c1', 'r1c0']);
+    it('Shift builds a selection out of colour groups', () => {
+        const blue = click(NO_CELL_SELECTION, 'add', 'ocap:blue').state;
+        expect([...blue.cells].sort()).toEqual(['r0c0', 'r0c1']);
+        expect(blue.context).toEqual(here);
+        const both = click(blue, 'add', 'ocap:red').state;
+        expect([...both.cells].sort()).toEqual(['r0c0', 'r0c1', 'r1c0']);
     });
 
-    it('Ctrl takes one group back out and leaves the colours alone', () => {
-        const both = click(click(NO_CELL_SELECTION, 'replace', 'ocap:blue').state, 'add', 'ocap:red')
+    it('Ctrl takes one group back out and paints nothing', () => {
+        const both = click(click(NO_CELL_SELECTION, 'add', 'ocap:blue').state, 'add', 'ocap:red')
             .state;
-        const { state, painted } = click(both, 'remove', 'ocap:blue');
+        const { state, painted, armed } = click(both, 'remove', 'ocap:blue');
         expect([...state.cells]).toEqual(['r1c0']);
         expect(painted).toBeNull();
+        expect(armed).toBeUndefined();
     });
 
-    it('a plain click on a selection paints exactly it, and nothing else', () => {
-        const selection = click(NO_CELL_SELECTION, 'replace', 'ocap:blue').state;
-        const { state, painted } = click(selection, 'replace', 'ocap:red');
+    it('a plain click on a selection paints exactly it, and keeps it', () => {
+        const selection = click(NO_CELL_SELECTION, 'add', 'ocap:blue').state;
+        const { state, painted, armed } = click(selection, 'replace', 'ocap:red');
         expect(painted).toEqual(['r0c0', 'r0c1']);
         expect(state).toBe(selection);
+        expect(armed).toBe('ocap:red');
     });
 
-    it('a group whose colour is nowhere in the grid leaves an empty selection', () => {
-        const { state } = click(NO_CELL_SELECTION, 'replace', 'ocap:purple');
-        expect(state).toBe(NO_CELL_SELECTION);
+    it('Shift in a grid that holds no selection moves the one context there', () => {
+        const inA = click(NO_CELL_SELECTION, 'add', 'ocap:blue').state;
+        const moved = click(inA, 'add', 'ocap:red', there).state;
+        expect(moved.context).toEqual(there);
+        expect([...moved.cells]).toEqual(['r1c0']);
     });
 
-    it("Ctrl in a grid that does not hold the selection changes nothing", () => {
-        const inA = click(NO_CELL_SELECTION, 'replace', 'ocap:blue').state;
+    it('Ctrl in a grid that does not hold the selection changes nothing', () => {
+        const inA = click(NO_CELL_SELECTION, 'add', 'ocap:blue').state;
         expect(click(inA, 'remove', 'ocap:blue', there).state).toBe(inA);
     });
 
-    it('a plain click in another grid moves the one context there', () => {
-        // Nothing is selected HERE, so the primary action is to select — and
-        // an add is how a selection legitimately moves grids.
-        const inA = click(NO_CELL_SELECTION, 'replace', 'ocap:blue').state;
-        const moved = click(inA, 'replace', 'ocap:red', there).state;
-        expect(moved.context).toEqual(there);
-        expect([...moved.cells]).toEqual(['r1c0']);
+    it('a plain click in another grid does not disturb that selection either', () => {
+        // It only chooses a colour, so the selection in A stays exactly as it
+        // was — no context move, no cells.
+        const inA = click(NO_CELL_SELECTION, 'add', 'ocap:blue').state;
+        const after = click(inA, 'replace', 'ocap:red', there);
+        expect(after.state).toBe(inA);
+        expect(after.armed).toBe('ocap:red');
+    });
+
+    it('a colour with no cells in the grid selects nothing under Shift', () => {
+        const { state } = click(NO_CELL_SELECTION, 'add', 'ocap:purple');
+        expect(state).toBe(NO_CELL_SELECTION);
     });
 });
 
@@ -204,23 +246,25 @@ describe('the tooltip says what THIS click would do', () => {
             color: colour,
         });
 
-    it('reads as one action for a colour', () => {
-        expect(tip('replace', false)).toBe('Select all blue cells');
-        expect(tip('replace', true)).toBe('Apply blue to selection');
-        expect(tip('add', true)).toBe('Add all blue cells to selection');
-        expect(tip('remove', true)).toBe('Remove all blue cells from selection');
+    it('offers the colour when there is nothing to paint yet', () => {
+        expect(tip('replace', false)).toBe('Paint with blue from now on');
+        expect(tip('replace', false, CLEAR)).toBe('Paint with no color from now on');
     });
 
-    it('reads as one action for clear, which is the uncoloured group', () => {
-        expect(tip('replace', false, CLEAR)).toBe('Select all uncolored cells');
+    it('states the write when there is a selection', () => {
+        expect(tip('replace', true)).toBe('Apply blue to selection');
         expect(tip('replace', true, CLEAR)).toBe('Clear color from selection');
-        expect(tip('add', true, CLEAR)).toBe('Add all uncolored cells to selection');
+    });
+
+    it('states the set operation under a modifier', () => {
+        expect(tip('add', true)).toBe('Add all blue cells to selection');
+        expect(tip('add', false, CLEAR)).toBe('Add all uncolored cells to selection');
+        expect(tip('remove', true)).toBe('Remove all blue cells from selection');
         expect(tip('remove', true, CLEAR)).toBe('Remove all uncolored cells from selection');
     });
 
     it('does not promise a removal that would not happen', () => {
         expect(tip('remove', false)).toBe('Nothing selected to remove from');
-        expect(tip('remove', false, CLEAR)).toBe('Nothing selected to remove from');
     });
 
     it('is one sentence, never a manual of every gesture', () => {
@@ -254,14 +298,12 @@ describe('the tooltip says what THIS click would do', () => {
         for (const { code, strings } of locales) {
             for (const key of keys) {
                 expect(strings[key], `${code}:${key}`).toBeTruthy();
-                // A colour key names the colour; an uncoloured/idle one must not.
-                const needsColour = /_apply$|_select$|_add$|_remove$/.test(key);
+                const needsColour = /_apply$|_arm$|_add$|_remove$/.test(key);
                 expect(strings[key]?.includes('{color}'), `${code}:${key}`).toBe(needsColour);
             }
-        }
-        // The old multi-action manual is gone everywhere.
-        expect(t('cell_color_swatch_hint')).toBe('cell_color_swatch_hint');
-        for (const { strings } of locales) {
+            // The superseded wordings are gone everywhere.
+            expect(strings['cell_palette_tip_select']).toBeUndefined();
+            expect(strings['cell_palette_tip_select_uncolored']).toBeUndefined();
             expect(strings['cell_color_swatch_hint']).toBeUndefined();
         }
     });
@@ -276,8 +318,10 @@ function codeOf(relativePath: string): string {
         .replace(/^\s*\/\/.*$/gm, '');
 }
 
-describe('click, tooltip and cursor all read the one decision', () => {
+describe('click, tooltip, cursor and the armed marker read the one decision', () => {
     const palette = codeOf('components/buttons-panel/CellColorPalette.tsx');
+    const grid = codeOf('components/buttons-panel/CategoryButtonGrid.tsx');
+    const panel = codeOf('components/buttons-panel/PanelContent.tsx');
     const cursor = codeOf('components/buttons-panel/CellSelectionModifierCursor.tsx');
     const css = readFileSync(
         new URL('../src/components/buttons-panel/PaletteGrid.css', import.meta.url),
@@ -288,13 +332,50 @@ describe('click, tooltip and cursor all read the one decision', () => {
         expect(palette).toMatch(
             /const meaning = cellPaletteMeaning\(gesture, hasSelection, value === null\);/
         );
-        expect(palette).toMatch(/if \(meaning\.action === 'apply'\) \{\s*onApply\(value\);/);
+        // `apply` and `arm` take the same path: choosing the colour is one act.
+        expect(palette).toMatch(/if \(meaning\.arms\) \{\s*onApply\(value\);/);
         expect(palette).toMatch(/if \(meaning\.gesture === null\) \{\s*return;/);
         expect(palette).toMatch(
             /onSelectByColor\(cellsWithColor\(cellStyles, dimensions, value\), meaning\.gesture\);/
         );
-        // No second reading of the modifiers anywhere in the component.
         expect(palette).not.toMatch(/shiftKey|ctrlKey|metaKey/);
+    });
+
+    it('the grid arms even with nothing selected, and paints only when there is', () => {
+        const handler = grid.slice(
+            grid.indexOf('const handleApplyColor'),
+            grid.indexOf('const handleSelectByColor')
+        );
+        expect(handler).toMatch(/armPaint\(\{ color \}\);/);
+        expect(handler).toMatch(/if \(selectedCells\.size === 0\) \{\s*return;\s*\}/);
+        // The arming happens BEFORE the early return, or choosing a colour
+        // with nothing selected would do nothing at all.
+        expect(handler.indexOf('armPaint')).toBeLessThan(handler.indexOf('selectedCells.size === 0'));
+        expect(handler).toMatch(/applyCellColor\(selectionContext, \[\.\.\.selectedCells\], color\)/);
+    });
+
+    it('an explicit clear drops the chosen colour, selection or not', () => {
+        // Escape and the background click both go through here. With nothing
+        // selected there is no context change for the watcher below to see,
+        // so "never mind" has to say it itself.
+        const clear = panel.slice(
+            panel.indexOf('const clearCellSelection'),
+            panel.indexOf('const restoreCellSelection')
+        );
+        expect(clear).toMatch(/setCellSelection\(\(prev\) => \(prev\.context === null \? prev : NO_CELL_SELECTION\)\);/);
+        expect(clear).toMatch(/setCellPaint\(null\);/);
+    });
+
+    it('a colour armed with nothing selected survives the gesture that starts one', () => {
+        // The reset watches the selection CONTEXT; going from "no selection"
+        // to "a selection" is the one transition that must keep the colour,
+        // because that gesture is the one meant to carry it.
+        const reset = panel.slice(
+            panel.indexOf('const previousContextKeyRef'),
+            panel.indexOf('}, [selectionContextKey]);') + 30
+        );
+        expect(reset).toMatch(/if \(previous === selectionContextKey \|\| previous === null\) \{\s*return;\s*\}/);
+        expect(reset).toMatch(/setCellPaint\(null\);/);
     });
 
     it('the tooltip is built from the same function and the keys held right now', () => {
@@ -303,15 +384,24 @@ describe('click, tooltip and cursor all read the one decision', () => {
             /cellPaletteMeaning\(heldIntent \?\? 'replace', hasSelection, entry\.value === null\)\s*\.tooltipKey/
         );
         expect(palette).toMatch(/title=\{tooltip\}/);
+        expect(cursor).toMatch(/export function useSelectionModifierIntent\(\)/);
     });
 
-    it('the held modifier comes from the tracker the cursor already uses', () => {
-        // One tracker, two readers — not a second set of key listeners.
-        expect(cursor).toMatch(/export function useSelectionModifierIntent\(\)/);
-        expect(cursor).toMatch(/React\.useSyncExternalStore\(/);
-        expect(cursor).toMatch(/publishIntent\(gesture\);/);
-        expect(cursor).toMatch(/publishIntent\(null\);/);
-        expect(palette).not.toMatch(/addEventListener/);
+    it('the armed colour is visible on its swatch, and follows the state not the focus', () => {
+        expect(palette).toMatch(/const armed = paint !== null && paint\.color === entry\.value;/);
+        expect(palette).toMatch(/armed \? 'ocap-cell-swatch--armed' : ''/);
+        expect(palette).toMatch(/aria-pressed=\{armed\}/);
+        expect(palette).toMatch(/paint: CellPaintColor \| null;/);
+        expect(grid).toMatch(/paint=\{paint\}/);
+        // `:focus` would mark the last thing clicked, not the chosen colour.
+        expect(css).not.toMatch(/ocap-cell-swatch:focus\b/);
+    });
+
+    it('what the selection IS and what the next paint WILL BE are drawn apart', () => {
+        expect(palette).toMatch(/const uniform = !summary\.mixed && summary\.color === entry\.value;/);
+        expect(palette).toMatch(/uniform \? 'ocap-cell-swatch--uniform' : ''/);
+        expect(css).toMatch(/\.ocap-cell-swatch--armed \{\s*outline: 2px solid var\(--interactive-accent\)/);
+        expect(css).toMatch(/\.ocap-cell-swatch--uniform \{\s*border-color: var\(--text-normal\)/);
     });
 
     it('a swatch wears the same modifier cursors as a cell', () => {

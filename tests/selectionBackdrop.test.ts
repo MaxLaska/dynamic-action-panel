@@ -357,8 +357,11 @@ describe('the backdrop click never steals a drag', () => {
         expect(code).toMatch(/isSelectionBackdrop\(event\.target, surface\)/);
     });
 
-    it('does nothing at all while there is no selection', () => {
-        expect(code).toMatch(/if \(!hasSelection \|\| !panel\)/);
+    it('does nothing at all while there is no selection SESSION', () => {
+        // A colour armed with nothing selected is a session too: the click
+        // that says "never mind" has to reach it (cell-selection-colors §8.2).
+        expect(code).toMatch(/const hasSession = state\.cells\.size > 0 \|\| paint !== null;/);
+        expect(code).toMatch(/if \(!hasSession \|\| !panel\)/);
     });
 });
 

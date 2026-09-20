@@ -467,14 +467,22 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     };
 
     const handleApplyColor = (color: string | null) => {
-        if (selectionContext === null || selectedCells.size === 0) {
+        if (selectionContext === null) {
             return;
         }
-        // Applying a colour also ARMS it for this selection session: the next
-        // additive gesture carries it onto whatever it brings in, until the
-        // selection is cleared or moves to another grid. "No colour" is just as
-        // deliberate a choice, so it arms too.
+        // Choosing a colour ARMS it: the next additive gesture carries it onto
+        // whatever it brings in, until the selection is cleared or moves to
+        // another grid. "No colour" is just as deliberate a choice, so it arms
+        // too.
+        //
+        // Arming does not need a selection (2026-09-20) — choosing the colour
+        // FIRST and then painting with Shift is the whole point. With cells
+        // selected the click also paints them, which is the one write the
+        // palette can make.
         armPaint({ color });
+        if (selectedCells.size === 0) {
+            return;
+        }
         void applyCellColor(selectionContext, [...selectedCells], color);
     };
 
@@ -826,6 +834,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                         dimensions={dimensions}
                         selectedCells={selectedCells}
                         onApply={handleApplyColor}
+                        paint={paint}
                         onSelectByColor={handleSelectByColor}
                     />
                 )}

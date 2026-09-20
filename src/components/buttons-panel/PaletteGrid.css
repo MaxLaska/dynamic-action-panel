@@ -1080,13 +1080,27 @@ body .buttons-panel button.buttons-panel-simple-button {
     );
 }
 
-/* The active marker is a ring OUTSIDE the swatch, so it never covers the very
-   colour it is marking. Shown only when every selected cell shares one value —
-   including a value this build has no swatch for, which simply marks nothing
-   rather than promoting a look-alike. */
-.buttons-panel button.ocap-cell-swatch--active {
+/* The ARMED paint colour: the one a plain click chose, which the next Shift
+   gesture will carry onto the cells it adds. A state the user cannot otherwise
+   see, so it gets the strong marker — a ring OUTSIDE the swatch, which never
+   covers the very colour it marks and, being an `outline`, moves no pixel of
+   the row. It reads on every swatch including `no colour`, and in both themes,
+   because it is the theme's own accent.
+
+   Deliberately not `:focus`: it follows `selectionPaintColor`, so it survives
+   clicking elsewhere and disappears when the colour is disarmed. */
+.buttons-panel button.ocap-cell-swatch--armed {
     outline: 2px solid var(--interactive-accent);
     outline-offset: 2px;
+}
+
+/* What the SELECTION currently is, when every selected cell shares one value —
+   a quieter statement about the present, not about what comes next. Drawn on
+   the border the swatch already has, so this too costs no layout. A value this
+   build has no swatch for simply marks nothing rather than promoting a
+   look-alike. */
+.buttons-panel button.ocap-cell-swatch--uniform {
+    border-color: var(--text-normal);
 }
 
 /* --- The cursor model ---------------------------------------------------

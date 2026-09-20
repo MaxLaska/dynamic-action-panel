@@ -550,10 +550,25 @@ describe('cell colour palette bar', () => {
         expect(swatch).toMatch(/border-radius:\s*50%/);
     });
 
-    it('marks the active swatch OUTSIDE itself, so the colour stays visible', () => {
-        const active = ruleBody(/\.ocap-cell-swatch--active$/);
-        expect(active).toMatch(/outline:\s*2px solid var\(--interactive-accent\)/);
-        expect(active).toMatch(/outline-offset:\s*2px/);
+    it('marks the ARMED swatch OUTSIDE itself, so the colour stays visible', () => {
+        const armed = ruleBody(/\.ocap-cell-swatch--armed$/);
+        expect(armed).toMatch(/outline:\s*2px solid var\(--interactive-accent\)/);
+        expect(armed).toMatch(/outline-offset:\s*2px/);
+    });
+
+    it('marks neither state with anything that could move the row', () => {
+        // Both are states of a control the user reads WHILE clicking around:
+        // a marker that resized or shifted it would make the next swatch move
+        // out from under the pointer.
+        for (const pattern of [/\.ocap-cell-swatch--armed$/, /\.ocap-cell-swatch--uniform$/]) {
+            const body = ruleBody(pattern);
+            expect(body).not.toMatch(/(^|[^-])(width|height|padding|margin|border-width):/);
+            expect(body).not.toMatch(/border:\s/);
+        }
+        // The quieter state rides on the border the swatch already has.
+        expect(ruleBody(/\.ocap-cell-swatch--uniform$/)).toMatch(
+            /border-color:\s*var\(--text-normal\)/
+        );
     });
 
     it('keeps an OCCUPIED coloured cell coloured under the pointer', () => {
