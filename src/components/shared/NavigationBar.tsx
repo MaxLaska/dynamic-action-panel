@@ -216,15 +216,11 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
     const viewIcon = viewIconMap[panelViewType] ?? 'list';
     const styleIcon = displayStyle === 'icon_top' ? 'layout-panel-top' : 'layout-panel-left';
 
-    // Lock toggle. The icon shows the CURRENT STATE, never the action a click
-    // would perform: a closed lock means "the panel is locked right now".
-    // Clicking flips to the other state; the tooltip names the state first and
-    // the click action second.
-    const isLocked = interactionMode === 'locked';
-    const interactionIcon = isLocked ? 'lock' : 'lock-open';
-    const interactionTooltip = isLocked
-        ? t('interaction_locked_tooltip')
-        : t('interaction_edit_tooltip');
+    // The lock toggle is GONE (experimental, 2026-09-20): the panel runs in
+    // one mode, so there is nothing to switch. The props are still declared
+    // and still passed — the stored value is untouched and the button comes
+    // back by restoring this block and the JSX below it. See
+    // `SINGLE_INTERACTION_MODE` in src/utils/interactionMode.ts.
 
     // ---- View mode dropdown options ----
     const viewTypes: PanelViewType[] = ['list', 'tabs', 'folder'];
@@ -290,14 +286,6 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
                     label={styleLabel}
                     className="style-btn"
                     options={styleOptions}
-                />
-                <NavIconButton
-                    icon={interactionIcon}
-                    label={interactionTooltip}
-                    state={isLocked ? 'locked' : 'edit'}
-                    className="edit-mode-btn"
-                    isActive={!isLocked}
-                    onClick={() => onChangeInteractionMode(isLocked ? 'edit' : 'locked')}
                 />
                 <NavIconButton
                     icon="settings"

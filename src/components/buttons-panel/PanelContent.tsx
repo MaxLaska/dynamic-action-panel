@@ -24,7 +24,10 @@ import { CellSelectionEscape } from '@/components/buttons-panel/CellSelectionEsc
 import { CellSelectionBackdrop } from '@/components/buttons-panel/CellSelectionBackdrop';
 import { CellSelectionLayoutDragHold } from '@/components/buttons-panel/CellSelectionLayoutDragHold';
 import { CellSelectionModifierCursor } from '@/components/buttons-panel/CellSelectionModifierCursor';
-import { allowsLayoutEditing } from '@/utils/interactionMode';
+import {
+    allowsLayoutEditing,
+    SINGLE_INTERACTION_MODE,
+} from '@/utils/interactionMode';
 import {
     NO_CELL_SELECTION,
     applyCellGesture,
@@ -66,8 +69,12 @@ export const PanelContent: React.FC<PanelContentProps> = ({
     const viewType = panelConfig.panelViewType ?? 'list';
     const displayStyle = panelConfig.displayStyle ?? 'icon_top';
     const enableAnimation = panelConfig.enableAnimation ?? false;
-    const interactionMode = panelConfig.interactionMode ?? 'edit';
-    // The modes differ in exactly one thing: whether the LAYOUT may change.
+    // ONE mode for everyone (SINGLE_INTERACTION_MODE): the stored
+    // panelConfig.interactionMode is left untouched but no longer read, so the
+    // switch can come back by restoring this one line.
+    const interactionMode = SINGLE_INTERACTION_MODE;
+    // What the modes differed in — whether the LAYOUT may change — is now
+    // simply always allowed.
     const enableEditMode = allowsLayoutEditing(interactionMode);
     const tabsWrap = panelConfig.tabsWrap ?? false;
     const listAutoCollapse = panelConfig.listAutoCollapse ?? false;
