@@ -1330,6 +1330,53 @@ It fires once and clears itself; there is no standing block.
 and shows the closed hand only for the duration of a real drag. The grip keeps
 `grab`.
 
+## 2026-09-20 – Die Bedienreferenz steht an einer Stelle, und ein Rechtsklick weiß, worum es geht
+
+Zwei kleine Bausteine, die dasselbe Ziel haben: das Panel soll erklärbar sein
+und seine Eingaben sollen benennbar werden.
+
+**1. Eine Referenz, nicht mehrere.** `src/utils/interactionReference.ts` ist die
+einzige Stelle, an der die Maus-Grammatik für den Nutzer geschrieben steht.
+Das Hilfe-Modal rendert sie, die Settings könnten sie später ebenso rendern.
+Eine zweite Kopie wäre keine Redundanz, sondern eine Garantie auf Drift: die
+Grammatik hat sich innerhalb eines Tages zweimal geändert, und ein Hilfetext,
+der eine abgeschaffte Geste beschreibt, ist schlechter als gar keiner. Die
+Tests prüfen deshalb nicht die Formulierung, sondern dass keine der verworfenen
+Regeln dort auftaucht (Linksdrag verschiebt, Auswahl auf der rechten Taste,
+Locked/Edit, "Klick auf eine Farbe wählt alle Zellen dieser Farbe").
+
+Der `?`-Knopf sitzt in der vorhandenen Panel-Toolbar neben dem Zahnrad. Er
+ersetzt nichts und verschiebt nichts; das Modal ist ein gewöhnliches Obsidian-
+Modal (Escape, Klick daneben, kein eigener Rahmen, kein eigenes Farbschema).
+
+**2. Ein Rechtsklick hat ein Thema.** `resolveContextTarget` beantwortet genau
+eine Frage: Geht es um das Tool unter dem Zeiger (**Tool Context**) oder um die
+Auswahl, zu der es gehört (**Selection Context**)? Die Regel ist eine Zeile —
+ein Rechtsklick **innerhalb** der Auswahl meint die Auswahl, überall sonst
+meint er das Tool — und sie ist bewusst nicht mehr als das.
+
+**Der Rechtsklick liest die Auswahl, er verändert sie nie.** Kein Ersetzen,
+kein Erweitern, kein Leeren, auch nicht bei einem Klick außerhalb. Das ist die
+harte Regel dieser Runde, live geprüft: die Auswahl ist vor und nach jedem
+Kontextmenü identisch.
+
+**Es wird nichts angeboten, was es nicht gibt.** Das Menü enthält weiterhin
+genau Edit, Copy, Delete — beide Kontexte zeigen dasselbe, weil beide Aktionen
+auf das geklickte Tool wirken. Kein "Coming soon", keine erfundenen Einträge,
+keine Action-Registry. Neu ist nur, dass es eine Stelle gibt, an der ein
+Selection-Menü später ansetzen kann, mit bereits aufgelöster Zellzahl und
+Tool-Liste.
+
+**Der Deskriptor ist bewusst tolerant.** Eine ausgewählte leere Zelle zählt als
+Zelle, liefert aber kein Tool; eine Zelle, die der Grid nicht mehr kennt
+(Resize, Variantenwechsel, gelöschtes Tool), liefert ebenfalls keines. Ein
+Phantom-Tool wäre die einzige Art, wie diese Schicht Schaden anrichten könnte.
+
+Der Grid veröffentlicht den Resolver über einen React-Context und liest die
+Auswahl beim **Aufruf** aus einer Ref, nicht aus der Closure des Renders: ein
+Menü, das nach einer Auswahländerung geöffnet wird, beschreibt sonst den
+Zustand von vorhin.
+
 ## Open decisions
 
 The following are still open:

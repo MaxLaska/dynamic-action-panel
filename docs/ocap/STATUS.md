@@ -1,12 +1,37 @@
 # OCAP – Status
 
-Last updated: 2026-09-20 (EXPERIMENTAL, corrected: left click uses,
-Shift/Ctrl + left selects, right click is context, right drag moves a
-tool — the same-day version with selection on the right button is
-superseded; implemented locally and live-smoke-tested, awaiting the
-user's judgement in use)
+Last updated: 2026-09-20 (help button and context routing, on top of the
+EXPERIMENTAL corrected mouse grammar: left click uses, Shift/Ctrl + left
+selects, right click is context, right drag moves a tool — the same-day
+version with selection on the right button is superseded; implemented
+locally and live-smoke-tested, awaiting the user's judgement in use)
 
 ## Newest work first
+
+- **Help button and context routing (2026-09-20), implemented locally,
+  live-smoke-tested, deployed only to the disposable smoke vault. Not pushed,
+  not in the productive vault.** Normative: `cell-selection-colors.md` §20;
+  `DECISIONS.md` "Die Bedienreferenz steht an einer Stelle…";
+  `HANDOFF.md` §2p.
+  - **One reference, one place.** `src/utils/interactionReference.ts` is the
+    only formulation of the mouse grammar for the user; the `?` button in the
+    panel toolbar opens a plain Obsidian modal that renders it. Ctrl/Cmd per
+    platform, en/ru/zh.
+  - **The help text cannot document a dead rule**: tests assert the absence of
+    the discarded left-drag-moves, right-button selection, locked/edit, and the
+    old "a plain colour click selects that colour's cells".
+  - **A right click now has a subject.** `resolveContextTarget` answers TOOL
+    context vs SELECTION context (clicked cell inside the selection), with the
+    cell count, the tool ids and the clicked tool already resolved.
+  - **The right click never changes the selection** — verified live, before and
+    after every menu.
+  - **Nothing invented**: the menu is still exactly Edit/Copy/Delete. What the
+    selection context will offer is explicitly future.
+  - **Found live, fixed:** the cell-key provider wrapped every cell's children
+    unconditionally, which made all sixteen cells count as filled (no `+`, no
+    empty-cell tooltip, no file drop). Now it wraps only a real tool.
+  - Tests **1370/1370**, `tsc`, `eslint`, build green. **Live smoke 486/486**
+    over fourteen stages, 0 console problems.
 
 - **Corrected mouse grammar — EXPERIMENTAL PROTOTYPE (2026-09-20), implemented
   locally, live-smoke-tested, deployed only to the disposable smoke vault. Not

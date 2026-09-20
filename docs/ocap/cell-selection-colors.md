@@ -1207,3 +1207,74 @@ Resize-Rinne — nur im Edit-Mode sichtbar, sein Platz im Locked-Mode leer und z
 reserviert, damit Icon und Name beim Sperren nicht seitlich springen. Ebenso modusabhängig ist seit
 dem Cursor-Modell (Abschnitt 4.5) die Greif-Hand über einem Tool; sie ist eine Aussage über das
 Layout, keine Änderung daran.
+
+---
+
+## 20. Hilfe und Kontext-Modell (2026-09-20)
+
+### 20.1 Die Bedienreferenz steht an genau einer Stelle
+
+`src/utils/interactionReference.ts` ist die einzige Stelle, an der die aktuelle
+Maus-Grammatik für den Nutzer formuliert ist. Aufbau: Abschnitte mit i18n-Key,
+Zeilen aus **Geste** (bereits für die Plattform geschrieben, `Ctrl` bzw. `Cmd`)
+und **Beschreibungs-Key**. `interactionReferenceText()` löst beides auf.
+
+Die Referenz beschreibt ausschließlich das, was das Panel **heute** kann:
+
+| Abschnitt | Gesten |
+| --- | --- |
+| Tools | Klick = ausführen · Rechtsklick = Kontextmenü · Rechtsdrag = verschieben · Linksdrag = reserviert |
+| Selection | Shift+Klick/Drag = hinzufügen · Ctrl/Cmd+Klick/Drag = entfernen · Esc · Klick auf freien Hintergrund |
+| Colors | Klick auf Farbfeld = anwenden und weiterhin malen · Shift/Ctrl auf Farbfeld = Zellen dieser Farbe · Shift+Klick auf Zelle = armierte Farbe folgt |
+| Categories | Griff ziehen · Titel klicken · Titel rechtsklicken |
+| Files | Datei auf eine Zelle fallen lassen |
+
+Was dort **nicht** stehen darf, und wovon jede Zeile durch einen Test gedeckt
+ist (`tests/helpReference.test.ts`): der verworfene Linksdrag als Verschieben,
+die verworfene Auswahl auf der rechten Taste, Locked/Edit, und die alte Regel
+"Klick auf eine Farbe wählt alle Zellen dieser Farbe". Das Kontextmenü wird nur
+als *Kontextmenü* dokumentiert, nicht mit seinen Einträgen — die werden
+dynamisch.
+
+Der `?`-Knopf steht in der vorhandenen Toolbar links vom Zahnrad
+(`NavigationBar` → `onOpenHelp` → `HelpModal`). Das Modal ist ein gewöhnliches
+Obsidian-Modal: Titelzeile, Escape, Klick daneben, Obsidian-Variablen, bei
+Bedarf scrollbar, kein Layout-Einfluss auf das Panel.
+
+### 20.2 Tool Context und Selection Context
+
+Ein Rechtsklick auf ein Tool kann zweierlei meinen. `resolveContextTarget`
+(`src/utils/contextTarget.ts`, rein) beantwortet, was gemeint ist:
+
+- **Selection Context** — die geklickte Zelle ist Teil der aktuellen Auswahl;
+- **Tool Context** — alles andere: Zelle nicht ausgewählt, keine Auswahl
+  vorhanden, oder gar keine Zelle (Flow-Kategorie, Overflow-Reihe).
+
+Das Ergebnis nennt: `kind`, `clickedCell`, `clickedToolId`,
+`clickedInSelection`, `cellCount` (ausgewählte Zellen **inklusive leerer**) und
+`toolIds` (die tatsächlich belegten, in Lesereihenfolge, ohne Duplikate).
+
+Normativ:
+
+1. **Der Rechtsklick verändert die Auswahl nie.** Ein Klick außerhalb reduziert
+   sie nicht auf die geklickte Zelle, ein Klick innerhalb erweitert sie nicht.
+2. **Leere Zellen zählen, liefern aber kein Tool.** `cellCount` und
+   `toolIds.length` dürfen auseinanderfallen; das ist der Normalfall.
+3. **Unbekannte Zellen liefern `null`, nicht einen Fehler.** Resize,
+   Variantenwechsel und gelöschte Tools sind gewöhnlich; ein Phantom-Tool wäre
+   der einzige echte Schaden dieser Schicht.
+4. **Es wird nichts angeboten, was es nicht gibt.** Beide Kontexte zeigen heute
+   Edit, Copy, Delete; kein "Coming soon", keine erfundenen Einträge.
+
+Weg durch den Code: `CategoryButtonGrid` veröffentlicht einen Resolver
+(`GridTargetResolverProvider`), jede Zelle bindet ihren Cell-Key
+(`GridCellKeyProvider`, **nur um ein echtes Tool** — eine Zelle liest ihr
+„belegt" aus den `children`), `useButtonMenu` fragt beim Öffnen des Menüs. Der
+Resolver liest die Auswahl beim Aufruf aus einer Ref, damit ein Menü nicht den
+Auswahlstand des letzten Renders beschreibt. Das aufgelöste Ergebnis hängt als
+`data-ocap-context-kind` / `-cells` / `-tools` am Menü-Element — inspizierbar
+im laufenden Panel und im Live-Smoke, ohne das Menü zu verändern.
+
+**Ausdrücklich Zukunft, nicht Teil dieser Runde:** was ein Selection Context
+anbietet (Mehrfach-Löschen, Farbe, Export, Gruppierung), eine Action-Registry,
+Menüeinträge für leere Zellen, und Kontextmenüs außerhalb des Grids.

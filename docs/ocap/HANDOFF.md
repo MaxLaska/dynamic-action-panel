@@ -965,6 +965,53 @@ Stunden ältere Fassung (Auswahl auf rechts, Move auf links).
   jetzt instanzgebunden (`__saveCountPatchedFor`), sonst zählt nach einem
   Plugin-Reload niemand mehr.
 
+### 2p. Hilfe-Modal und Kontext-Routing (2026-09-20)
+
+Normativ: `cell-selection-colors.md` §20.
+
+**Teil A — die Bedienreferenz.**
+
+- `src/utils/interactionReference.ts` — die einzige Formulierung der Grammatik
+  für den Nutzer. `interactionReference()` liefert Abschnitte mit i18n-Keys und
+  bereits plattformgeschriebenen Gesten (`modifierLabel()` → `Ctrl`/`Cmd`),
+  `interactionReferenceText()` löst auf.
+- `src/components/modal/HelpModal.ts` + `HelpModal.css` — gewöhnliches Obsidian-
+  `Modal`, kein React (der Knopf sitzt außerhalb des Panel-React-Baums). Der
+  Abschnitt ist das Grid, nicht die Zeile: eine gemeinsame Spalte, damit die
+  Beschreibungen nicht Zeile für Zeile springen.
+- `src/components/shared/NavigationBar.tsx` — neuer `NavIconButton`
+  (`help-circle`, Klasse `help-btn`) links vom Zahnrad, neue Prop `onOpenHelp`.
+  `NavigationBarRenderer` öffnet das Modal.
+- 25 neue Locale-Keys je `en`/`ru`/`zh` (angehängt, nicht einsortiert — die
+  Dateien sind historisch gewachsen sortiert).
+
+**Teil B — worum es bei einem Rechtsklick geht.**
+
+- `src/utils/contextTarget.ts` — rein. `resolveContextTarget` entscheidet
+  `'selection'` (geklickte Zelle ist Teil der Auswahl) vs. `'tool'` (alles
+  andere); `getSelectionDescriptor` zählt Zellen und sammelt Tool-Ids in
+  Lesereihenfolge ohne Duplikate; `toolOnlyContextTarget` ist die Antwort
+  außerhalb jedes Grids.
+- `src/contexts/GridContextTarget.tsx` — zwei triviale Contexts: der Grid
+  veröffentlicht den Resolver, jede Zelle ihren Cell-Key. `useContextTarget()`
+  gibt eine Funktion zurück, die **beim Aufruf** auflöst.
+- `CategoryButtonGrid` hält `contextTargetRef` (Auswahl, Slots, Spalten) und
+  gibt einen stabilen Resolver aus — sonst rendert jedes Tool bei jeder
+  Auswahländerung neu, und das Menü beschriebe den vorletzten Zustand.
+- `useButtonMenu` löst vor dem Aufbau auf, baut unverändert Edit/Copy/Delete
+  und hängt `data-ocap-context-kind|-cells|-tools` an das Menü-Element.
+
+**Falle, live gefunden:** `GridCellKeyProvider` zuerst *unbedingt* um die
+`children` der Zelle gelegt. `GridSlotCell` liest „belegt" aus
+`children !== null` — damit galten **alle** 16 Zellen als belegt: kein `+`,
+kein Leerzellen-Tooltip, kein Datei-Drop-Ziel. Der Provider umschließt jetzt
+nur ein echtes Tool; `tests/contextTarget.test.ts` (38a) hält beides fest.
+
+Tests gesamt **1370** (+47: `tests/helpReference.test.ts` 20,
+`tests/contextTarget.test.ts` 27). Live-Smoke **486/486** über vierzehn Stufen
+(Stufe 14 neu: Hilfe-Knopf, Modal, Routing, Auswahl-Unversehrtheit,
+Rechtsdrag-Regression), 0 Konsolenprobleme.
+
 ### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
 
 `ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&
