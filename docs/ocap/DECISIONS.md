@@ -1240,6 +1240,55 @@ keeps a quieter one, the swatch's own border in `--text-normal`. Both are
 outline/border only, so no pixel of the bar moves, and both follow the domain
 values rather than `:focus`.
 
+## 2026-09-20 – The mouse button carries the meaning (experimental prototype)
+
+**Decision, to be judged by using it:** the panel drops the locked/edit mode
+and puts part of the meaning on the mouse button instead.
+
+    left                 use it: run the tool, or drag it to move it
+    right                context: the menu for what is under the pointer
+    right, dragged       reserved — no menu, no selection, no move
+    Shift + right        add a cell or a rectangle to the selection
+    Ctrl/Cmd + right     take one out of it
+
+**Why this dissolves the mode.** The two modes existed for one ambiguity: a
+filled cell cannot let ONE button mean both "run this tool" and "select this
+one cell". Everything else the modes protected had already moved elsewhere —
+click versus drag is decided by the 4px threshold, a category moves only by its
+grip, and selection works in both modes anyway. With the selection on the
+button that had no job in a grid of buttons, nothing is ambiguous, and there is
+nothing left for a mode to protect. So every layout affordance — move, reorder,
+resize, `+`, context menus — is simply always available.
+
+**One decision per press.** Button and modifiers are read at pointer-down and
+latched (`gridPointerIntent`); the click handler, the rectangle drag and the
+context menu all read that latch instead of re-reading the event. A modifier
+released mid-gesture cannot change what the gesture is, and a selection gesture
+can never also open a menu — the native `contextmenu` is suppressed in the
+grid's capture phase, before the tool's own listener sees it. A right press
+that travelled past the threshold opens no menu on release either.
+
+**A modifier no longer changes what the LEFT button does, anywhere.** Shift+left
+runs a tool, Ctrl+left runs a tool, a modified left drag moves it. The guards
+that used to swallow modified presses on the category handle, the tabs and the
+folder tiles are gone, and so is the `+`'s "step aside while selecting" branch.
+One button, one meaning.
+
+**The palette stays on the left button.** A swatch is an explicit control, not a
+piece of grid: plain click chooses the paint colour, Shift adds that colour's
+cells, Ctrl/Cmd removes them — all with the left button. The asymmetry is
+deliberate: in the grid the BUTTON decides, on a control the MODIFIER does.
+
+**Reversibility was a requirement, not an afterthought.** `panelConfig
+.interactionMode` keeps whatever it holds; nothing is migrated, no schema
+version moves, and the runtime simply stops reading it
+(`SINGLE_INTERACTION_MODE`). Restoring the switch is that one constant plus the
+nav-bar button. A stored "locked" is proven at runtime to change nothing.
+
+**Not decided here:** what a right-drag should eventually mean, and how an
+outbound resource drag (a PDF from the panel into a note) will be told apart
+from a left-drag move. Both are reserved, not solved.
+
 ## Open decisions
 
 The following are still open:

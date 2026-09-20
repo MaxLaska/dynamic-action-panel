@@ -50,7 +50,21 @@ vollständiges Grid mit eigenen Farben.
 
 ## 3. Moduskontrakt
 
-> **Normativ seit 2026-09-19 — das operative Modell.**
+> ## ⚠ ÜBERHOLT SEIT 2026-09-20 — EXPERIMENTELLER PROTOTYP
+>
+> **Es gibt nur noch einen Modus.** Der Locked/Edit-Umschalter ist aus der
+> Oberfläche verschwunden und hat keine Wirkung mehr; alles, was früher
+> „nur Edit" war (Tool verschieben, Kategorie umsortieren, Resize, `+`,
+> Kontextmenüs), ist immer verfügbar. Maßgeblich ist jetzt **Abschnitt 3a,
+> die Maus-Grammatik**; dieser Abschnitt beschreibt den Stand davor und
+> bleibt als Begründungskette stehen.
+>
+> Der gespeicherte Wert `panelConfig.interactionMode` wird **nicht migriert
+> und nicht gelöscht** — er wird nur nicht mehr gelesen
+> (`SINGLE_INTERACTION_MODE` in `src/utils/interactionMode.ts`). Der Schalter
+> kommt durch das Zurücknehmen genau dieser einen Zeile zurück.
+
+> **Normativ seit 2026-09-19 — das operative Modell (bis 2026-09-20).**
 >
 > ```
 > normal klicken   = Tool BENUTZEN          (Locked und Edit)
@@ -107,18 +121,72 @@ Rechtecks und für den macOS-Sekundärklick. Die Funktion hat bewusst **keinen**
 
 ---
 
+## 3a. Die Maus-Grammatik (normativ seit 2026-09-20, experimentell)
+
+> **Links = benutzen und bewegen. Rechts = Kontext. Shift+Rechts = hinzufügen.
+> Strg/Cmd+Rechts = entfernen.**
+
+Die Maustaste trägt einen Teil der Bedeutung. Das ist der Grund, warum der
+Moduskontrakt (Abschnitt 3) überflüssig geworden ist: Eine belegte Zelle musste
+mit *einer* Taste „Tool ausführen" und „genau diese Zelle auswählen" zugleich
+bedeuten können — dieser Konflikt war es, den Locked/Edit gelöst hat. Er
+existiert nicht mehr.
+
+| Geste | Bedeutung |
+|---|---|
+| **Links, kurz** | Tool ausführen (leere Zelle: nichts; : Tool anlegen) |
+| **Links, gezogen** | Tool bewegen / tauschen — und das Tool läuft danach **nicht** |
+| **Rechts, kurz** | Kontextmenü dessen, was unter dem Zeiger liegt |
+| **Rechts, gezogen** | **reserviert** — kein Menü, keine Auswahl, keine Bewegung |
+| **Shift + Rechts** | Zelle bzw. Rechteck zur Auswahl **hinzufügen** |
+| **Strg/Cmd + Rechts** | Zelle bzw. Rechteck aus der Auswahl **entfernen** |
+| **Mittlere / weitere Tasten** | nichts |
+
+- **Eine Entscheidung pro Druck.** Taste und Modifier werden beim *PointerDown*
+  gelesen und gelatcht (`gridPointerIntent` in `src/utils/gridPointerIntent.ts`);
+  Klick, Rechteck und Kontextmenü lesen diesen Latch, statt das Ereignis erneut
+  zu befragen. Eine mitten in der Geste losgelassene Taste ändert also nichts
+  mehr an dem, was die Geste ist.
+- **Ein Modifier ändert an der linken Taste nichts.** Shift+Links führt aus,
+  Strg+Links führt aus, ein Shift-Drag verschiebt. Die frühere Regel „ein
+  Modifier reserviert den Druck für die Auswahl" (Abschnitt 4a.5) gilt jetzt
+  für die **rechte** Taste; die Drag-Guards an Kategorie-Griff, Tabs und
+  Folder-Kacheln sind ersatzlos entfallen.
+- **Kein Menü nach einer Auswahl-Geste und keines nach einem Rechts-Drag.**
+  Das native `contextmenu` wird in der Capture-Phase des Grids unterdrückt,
+  bevor der Tool-eigene Listener es sieht.
+- **macOS:** Strg+Links *ist* dort der Sekundärklick und zählt deshalb als
+  Kontext, nicht als Layout-Druck; die subtraktive Taste ist Cmd.
+- **Die Farbleiste bleibt links.** Ein Swatch ist ein ausdrückliches
+  Bedienelement, kein Stück Grid: normaler Klick, Shift und Strg/Cmd wirken
+  dort unverändert mit der **linken** Taste (Abschnitt 8). Das ist bewusst
+  asymmetrisch — im Grid entscheidet die Taste, auf einem Control der Modifier.
+
+**Nur ein Modus.** Damit sind alle Layout-Affordanzen dauerhaft verfügbar:
+Tool bewegen, Kategorie am Griff umsortieren, Resize, `+`, Kontextmenüs. Die
+Geometrie bleibt, wie sie war — es wird nichts lauter, nur nichts mehr
+abgeschaltet.
+
+---
+
 ## 4. Selection-Semantik (beschlossen)
 
 Die Auswahl bezieht sich auf **Zellen**. Leere und belegte Zellen verhalten sich vollkommen
 identisch; der Auswahlmechanismus weiß nicht, ob eine Zelle belegt ist.
 
-### 4.1 Die Gesten (normativ seit 2026-09-19)
+### 4.1 Die Gesten (normativ seit 2026-09-19, Taste ergänzt 2026-09-20)
 
 ```
-Normal  = Tool benutzen — KEINE Selection
-Shift   = hinzufügen
-Strg    = entfernen      (macOS: Cmd)
+Links           = Tool benutzen / bewegen — KEINE Selection
+Rechts          = Kontext
+Shift  + Rechts = hinzufügen
+Strg   + Rechts = entfernen      (macOS: Cmd + Rechts)
 ```
+
+*Überholt am 2026-09-20:* Bis dahin lagen Shift und Strg auf der **linken**
+Taste. Die Mengenlehre darunter — Shift wählt nie ab, Strg wählt nie aus, kein
+Toggle — ist unverändert; nur die Taste, auf der sie liegt, ist eine andere
+(Abschnitt 3a).
 
 | Geste | Zelle ist nicht ausgewählt | Zelle ist ausgewählt |
 |---|---|---|
@@ -218,13 +286,17 @@ Strg:  preview = baseline − rechteck
 Niemals inkrementell pro PointerMove. Nur so führt Aufziehen-und-wieder-Zusammenziehen innerhalb
 *derselben* Geste zuverlässig auf `baseline ± aktuelles Rechteck` zurück.
 
-### 4a.5 Modifier reserviert die Auswahl — nicht Drag-and-Drop
+### 4a.5 Die rechte Taste reserviert die Auswahl — nicht Drag-and-Drop
 
-Sobald ein PointerDown Shift oder Strg/Cmd trägt, gehört die Geste der Auswahl, und zwar
-vollständig: **kein Tool-Move, kein Swap, kein Category-Reorder** — auf belegten wie auf leeren
-Zellen. Die Geste wird **beim PointerDown** entschieden; ein später gedrücktes Shift verwandelt
-einen laufenden Drag nicht nachträglich, und ein losgelassener Modifier macht aus einer
-Auswahl-Geste keinen Drag.
+Sobald ein PointerDown die **rechte Taste** mit Shift oder Strg/Cmd trägt, gehört die Geste der
+Auswahl, und zwar vollständig: **kein Tool-Move, kein Swap, kein Category-Reorder, kein
+Kontextmenü** — auf belegten wie auf leeren Zellen. Die Geste wird **beim PointerDown** entschieden;
+ein später gedrücktes Shift verwandelt einen laufenden Drag nicht nachträglich, und ein
+losgelassener Modifier macht aus einer Auswahl-Geste keinen Drag.
+
+*Überholt am 2026-09-20:* Bis dahin reservierte ein Modifier den **linken** Druck, weshalb jeder
+Drag-Griff außerhalb eines Grids (Kategorie-Handle, Tabs, Folder-Kacheln) in einen Guard gewickelt
+war, der solche Drucke verschluckte. Der Guard ist entfallen: Links heißt überall dasselbe.
 
 Umgesetzt an zwei Stellen, ohne globalen Schalter, der nach einem KeyUp hängen bleiben könnte:
 
@@ -375,8 +447,13 @@ Die Prioritäten, von oben nach unten:
 | 1 | ein Layout-Drag läuft gerade | `grabbing` |
 | 2 | Strg/Cmd gehalten | **Minus** (entfernen) |
 | 3 | Shift gehalten | `cell` — das fette Plus des Systems (hinzufügen) |
-| 4 | Edit-Mode, ein Tool, das bewegt werden kann | `grab` |
+| 4 | ein Tool, das bewegt werden kann | `grab` |
 | 5 | sonst die eigene Bedeutung der Fläche | Tool ausführen `pointer`, `+` `pointer`, Zelle/Lücke `default` |
+
+*Präzisiert 2026-09-20:* Stufe 4 hängt nicht mehr am Modus (es gibt nur einen), sondern daran, ob
+das Tool wirklich beweglich ist. Die Stufen 2 und 3 kündigen jetzt an, was ein Druck der **rechten**
+Taste täte — die Taste, auf der die Auswahl liegt. Der Cursor bleibt damit die ehrlichste verfügbare
+Ansage: Er zeigt die Bedeutung des gehaltenen Modifiers, nicht die einer bestimmten Taste.
 
 Dazu gehören ausdrücklich:
 
@@ -461,9 +538,10 @@ unter der nichts zu greifen war — auch über leeren Zellen, die nun wirklich n
   ihn sieht) und leert keine Auswahl (er steht auf der Ausschlussliste, Abschnitt 4.4).
 - **Ein Modifier unterdrückt auch am Handle den Drag** — Shift/Strg gehören der Auswahl
   (Abschnitt 4a.5).
-- Der Handle ist eine **Layout**-Affordanz und existiert nur, wo Layout-Editing erlaubt ist: im
-  Edit-Mode ohne aktive Suche. Wie die Resize-Rinne (Abschnitt 19) bleibt sein **Platz** sonst leer
-  und zeigerdurchlässig reserviert, damit der Header beim Moduswechsel nicht springt.
+- Der Handle ist eine **Layout**-Affordanz. *Seit 2026-09-20* gibt es nur noch einen Modus, also
+  ist er immer da — außer während einer Suche, die das Umsortieren weiterhin aussetzt. Sein
+  reservierter, zeigerdurchlässiger Platz (wie die Resize-Rinne, Abschnitt 19) bleibt für genau
+  diesen Fall bestehen, damit der Header nie springt.
 - Die Drag-Vorschau zeichnet denselben Header **mitsamt Handle**, damit das Gezogene aussieht wie
   das Original.
 

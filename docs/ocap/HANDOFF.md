@@ -887,6 +887,46 @@ Normativ: `docs/ocap/cell-selection-colors.md` §8, §8.2, §10, §10.1.
   und 11 auf die neue Regel umgestellt, Stufe 11 prüft zusätzlich den
   Active-Ring und das Malen per Shift mit scharfer Farbe).
 
+### 2n. Maus-Grammatik und Ein-Modus-Prototyp (2026-09-20, experimentell)
+
+Normativ: `docs/ocap/cell-selection-colors.md` §3a (neu), §3 (als überholt
+markiert), §4.1, §4a.5, §4.5, §5a. `DECISIONS.md`: „The mouse button carries
+the meaning".
+
+- **Pure Entscheidung:** neu `src/utils/gridPointerIntent.ts` —
+  `gridPointerIntent({button, shiftKey, ctrlKey, metaKey}, isMac)` →
+  `layout | select-add | select-remove | context | none`, dazu
+  `gestureOfIntent` und `isSelectionIntent`. Wrapper mit Platform-Wissen:
+  `pointerIntentOfEvent` in `cellSelectionGesture.ts`.
+- **`CategoryButtonGrid`:** `pressIntentRef` + `pressTravelledRef` werden im
+  `onPointerDownCapture` gesetzt; `onPointerMoveCapture` misst die Reise
+  gegen `RESIZE_DRAG_THRESHOLD_PX`; `onContextMenuCapture` unterdrückt das
+  Menü bei Auswahl-Intent oder gereister Geste; `onClickCapture` lässt nur
+  noch `intent === 'layout' && wasClick` zum Tool durch. Neu
+  `handleCellPress` (Einzelzelle inkl. armed Paint).
+- **`useCellRectangleSelection`** bekommt den Intent übergeben
+  (`onPointerDownCapture(event, intent)`), prüft keine Maustaste mehr selbst
+  und besitzt jetzt auch den **Einzelzell-Fall** (`onCellPress` bei
+  `!dragging`) — die rechte Taste feuert kein `click`.
+- **Ein Modus:** `SINGLE_INTERACTION_MODE` in `utils/interactionMode.ts`;
+  `PanelContent` liest die Konstante statt `panelConfig.interactionMode`.
+  `allowsLayoutEditing` bleibt unverändert (und damit die Rückkehr trivial).
+  Die Lock-Schaltfläche ist aus `NavigationBar` entfernt, Props bleiben
+  deklariert und werden weiter übergeben.
+- **Entfallen:** `utils/dragSelectionGuard.ts` samt Verwendung in
+  `SortableCategoryBlock/Tab/Folder`, der `hasSelectionModifier`-Zweig im
+  `+` (`GridSlotCell`) und `gridClickMeaning` (`gridCellSelection.ts`).
+- **Kontextmenü:** keine neue Infrastruktur. Plain RMB auf ein Tool erreicht
+  das bestehende `useButtonMenu` (Edit / Copy / Delete, gebunden in
+  `Button.tsx`), auf Titel/Tab/Kachel `createCategoryMenuHandler`. Auf einer
+  leeren Zelle gibt es bewusst **kein** Menü, weil es dafür keine bestehende
+  Aktion gibt.
+- Tests gesamt **1316** (neu `tests/mouseGrammar.test.ts` mit 21).
+  Live-Smoke **453/453** über dreizehn Stufen; neue Stufe 13 (41) fährt echte
+  Maustasten (`cdp.rightClick` / `cdp.rightDrag`), die Stufen 2–12 wurden per
+  Codemod auf Shift/Strg + RECHTS umgestellt, `refixture.mjs` setzt jetzt auch
+  Escape, Menüs, Varianten und eingeklappte Kategorien zurück.
+
 ### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
 
 `ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&

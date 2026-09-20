@@ -1,11 +1,36 @@
 # OCAP – Status
 
-Last updated: 2026-09-20 (The colour bar is a paint tool: choose a
-colour, then work with it — arming needs no selection and the chosen
-colour is visible; implemented locally and live-smoke-tested in an
-isolated Obsidian; awaiting the user's own manual acceptance)
+Last updated: 2026-09-20 (EXPERIMENTAL: the mouse button carries the
+meaning — left uses and moves, right is context, Shift/Ctrl + right
+select — and the locked/edit mode is gone from the UI; implemented
+locally and live-smoke-tested, awaiting the user's judgement in use)
 
 ## Newest work first
+
+- **The mouse button carries the meaning — EXPERIMENTAL PROTOTYPE
+  (2026-09-20), implemented locally, live-smoke-tested, deployed only to the
+  disposable smoke vault. Not pushed, not in the productive vault.** Normative:
+  `cell-selection-colors.md` §3a (new; §3 marked superseded), §4.1, §4a.5,
+  §4.5, §5a; `DECISIONS.md` "The mouse button carries the meaning".
+  - **left = use / move, right = context, Shift+right = add, Ctrl/Cmd+right =
+    remove.** A right drag is reserved (no menu, no selection, no move). One
+    decision per press, latched at pointer-down (`gridPointerIntent`), read by
+    the click, the rectangle and the context menu alike.
+  - **The locked/edit toggle is gone from the UI and has no effect.** Every
+    layout affordance is always available. The stored value is untouched and
+    unread (`SINGLE_INTERACTION_MODE`); a stored "locked" provably changes
+    nothing. Reverting is one constant plus the nav-bar button.
+  - **A modifier no longer changes the left button anywhere**; the drag guards
+    and the `+`'s selection branch are gone. The palette keeps its left-button
+    modifiers (a swatch is a control, not grid).
+  - **Context menus route into the existing infrastructure** (`useButtonMenu`:
+    Edit/Copy/Delete; `createCategoryMenuHandler`). Nothing was invented; an
+    empty cell has no menu.
+  - Tests **1316/1316** (new `tests/mouseGrammar.test.ts`), `tsc`, `eslint`,
+    build green. **Live smoke 453/453** over thirteen stages, 0 console
+    problems.
+  - **Open, deliberately:** what a right drag should mean, and how a future
+    outbound resource drag is told apart from a left-drag move.
 
 - **A swatch is a paint colour (2026-09-20) — implemented locally,
   live-smoke-tested, deployed only to the disposable smoke vault. Not pushed,
