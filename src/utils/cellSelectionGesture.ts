@@ -7,6 +7,11 @@
 
 import { Platform } from 'obsidian';
 import {
+    gridPointerIntent,
+    type GridPointerIntent,
+    type GridPointerPress,
+} from '@/utils/gridPointerIntent';
+import {
     cellGestureOf,
     hasSelectionModifierFlags,
     type CellSelectionGesture,
@@ -32,4 +37,13 @@ export function gestureOfEvent(
  */
 export function hasSelectionModifier(event: SelectionModifierFlags): boolean {
     return hasSelectionModifierFlags(event, isMacPlatform());
+}
+
+/**
+ * What a press means, from its button and its modifiers (the mouse grammar of
+ * `gridPointerIntent`). Same job as `gestureOfEvent` above, for the surfaces
+ * where the BUTTON carries part of the meaning — which is the grid.
+ */
+export function pointerIntentOfEvent(press: GridPointerPress): GridPointerIntent {
+    return gridPointerIntent(press, isMacPlatform());
 }

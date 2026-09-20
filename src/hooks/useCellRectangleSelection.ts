@@ -1,8 +1,9 @@
 import React from 'react';
 import type { GridCellKey, GridCellStyles } from '@/types/settings';
 import { RESIZE_DRAG_THRESHOLD_PX, type GridDimensions } from '@/utils/categoryGrid';
-import { gestureOfEvent } from '@/utils/cellSelectionGesture';
-import { gridCellColorOf } from '@/utils/gridCellSelection';
+import { gridCellColorOf, type CellSelectionGesture } from '@/utils/gridCellSelection';
+import { gestureOfIntent, type GridPointerIntent } from '@/utils/gridPointerIntent';
+import { gridCellKey } from '@/utils/categoryGrid';
 import {
     cellAtPoint,
     cellsAddedByRectangle,
@@ -70,12 +71,16 @@ export interface CellRectanglePreview {
 
 export interface CellRectangleSelection {
     /**
-     * Bind to the grid's `onPointerDownCapture`.
+     * Bind to the grid's `onPointerDownCapture`, with the intent the grid
+     * already decided for this press (`gridPointerIntent`).
      *
      * Returns true when the press was taken over as a selection gesture, which
      * is also when it was stopped from reaching any drag activator below.
      */
-    onPointerDownCapture: (event: React.PointerEvent<HTMLElement>) => boolean;
+    onPointerDownCapture: (
+        event: React.PointerEvent<HTMLElement>,
+        intent: GridPointerIntent
+    ) => boolean;
     /**
      * Cells the running gesture would paint on release — rendered in the armed
      * colour right away, so the user sees the result before committing to it.
@@ -118,6 +123,12 @@ export interface CellRectangleSelectionOptions {
     selectedCells: ReadonlySet<GridCellKey>;
     /** Publish the cells the gesture currently selects (replaces this grid's set). */
     onPreview: (cells: GridCellKey[]) => void;
+    /**
+     * The press was a CLICK, not a drag: it means this one cell, with the
+     * gesture it was latched with. The right button fires no click event, so
+     * the single-cell case belongs to the same press that a rectangle does.
+     */
+    onCellPress: (cell: GridCellKey, gesture: CellSelectionGesture) => void;
     /** The press became a drag, so the release must not also count as a click. */
     onActivate: () => void;
     /** Announce that Escape now means "cancel the rectangle", not "clear all". */
@@ -139,10 +150,14 @@ export interface CellRectangleSelectionOptions {
 /**
  * useCellRectangleSelection
  *
- * The pointer layer of the modifier rectangle: Shift-drag adds a rectangular
- * block of cells to the selection, Ctrl/Cmd-drag removes one. The rules
- * themselves are pure (`src/utils/gridRectangleSelection.ts`); this hook only
- * owns the gesture.
+ * The pointer layer of the selection: with the RIGHT button held, Shift adds
+ * what the gesture covers and Ctrl/Cmd removes it — one cell when the press
+ * stays put, a rectangle once it travels. The rules themselves are pure
+ * (`src/utils/gridRectangleSelection.ts`); this hook only owns the gesture.
+ *
+ * It owns the single-cell case as well (2026-09-20), because the right button
+ * fires no `click` event: one press, one latched gesture, one place that
+ * decides what it did.
  *
  * Deliberately plain document listeners, like `useGridResizeDrag` and for the
  * same reasons: the gesture owns its pointer from down to up, and needs none of
@@ -323,9 +338,18 @@ export function useCellRectangleSelection(
                 return;
             }
             const finished = endDrag(false);
-            if (!finished || !finished.dragging) {
-                // A press that never travelled is a click, and the grid's own
-                // click handler applies the existing single-cell semantics.
+            if (!finished) {
+                return;
+            }
+            if (!finished.dragging) {
+                // A press that never travelled is a CLICK, and it means the
+                // one cell it started on. The right button fires no `click`
+                // event, so this is where that case lives now — same press,
+                // same latched gesture, one place.
+                latest.current.onCellPress(
+                    gridCellKey(finished.anchor.row, finished.anchor.column),
+                    finished.gesture
+                );
                 return;
             }
             const cells = finished.added;
@@ -394,16 +418,16 @@ export function useCellRectangleSelection(
     }, [gridRef, handlePointerMove, handlePointerUp, handlePointerCancel, handleKeyDown]);
 
     const onPointerDownCapture = React.useCallback(
-        (event: React.PointerEvent<HTMLElement>): boolean => {
+        (event: React.PointerEvent<HTMLElement>, intent: GridPointerIntent): boolean => {
             const { enabled: on, owns, dimensions, selectedCells } = latest.current;
-            if (!on || event.button !== 0 || dragRef.current) {
+            if (!on || dragRef.current) {
                 return false;
             }
-            const gesture = gestureOfEvent(event);
-            // `replace` is the plain press — the existing click path owns it,
-            // and so do the tool drag and the category drag. `null` is macOS'
-            // Ctrl secondary click, which must stay a context menu.
-            if (gesture !== 'add' && gesture !== 'remove') {
+            const gesture = gestureOfIntent(intent);
+            // Only Shift/Ctrl + RIGHT belongs to the selection. The left
+            // button is the tool and the layout, a plain right press is the
+            // context menu — the caller decided that once, at pointer-down.
+            if (gesture === null) {
                 return false;
             }
 

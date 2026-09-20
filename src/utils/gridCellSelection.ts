@@ -14,7 +14,7 @@
 // - the three gestures are fixed: REPLACE, ADD (Shift), REMOVE (Ctrl/Cmd).
 //   Shift never deselects, Ctrl never selects, and there is no toggle. Since
 //   2026-09-19 a plain CLICK on a cell no longer produces `replace` — it runs
-//   the tool (see `gridClickMeaning`); since 2026-09-20 the palette speaks the
+//   the tool (see `gridPointerIntent`); since 2026-09-20 the palette speaks the
 //   same three gestures too (`cellPaletteAction.ts`), so `replace` is left as
 //   the set operation of a rectangle's live preview;
 // - the selection is ephemeral UI state. Nothing here touches, reads or
@@ -168,33 +168,6 @@ export function hasSelectionModifierFlags(
 ): boolean {
     const gesture = cellGestureOf(flags, isMac);
     return gesture === null || gesture !== 'replace';
-}
-
-/**
- * What a click on a grid cell MEANS (since 2026-09-19), in either mode:
- *
- * - `run-tool` — a plain click. The tool on the cell runs; the selection is
- *   not touched. Using a tool and choosing cells are different acts, and it is
- *   the modifier, not the mode, that says which one is meant;
- * - `select` — a Shift or Ctrl/Cmd click. It edits the selection and the tool
- *   does NOT run;
- * - `ignore` — nothing happens and the tool does not run either: the click
- *   that ends a drag (a tool moved away and back releases on its own button),
- *   the click that ends a modifier rectangle, and macOS' Ctrl secondary click.
- *
- * There is deliberately no mode parameter. A caller that wants one has
- * reintroduced the old "locked executes, edit selects" model.
- */
-export type GridClickMeaning = 'run-tool' | 'select' | 'ignore';
-
-export function gridClickMeaning(
-    gesture: CellSelectionGesture | null,
-    wasClick: boolean
-): GridClickMeaning {
-    if (!wasClick || gesture === null) {
-        return 'ignore';
-    }
-    return gesture === 'replace' ? 'run-tool' : 'select';
 }
 
 /**

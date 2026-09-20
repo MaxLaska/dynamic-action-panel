@@ -3,7 +3,6 @@ import { useDroppable } from '@dnd-kit/core';
 import { setIcon } from 'obsidian';
 import { slotDroppableId } from '@/utils/buttonDragItems';
 import { RESIZE_DRAG_THRESHOLD_PX, slotColumn, slotRow } from '@/utils/categoryGrid';
-import { hasSelectionModifier } from '@/utils/cellSelectionGesture';
 import { t, tWithParams } from '@/utils/i18n';
 
 /** Vault-file drop handling of ONE slot, empty or filled, in either mode. */
@@ -109,10 +108,6 @@ const SlotAddButton: React.FC<{ label: string; onClick: () => void }> = ({
             onClick={(event) => {
                 const origin = originRef.current;
                 originRef.current = null;
-                if (hasSelectionModifier(event)) {
-                    // Let the grid read it as a cell click.
-                    return;
-                }
                 // Same rule as everywhere else in the grid: past the drag
                 // threshold it was a drag, not a click. The `+` is only 18px,
                 // so a press that travels and still ends inside it would

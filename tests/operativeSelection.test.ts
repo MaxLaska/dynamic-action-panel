@@ -15,11 +15,8 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import {
-    gridClickMeaning,
-    isClickNotDrag,
-    type CellSelectionGesture,
-} from '@/utils/gridCellSelection';
+import { isClickNotDrag } from '@/utils/gridCellSelection';
+import { gridPointerIntent } from '@/utils/gridPointerIntent';
 import { allowsLayoutEditing } from '@/utils/interactionMode';
 import { RESIZE_DRAG_THRESHOLD_PX } from '@/utils/categoryGrid';
 
@@ -36,42 +33,23 @@ const at = (x: number, y: number) => ({ x, y });
 // --- 1. The pure click decision ------------------------------------------------
 
 describe('what a click on a grid cell means', () => {
-    it('runs the tool on a plain click, and touches no selection', () => {
-        expect(gridClickMeaning('replace', true)).toBe('run-tool');
+    // Superseded on 2026-09-20: the BUTTON decides now, so a click means one
+    // of two things instead of three, and the whole matrix lives in
+    // tests/mouseGrammar.test.ts. What survives here is the half that made
+    // this model work in the first place — a drag never also runs a tool.
+    it('runs the tool on a plain LEFT click', () => {
+        expect(gridPointerIntent({ button: 0, shiftKey: false, ctrlKey: false, metaKey: false }, false)).toBe(
+            'layout'
+        );
     });
 
-    it('SELECTS on Shift, and the tool does not run', () => {
-        expect(gridClickMeaning('add', true)).toBe('select');
-    });
-
-    it('SELECTS on Ctrl/Cmd, and the tool does not run', () => {
-        expect(gridClickMeaning('remove', true)).toBe('select');
-    });
-
-    it('ignores the click that ends a drag, plain or modified', () => {
-        // Moving a tool must never also run it, and a rectangle has already
-        // done its work by the time its click arrives.
-        for (const gesture of ['replace', 'add', 'remove'] as CellSelectionGesture[]) {
-            expect(gridClickMeaning(gesture, false)).toBe('ignore');
-        }
-    });
-
-    it("ignores macOS' Ctrl secondary click, which belongs to the context menu", () => {
-        expect(gridClickMeaning(null, true)).toBe('ignore');
-    });
-
-    it('never both runs a tool and selects', () => {
-        const meanings = new Set<string>();
-        for (const gesture of ['replace', 'add', 'remove', null] as const) {
-            for (const wasClick of [true, false]) {
-                meanings.add(gridClickMeaning(gesture, wasClick));
-            }
-        }
-        expect([...meanings].sort()).toEqual(['ignore', 'run-tool', 'select']);
-    });
-
-    it('takes no mode — the modifier decides, in locked and edit alike', () => {
-        expect(gridClickMeaning.length).toBe(2);
+    it('selects with the RIGHT button, so a left click never has to choose', () => {
+        expect(gridPointerIntent({ button: 2, shiftKey: true, ctrlKey: false, metaKey: false }, false)).toBe(
+            'select-add'
+        );
+        expect(gridPointerIntent({ button: 2, shiftKey: false, ctrlKey: true, metaKey: false }, false)).toBe(
+            'select-remove'
+        );
     });
 });
 
@@ -127,38 +105,34 @@ describe('the grid decides what a click means, before the tool sees it', () => {
     const grid = codeOf('components/buttons-panel/CategoryButtonGrid.tsx');
     const handler = grid.slice(
         grid.indexOf('const handleGridClickCapture'),
-        grid.indexOf('const handleApplyColor ')
+        grid.indexOf('const handleCellPress')
     );
 
     it('listens in the CAPTURE phase', () => {
         // Bubble would be too late: the tool's own click handler runs first.
-        expect(grid).toMatch(/onClickCapture=\{selectionActive \? handleGridClickCapture/);
-        expect(grid).not.toMatch(/onClick=\{selectionActive/);
+        expect(grid).toMatch(/onClickCapture=\{handleGridClickCapture\}/);
+        expect(grid).not.toMatch(/onClick=\{handleGridClickCapture\}/);
     });
 
-    it('uses the pure decision, not a mode check', () => {
-        expect(handler).toMatch(/gridClickMeaning\(/);
+    it('uses the latched intent and the shared threshold, not a mode check', () => {
+        expect(handler).toMatch(/const intent = pressIntentRef\.current;/);
         expect(handler).toMatch(/isClickNotDrag\(/);
         expect(handler).not.toMatch(/enableEditMode|interactionMode|sortableEnabled/);
     });
 
-    it('lets a plain click through to the tool', () => {
-        expect(handler).toMatch(/if \(meaning === 'run-tool'\) \{\s*return;/);
+    it('lets a plain left click through to the tool', () => {
+        expect(handler).toMatch(/if \(intent === 'layout' && wasClick\) \{\s*return;\s*\}/);
     });
 
     it('keeps every other click from the tool', () => {
-        // The stop comes right after the run-tool early return, before any
-        // selection work, so a modifier click can never also execute.
-        const afterRunTool = handler.slice(handler.indexOf("meaning === 'run-tool'"));
-        expect(afterRunTool.indexOf('event.stopPropagation()')).toBeLessThan(
-            afterRunTool.indexOf('selectCell(')
-        );
+        // A drag's closing click, a rectangle's, macOS' Ctrl secondary click:
+        // none of them may also run something.
+        const afterRunTool = handler.slice(handler.indexOf("intent === 'layout'"));
+        expect(afterRunTool).toMatch(/event\.stopPropagation\(\);/);
     });
 
-    it('never REPLACES the selection from a click any more', () => {
-        // The old plain-click-replaces path is gone: selectCell only ever sees
-        // the modifier gesture.
-        expect(handler).not.toMatch(/selectCell\([^)]*'replace'/);
+    it('does no selection work at all any more', () => {
+        expect(handler).not.toMatch(/selectCell|selectCells/);
     });
 });
 
@@ -342,7 +316,11 @@ describe('the modifier cursor', () => {
 
 // --- 3. What stays edit-only -----------------------------------------------------
 
-describe('the layout stays locked in locked mode', () => {
+// Superseded 2026-09-20: there is one mode now (SINGLE_INTERACTION_MODE),
+// so these gates all answer "yes". They are still worth pinning — the gates
+// are how the switch comes back — and tests/mouseGrammar.test.ts owns the
+// single-mode contract itself.
+describe('the layout gates still exist, and now always allow', () => {
     const grid = codeOf('components/buttons-panel/CategoryButtonGrid.tsx');
     const panel = codeOf('components/buttons-panel/PanelContent.tsx');
 

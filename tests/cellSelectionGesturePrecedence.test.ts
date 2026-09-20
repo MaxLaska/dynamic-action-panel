@@ -3,10 +3,10 @@
 // Two rules that only show up as BUGS if they ever drift, and neither of which
 // a pure-value test can reach on its own:
 //
-// 1. **a modifier press reserves the SELECTION.** Shift or Ctrl/Cmd down means
-//    the user is building a selection, so nothing else may claim the press —
-//    no tool move, no swap, no category reorder — on a filled and on an empty
-//    cell alike (spec §4a);
+// 1. **a selection press reserves the press.** Shift or Ctrl/Cmd with the
+//    RIGHT button means the user is building a selection, so nothing else may
+//    claim it — no tool move, no swap, no category reorder, no context menu —
+//    on a filled and on an empty cell alike (spec §4a);
 // 2. **the ephemeral paint colour is ephemeral.** It is armed by applying a
 //    colour, dropped with the selection session that armed it, previewed
 //    during a drag and persisted exactly ONCE, on pointer-up.
@@ -16,19 +16,7 @@
 // technique tests/futureSettings.test.ts and the Escape contract already use.
 
 import { readFileSync } from 'node:fs';
-import { describe, expect, it, vi } from 'vitest';
-import { suppressDragOnSelectionModifier } from '@/utils/dragSelectionGuard';
-
-/** A pointer press, as the wrapper sees it. */
-function press(modifiers: Partial<Record<'shiftKey' | 'ctrlKey' | 'metaKey', boolean>>) {
-    return {
-        shiftKey: false,
-        ctrlKey: false,
-        metaKey: false,
-        ...modifiers,
-        stopPropagation: vi.fn(),
-    };
-}
+import { describe, expect, it } from 'vitest';
 
 function sourceOf(relativePath: string): string {
     return readFileSync(new URL(`../src/${relativePath}`, import.meta.url), 'utf8');
@@ -41,69 +29,12 @@ function codeOf(relativePath: string): string {
         .replace(/^\s*\/\/.*$/gm, '');
 }
 
-describe('a selection modifier suppresses the drag it lands on', () => {
-    it('lets a plain press start the drag, untouched', () => {
-        const activator = vi.fn();
-        const guarded = suppressDragOnSelectionModifier({ onPointerDown: activator });
-        const event = press({});
-        (guarded!.onPointerDown as (e: unknown) => void)(event);
-        expect(activator).toHaveBeenCalledOnce();
-        expect(event.stopPropagation).not.toHaveBeenCalled();
-    });
-
-    it('swallows a Shift press: no drag, and no ancestor handle either', () => {
-        const activator = vi.fn();
-        const guarded = suppressDragOnSelectionModifier({ onPointerDown: activator });
-        const event = press({ shiftKey: true });
-        (guarded!.onPointerDown as (e: unknown) => void)(event);
-        expect(activator).not.toHaveBeenCalled();
-        expect(event.stopPropagation).toHaveBeenCalledOnce();
-    });
-
-    it('swallows a Ctrl press on the desktop branch', () => {
-        const activator = vi.fn();
-        const guarded = suppressDragOnSelectionModifier({ onPointerDown: activator });
-        (guarded!.onPointerDown as (e: unknown) => void)(press({ ctrlKey: true }));
-        expect(activator).not.toHaveBeenCalled();
-    });
-
-    it('holds no state, so nothing can stay switched off after a key-up', () => {
-        const activator = vi.fn();
-        const guarded = suppressDragOnSelectionModifier({ onPointerDown: activator });
-        const call = guarded!.onPointerDown as (e: unknown) => void;
-        call(press({ shiftKey: true }));
-        call(press({}));
-        call(press({ ctrlKey: true }));
-        call(press({}));
-        expect(activator).toHaveBeenCalledTimes(2);
-    });
-
-    it('keeps every other listener, and the touch activator in particular', () => {
-        const touch = vi.fn();
-        const guarded = suppressDragOnSelectionModifier({
-            onPointerDown: vi.fn(),
-            onTouchStart: touch,
-            onKeyDown: vi.fn(),
-        });
-        expect(Object.keys(guarded!).sort()).toEqual([
-            'onKeyDown',
-            'onPointerDown',
-            'onTouchStart',
-        ]);
-        // Touch carries no modifier; it must behave exactly as before.
-        expect(guarded!.onTouchStart).toBe(touch);
-    });
-
-    it('passes a map without a pointer activator straight through', () => {
-        const listeners = { onTouchStart: vi.fn() };
-        expect(suppressDragOnSelectionModifier(listeners)).toBe(listeners);
-        expect(suppressDragOnSelectionModifier(undefined)).toBeUndefined();
-    });
-});
-
-describe('every drag handle outside a grid carries the guard', () => {
-    // Inside a grid the press is claimed in the CAPTURE phase and never
-    // reaches an activator at all; these are the surfaces where it would.
+describe('the left button is never a selection gesture', () => {
+    // Superseded on 2026-09-20: a modifier used to reserve a LEFT press for
+    // the selection, so every drag handle outside a grid had to be wrapped in
+    // a guard that swallowed it. Selecting moved to the right button, so the
+    // left one means the same thing whatever is held — and the guard, and its
+    // "why did my drag not start?" class of bug, are gone with it.
     const handles = [
         'components/buttons-panel/SortableCategoryBlock.tsx',
         'components/buttons-panel/SortableCategoryTab.tsx',
@@ -111,15 +42,16 @@ describe('every drag handle outside a grid carries the guard', () => {
     ];
 
     for (const handle of handles) {
-        it(`${handle} wraps its dnd-kit listeners`, () => {
+        it(`${handle} hands dnd-kit its listeners unwrapped`, () => {
             const code = codeOf(handle);
-            expect(code).toMatch(/suppressDragOnSelectionModifier\(listeners\)/);
-            // The raw listeners must not also be spread somewhere, or the
-            // guard would be bypassed on that element.
-            expect(code).not.toMatch(/\{\.\.\.listeners\}/);
-            expect(code).not.toMatch(/\{\.\.\.\(isDragSource \? \{\} : listeners\)\}/);
+            expect(code).toMatch(/const dragListeners = listeners;/);
+            expect(code).not.toMatch(/suppressDragOnSelectionModifier/);
         });
     }
+
+    it('and no guard module is left behind to be wired up again', () => {
+        expect(() => sourceOf('utils/dragSelectionGuard.ts')).toThrow();
+    });
 });
 
 describe('the grid claims a modifier press before anyone else can', () => {
@@ -128,8 +60,8 @@ describe('the grid claims a modifier press before anyone else can', () => {
     it('runs the rectangle gesture in the pointer-down CAPTURE phase', () => {
         // Bubble-phase would be too late: dnd-kit's activator sits on the tool
         // BELOW the grid and would already have started a drag.
-        expect(code).toMatch(/onPointerDownCapture=\{[\s\S]{0,120}handleGridPointerDownCapture/);
-        expect(code).toMatch(/rectangle\.onPointerDownCapture\(event\)/);
+        expect(code).toMatch(/onPointerDownCapture=\{handleGridPointerDownCapture\}/);
+        expect(code).toMatch(/rectangle\.onPointerDownCapture\(event, intent\)/);
     });
 
     it('still records the press origin, so a press that never travels is a click', () => {
@@ -139,7 +71,7 @@ describe('the grid claims a modifier press before anyone else can', () => {
         // return may sit in front of it.
         const start = code.indexOf('const handleGridPointerDownCapture');
         const body = code.slice(start, code.indexOf('\n    };', start));
-        expect(body).toMatch(/rectangle\.onPointerDownCapture\(event\)/);
+        expect(body).toMatch(/rectangle\.onPointerDownCapture\(event, intent\)/);
         expect(body).toMatch(/pressOriginRef\.current =/);
         expect(body).not.toMatch(/(?:^|[\s;{])return[\s;]/);
     });

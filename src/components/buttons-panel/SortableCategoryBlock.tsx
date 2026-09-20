@@ -4,7 +4,6 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { categorySortableId } from '@/utils/categoryDragItems';
 import { useCategoryDragOptional } from '@/contexts/ButtonDragContext';
-import { suppressDragOnSelectionModifier } from '@/utils/dragSelectionGuard';
 
 /** The one place a list category can be picked up (CategoryDrag.css). */
 export const CATEGORY_DRAG_HANDLE_CLASS = 'ocap-category-drag-handle';
@@ -64,10 +63,11 @@ export const SortableCategoryBlock: React.FC<SortableCategoryBlockProps> = ({
     };
 
     /**
-     * A press carrying Shift or Ctrl/Cmd is a cell-selection gesture and must
-     * not reorder the category, not even from the handle.
+     * The left button belongs to the layout, whatever key is held: selecting
+     * moved to the right button, so nothing here has to step aside for a
+     * modifier any more.
      */
-    const dragListeners = suppressDragOnSelectionModifier(listeners);
+    const dragListeners = listeners;
 
     const bindHandleIcon = React.useCallback((el: HTMLSpanElement | null) => {
         setActivatorNodeRef(el);

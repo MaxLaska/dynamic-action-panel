@@ -436,8 +436,11 @@ describe('a list category moves only by its handle', () => {
         expect(block).not.toMatch(/'category-drag-handle'/);
     });
 
-    it('keeps a selection modifier from starting a reorder, handle included', () => {
-        expect(block).toMatch(/const dragListeners = suppressDragOnSelectionModifier\(listeners\);/);
+    it('hands dnd-kit its listeners unwrapped: the left button always drags', () => {
+        // Selecting moved to the right button (2026-09-20), so a held
+        // modifier no longer has to suppress anything here.
+        expect(block).toMatch(/const dragListeners = listeners;/);
+        expect(block).not.toMatch(/suppressDragOnSelectionModifier/);
     });
 
     it('a click on the handle neither folds the header it sits in nor bubbles on', () => {

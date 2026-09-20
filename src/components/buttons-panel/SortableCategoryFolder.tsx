@@ -4,7 +4,6 @@ import { CSS } from '@dnd-kit/utilities';
 import { useDroppable } from '@dnd-kit/core';
 import { tabDroppableId } from '@/utils/buttonDragItems';
 import { categorySortableId } from '@/utils/categoryDragItems';
-import { suppressDragOnSelectionModifier } from '@/utils/dragSelectionGuard';
 import { useButtonDragOptional, useCategoryDragOptional } from '@/contexts/ButtonDragContext';
 
 function assignRef<T>(ref: React.Ref<T> | undefined, value: T | null): void {
@@ -60,8 +59,10 @@ export const SortableCategoryFolder: React.FC<SortableCategoryFolderProps> = ({
         animateLayoutChanges: () => false,
     });
 
-    /** A Shift/Ctrl press is a cell-selection gesture; it never drags a tile. */
-    const dragListeners = suppressDragOnSelectionModifier(listeners);
+    // The left button belongs to the layout, whatever key is held: selecting
+    // moved to the right button, so nothing here has to step aside for a
+    // modifier any more.
+    const dragListeners = listeners;
 
     const { setNodeRef: setButtonDropRef, isOver: isButtonDropOver } = useDroppable({
         id: tabDroppableId(categoryId),

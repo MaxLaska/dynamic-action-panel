@@ -36,3 +36,22 @@ import type { InteractionMode } from '@/types/settings';
 export function allowsLayoutEditing(mode: InteractionMode): boolean {
     return mode === 'edit';
 }
+
+/**
+ * The mode the panel actually runs in — ONE, for every user (experimental,
+ * 2026-09-20).
+ *
+ * The mouse grammar took the ambiguity the two modes existed to resolve: a
+ * left click runs a tool and a left drag moves it, told apart by the drag
+ * threshold; a category moves only by its grip; and selecting happens on the
+ * RIGHT button, where nothing else lives. With no gesture left that means two
+ * things at once, there is nothing for a mode to protect.
+ *
+ * Deliberately a runtime constant rather than a migration: `panelConfig
+ * .interactionMode` keeps whatever it holds, nothing is rewritten, no schema
+ * version moves, and restoring the switch is one line. Everything the modes
+ * ever gated — layout editing, the variant selector, context menus, the
+ * "hidden category" marking — follows from this single value, so the prototype
+ * has exactly one place to undo.
+ */
+export const SINGLE_INTERACTION_MODE: InteractionMode = 'edit';

@@ -2,7 +2,6 @@ import React from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { tabDroppableId } from '@/utils/buttonDragItems';
 import { categorySortableId } from '@/utils/categoryDragItems';
-import { suppressDragOnSelectionModifier } from '@/utils/dragSelectionGuard';
 import { useButtonDragOptional } from '@/contexts/ButtonDragContext';
 import { useCategoryDragOptional } from '@/contexts/ButtonDragContext';
 
@@ -59,8 +58,10 @@ export const SortableCategoryTab: React.FC<SortableCategoryTabProps> = ({
         disabled: !categorySortableEnabled,
     });
 
-    /** A Shift/Ctrl press is a cell-selection gesture; it never drags a tab. */
-    const dragListeners = suppressDragOnSelectionModifier(listeners);
+    // The left button belongs to the layout, whatever key is held: selecting
+    // moved to the right button, so nothing here has to step aside for a
+    // modifier any more.
+    const dragListeners = listeners;
 
     /** Same id as the Draggable, so pointerWithin hits it and drives the 0.4s hover and the drop swap */
     const { setNodeRef: setCategoryDropRef } = useDroppable({
