@@ -1,5 +1,7 @@
 import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
+import { activateOnButton } from '@/utils/dragActivator';
+import { MOUSE_BUTTON } from '@/utils/gridPointerIntent';
 import { CSS } from '@dnd-kit/utilities';
 import type { ButtonConfig, CategoryConfig } from '@/types';
 import type { ButtonsPanelPlugin } from '@/types/plugin';
@@ -71,13 +73,17 @@ export const SortableButtonItem: React.FC<SortableButtonItemProps> = React.memo(
             .filter(Boolean)
             .join(' ');
 
+        // A tool moves on a RIGHT drag: the left button runs it, and its
+        // drag is reserved (cell-selection-colors.md §3a).
+        const dragListeners = activateOnButton(listeners, MOUSE_BUTTON.right);
+
         return (
             <div
                 ref={setNodeRef}
                 style={style}
                 className={itemClassName}
                 {...attributes}
-                {...listeners}
+                {...dragListeners}
             >
                 {isDragging ? (
                     <div className="button-drag-grid-placeholder" aria-hidden>

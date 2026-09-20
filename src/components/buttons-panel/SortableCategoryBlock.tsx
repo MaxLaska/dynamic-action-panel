@@ -4,6 +4,8 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { categorySortableId } from '@/utils/categoryDragItems';
 import { useCategoryDragOptional } from '@/contexts/ButtonDragContext';
+import { activateOnButton } from '@/utils/dragActivator';
+import { MOUSE_BUTTON } from '@/utils/gridPointerIntent';
 
 /** The one place a list category can be picked up (CategoryDrag.css). */
 export const CATEGORY_DRAG_HANDLE_CLASS = 'ocap-category-drag-handle';
@@ -63,11 +65,15 @@ export const SortableCategoryBlock: React.FC<SortableCategoryBlockProps> = ({
     };
 
     /**
-     * The left button belongs to the layout, whatever key is held: selecting
-     * moved to the right button, so nothing here has to step aside for a
-     * modifier any more.
+     * A category moves on a LEFT drag from its grip — the grip has no other
+     * meaning, so it answers to the ordinary button (a TOOL moves on the right
+     * one). A press carrying a selection modifier is swallowed: there is no
+     * cell to select out here, but reordering under a held Shift would be a
+     * surprise.
      */
-    const dragListeners = listeners;
+    const dragListeners = activateOnButton(listeners, MOUSE_BUTTON.left, {
+        blockSelectionModifier: true,
+    });
 
     const bindHandleIcon = React.useCallback((el: HTMLSpanElement | null) => {
         setActivatorNodeRef(el);

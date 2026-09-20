@@ -1,29 +1,37 @@
 // tests/mouseGrammar.test.ts
 //
-// The mouse grammar (experimental, 2026-09-20):
+// The mouse grammar (experimental, corrected 2026-09-20):
 //
-//     left                 use it — run the tool, or drag it to move it
-//     right                context: the menu for what is under the pointer
-//     Shift + right        add to the selection
-//     Ctrl/Cmd + right     take out of the selection
+//     left                 use it: a click runs the tool
+//     left, dragged        RESERVED — no move, no selection, no run either
+//     Shift + left         add to the selection (one cell, or a rectangle)
+//     Ctrl/Cmd + left      take out of the selection
+//     right                context: a click opens the menu, a DRAG moves the tool
 //
-// The button carries part of the meaning, which is what let the locked/edit
-// mode go: a filled cell can now say "run this" and "select this one cell"
-// without either gesture being ambiguous.
+// This supersedes the first attempt of the same day, which had put the
+// selection on the right button and the layout move on the left. Using it said
+// otherwise: the left button is where a hand expects "use this", and moving a
+// tool around is the odd job that belongs on the odd button. The left drag is
+// deliberately empty — an outbound resource drag is the obvious later claimant.
 //
-// Three layers: the pure decision, the press-time latch that every later
-// handler reads, and the single mode that follows from one constant.
+// Three layers: the pure decision, the press-time latch every later handler
+// reads, and the single mode that follows from one constant.
 
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
     MOUSE_BUTTON,
     gestureOfIntent,
     gridPointerIntent,
     isSelectionIntent,
+    pressCarriesSelectionModifier,
     type GridPointerIntent,
 } from '@/utils/gridPointerIntent';
 import { SINGLE_INTERACTION_MODE, allowsLayoutEditing } from '@/utils/interactionMode';
+import {
+    cancelContextMenuSuppression,
+    suppressNextContextMenu,
+} from '@/utils/contextMenuSuppression';
 
 const WINDOWS = false;
 const MAC = true;
@@ -42,29 +50,28 @@ const intentOf = (
 // --- 1. The decision ----------------------------------------------------------------
 
 describe('what a press on the grid means', () => {
-    it('the LEFT button is the tool and the layout, whatever is held', () => {
-        // The point of moving the selection off this button: a left press
-        // keeps one meaning, so a stray Shift cannot turn a move into
-        // something else halfway through.
-        expect(intentOf(MOUSE_BUTTON.left)).toBe('layout');
-        expect(intentOf(MOUSE_BUTTON.left, { shiftKey: true })).toBe('layout');
-        expect(intentOf(MOUSE_BUTTON.left, { ctrlKey: true })).toBe('layout');
-        expect(intentOf(MOUSE_BUTTON.left, { metaKey: true })).toBe('layout');
+    it('a plain LEFT press is "use it": a click runs the tool', () => {
+        expect(intentOf(MOUSE_BUTTON.left)).toBe('use');
     });
 
-    it('the RIGHT button alone is the context menu', () => {
-        expect(intentOf(MOUSE_BUTTON.right)).toBe('context');
-    });
-
-    it('Shift + right ADDS, Ctrl + right REMOVES', () => {
-        expect(intentOf(MOUSE_BUTTON.right, { shiftKey: true })).toBe('select-add');
-        expect(intentOf(MOUSE_BUTTON.right, { ctrlKey: true })).toBe('select-remove');
+    it('Shift + left ADDS, Ctrl + left REMOVES', () => {
+        expect(intentOf(MOUSE_BUTTON.left, { shiftKey: true })).toBe('select-add');
+        expect(intentOf(MOUSE_BUTTON.left, { ctrlKey: true })).toBe('select-remove');
     });
 
     it('both modifiers held resolve to ADD, as everywhere else in the panel', () => {
-        expect(intentOf(MOUSE_BUTTON.right, { shiftKey: true, ctrlKey: true })).toBe(
+        expect(intentOf(MOUSE_BUTTON.left, { shiftKey: true, ctrlKey: true })).toBe(
             'select-add'
         );
+    });
+
+    it('the RIGHT button is one intent, whatever is held', () => {
+        // Travel, not a key, decides which of its two readings it is: a click
+        // opens the menu, a drag moves the tool. A modifier must not turn it
+        // into a third thing — that was the rejected model.
+        for (const modifiers of [{}, { shiftKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+            expect(intentOf(MOUSE_BUTTON.right, modifiers)).toBe('secondary');
+        }
     });
 
     it('any other button means nothing at all', () => {
@@ -74,19 +81,18 @@ describe('what a press on the grid means', () => {
     });
 
     it('on macOS Cmd removes, and Ctrl + LEFT is the secondary click', () => {
-        // Ctrl + left IS a right click there, so it must read as context —
-        // not as a layout press, and not as a removal.
-        expect(intentOf(MOUSE_BUTTON.right, { metaKey: true }, MAC)).toBe('select-remove');
-        expect(intentOf(MOUSE_BUTTON.right, { ctrlKey: true }, MAC)).toBe('context');
-        expect(intentOf(MOUSE_BUTTON.left, { ctrlKey: true }, MAC)).toBe('context');
-        expect(intentOf(MOUSE_BUTTON.left, { shiftKey: true }, MAC)).toBe('layout');
-        expect(intentOf(MOUSE_BUTTON.right, { shiftKey: true }, MAC)).toBe('select-add');
+        // Ctrl + left IS a right click there, so it reads as secondary — not
+        // as a removal, and not as "use".
+        expect(intentOf(MOUSE_BUTTON.left, { metaKey: true }, MAC)).toBe('select-remove');
+        expect(intentOf(MOUSE_BUTTON.left, { ctrlKey: true }, MAC)).toBe('secondary');
+        expect(intentOf(MOUSE_BUTTON.left, { shiftKey: true }, MAC)).toBe('select-add');
+        expect(intentOf(MOUSE_BUTTON.right, { ctrlKey: true }, MAC)).toBe('secondary');
     });
 
     it('hands the selection a gesture only for the two selection intents', () => {
         expect(gestureOfIntent('select-add')).toBe('add');
         expect(gestureOfIntent('select-remove')).toBe('remove');
-        for (const intent of ['layout', 'context', 'none'] as GridPointerIntent[]) {
+        for (const intent of ['use', 'secondary', 'none'] as GridPointerIntent[]) {
             expect(gestureOfIntent(intent)).toBeNull();
             expect(isSelectionIntent(intent)).toBe(false);
         }
@@ -98,12 +104,21 @@ describe('what a press on the grid means', () => {
         for (const button of [0, 1, 2, 3]) {
             for (const modifiers of [{}, { shiftKey: true }, { ctrlKey: true }, { metaKey: true }]) {
                 for (const isMac of [WINDOWS, MAC]) {
-                    expect(gestureOfIntent(gridPointerIntent(press(button, modifiers), isMac))).not.toBe(
-                        'replace'
-                    );
+                    expect(
+                        gestureOfIntent(gridPointerIntent(press(button, modifiers), isMac))
+                    ).not.toBe('replace');
                 }
             }
         }
+    });
+
+    it('knows a selection modifier by the key, for the handles outside a grid', () => {
+        expect(pressCarriesSelectionModifier(press(0, { shiftKey: true }), WINDOWS)).toBe(true);
+        expect(pressCarriesSelectionModifier(press(0, { ctrlKey: true }), WINDOWS)).toBe(true);
+        expect(pressCarriesSelectionModifier(press(0), WINDOWS)).toBe(false);
+        // macOS: Cmd is the subtractive key, plain Ctrl is the secondary click.
+        expect(pressCarriesSelectionModifier(press(0, { metaKey: true }), MAC)).toBe(true);
+        expect(pressCarriesSelectionModifier(press(0, { ctrlKey: true }), MAC)).toBe(false);
     });
 });
 
@@ -132,13 +147,12 @@ describe('one decision per press, taken at pointer-down', () => {
     });
 
     it('never asks the event again later: no handler reads a button or a key', () => {
-        // The whole point of the latch. A modifier released mid-gesture, or a
-        // second button pressed, must not change what the gesture was.
+        // A modifier released mid-gesture, or a second button pressed, must
+        // not change what the gesture was.
         const afterDown = grid.slice(grid.indexOf('const handleGridPointerMoveCapture'));
         expect(afterDown).not.toMatch(/\bevent\.button\b/);
         expect(afterDown).not.toMatch(/shiftKey|ctrlKey|metaKey/);
         expect(afterDown).not.toMatch(/pointerIntentOfEvent|gestureOfEvent/);
-        // The hook is handed the intent; it does not re-derive one either.
         expect(hook).not.toMatch(/\bevent\.button\b/);
         expect(hook).not.toMatch(/shiftKey|ctrlKey|metaKey/);
     });
@@ -149,8 +163,6 @@ describe('one decision per press, taken at pointer-down', () => {
     });
 
     it('a selection press that stayed put means its one cell', () => {
-        // The right button fires no `click`, so the single-cell case lives in
-        // the same press that a rectangle does.
         expect(hook).toMatch(
             /if \(!finished\.dragging\) \{[\s\S]*latest\.current\.onCellPress\(\s*gridCellKey\(finished\.anchor\.row, finished\.anchor\.column\),\s*finished\.gesture\s*\)/
         );
@@ -158,27 +170,36 @@ describe('one decision per press, taken at pointer-down', () => {
         expect(grid).toMatch(/selectCell\(selectionContext, cellKey, gesture\);/);
     });
 
-    it('a left click runs the tool, and only when it was not a drag', () => {
+    it('ONLY a plain left click reaches the tool', () => {
         const click = grid.slice(
             grid.indexOf('const handleGridClickCapture'),
             grid.indexOf('const handleCellPress')
         );
-        expect(click).toMatch(/if \(intent === 'layout' && wasClick\) \{\s*return;\s*\}/);
+        expect(click).toMatch(/if \(intent === 'use' && wasClick\) \{\s*return;\s*\}/);
         expect(click).toMatch(/event\.stopPropagation\(\);/);
-        // No selection work on this path any more.
+        // Travelled once is travelled for good: a press that wandered off and
+        // came back releases at its origin, and the endpoint distance alone
+        // would call that a click and run the tool.
+        expect(click).toMatch(/!pressTravelledRef\.current &&\s*isClickNotDrag\(/);
+        // An activated drag says so itself, because the drag overlay becomes
+        // the event target and the grid stops seeing the moves.
+        expect(grid).toMatch(
+            /if \(isDragging\) \{\s*pressOriginRef\.current = null;\s*pressTravelledRef\.current = true;/
+        );
+        // A left DRAG is reserved: its closing click must not run anything.
         expect(click).not.toMatch(/selectCell|selectCells/);
         expect(grid).toMatch(/onClickCapture=\{handleGridClickCapture\}/);
     });
 
-    it('a selection gesture and a right DRAG never end in a menu', () => {
+    it('only a travelled RIGHT press suppresses the menu — never globally', () => {
         const menu = grid.slice(
             grid.indexOf('const handleGridContextMenuCapture'),
             grid.indexOf('const handleGridClickCapture')
         );
-        expect(menu).toMatch(/if \(isSelectionIntent\(intent\) \|\| travelled\) \{\s*event\.preventDefault\(\);\s*event\.stopPropagation\(\);/);
+        expect(menu).toMatch(
+            /if \(intent === 'secondary' && travelled\) \{\s*event\.preventDefault\(\);\s*event\.stopPropagation\(\);/
+        );
         expect(grid).toMatch(/onContextMenuCapture=\{handleGridContextMenuCapture\}/);
-        // Capture, or the tool's own contextmenu listener would already have
-        // opened it (see Button.tsx).
         expect(grid).not.toMatch(/onContextMenu=\{handleGridContextMenuCapture\}/);
     });
 
@@ -190,25 +211,136 @@ describe('one decision per press, taken at pointer-down', () => {
         expect(move).toMatch(/RESIZE_DRAG_THRESHOLD_PX/);
         expect(move).toMatch(/pressTravelledRef\.current = true;/);
     });
+});
 
-    it('no left press is a selection gesture any more, anywhere', () => {
+// --- 3. Which button starts which drag ----------------------------------------------
+
+describe('a tool moves on the right button, a category on the left', () => {
+    const sensor = codeOf('sensors/ScrollAwarePointerSensor.ts');
+    const tool = codeOf('components/button/SortableButtonItem.tsx');
+    const activator = codeOf('utils/dragActivator.ts');
+
+    it('the sensor accepts both buttons, so each draggable can choose', () => {
+        // dnd-kit's own activator refuses anything but the left button.
+        expect(sensor).toMatch(/static activators/);
+        expect(sensor).toMatch(/event\.button !== MOUSE_BUTTON\.left &&\s*event\.button !== MOUSE_BUTTON\.right/);
+    });
+
+    it('a TOOL activates on the right button only', () => {
+        expect(tool).toMatch(
+            /const dragListeners = activateOnButton\(listeners, MOUSE_BUTTON\.right\);/
+        );
+        // and the raw listeners are not also spread somewhere, which would
+        // hand the left button a move after all.
+        expect(tool).not.toMatch(/\{\.\.\.listeners\}/);
+        expect(tool).toMatch(/\{\.\.\.dragListeners\}/);
+    });
+
+    it('a CATEGORY handle activates on the left button, never while selecting', () => {
         for (const file of [
             'components/buttons-panel/SortableCategoryBlock.tsx',
             'components/buttons-panel/SortableCategoryTab.tsx',
             'components/buttons-panel/SortableCategoryFolder.tsx',
         ]) {
             const code = codeOf(file);
-            expect(code).toMatch(/const dragListeners = listeners;/);
-            expect(code).not.toMatch(/suppressDragOnSelectionModifier/);
+            expect(code).toMatch(
+                /const dragListeners = activateOnButton\(listeners, MOUSE_BUTTON\.left, \{\s*blockSelectionModifier: true,\s*\}\);/
+            );
+            expect(code).not.toMatch(/\{\.\.\.listeners\}/);
         }
-        // The `+` no longer steps aside for a held modifier either.
-        expect(codeOf('components/buttons-panel/GridSlotCell.tsx')).not.toMatch(
-            /hasSelectionModifier/
+    });
+
+    it('the filter is a wrapper, not a copy of the grammar', () => {
+        expect(activator).toMatch(/if \(event\.button !== button\) \{\s*return;\s*\}/);
+        expect(activator).toMatch(/pressCarriesSelectionModifier\(event, isMacPlatform\(\)\)/);
+        // Nothing is dropped from the map: the touch activator in particular
+        // must survive, or a long press stops moving anything.
+        expect(activator).toMatch(/\.\.\.listeners,/);
+    });
+});
+
+// --- 3b. The menu a finished right drag must not open --------------------------------
+
+describe('a finished right drag swallows exactly one context menu', () => {
+    /** A document that records its listeners, and a menu event with spies. */
+    function fakeDoc() {
+        const listeners = new Map<string, Set<(event: unknown) => void>>();
+        const timers = new Map<number, () => void>();
+        let nextTimer = 1;
+        const doc = {
+            addEventListener: (type: string, fn: (event: unknown) => void) => {
+                if (!listeners.has(type)) listeners.set(type, new Set());
+                listeners.get(type)!.add(fn);
+            },
+            removeEventListener: (type: string, fn: (event: unknown) => void) => {
+                listeners.get(type)?.delete(fn);
+            },
+            defaultView: {
+                setTimeout: (fn: () => void) => {
+                    timers.set(nextTimer, fn);
+                    return nextTimer++;
+                },
+                clearTimeout: (id: number) => timers.delete(id),
+            },
+        };
+        return {
+            doc: doc as unknown as Document,
+            count: () => listeners.get('contextmenu')?.size ?? 0,
+            fire: () => {
+                const event = {
+                    preventDefault: vi.fn(),
+                    stopPropagation: vi.fn(),
+                };
+                listeners.get('contextmenu')?.forEach((fn) => fn(event));
+                return event;
+            },
+            expire: () => timers.forEach((fn) => fn()),
+        };
+    }
+
+    it('swallows the next menu, and only that one', () => {
+        const f = fakeDoc();
+        suppressNextContextMenu(f.doc);
+        const first = f.fire();
+        expect(first.preventDefault).toHaveBeenCalledOnce();
+        expect(first.stopPropagation).toHaveBeenCalledOnce();
+        // Gone afterwards: a right CLICK right after a drag still gets a menu.
+        expect(f.count()).toBe(0);
+        const second = f.fire();
+        expect(second.preventDefault).not.toHaveBeenCalled();
+    });
+
+    it('never stands: it clears itself when no menu arrives', () => {
+        // A drag cancelled by Escape, or a platform that reports the menu on
+        // the press, must not leave the panel menu-less.
+        const f = fakeDoc();
+        suppressNextContextMenu(f.doc);
+        expect(f.count()).toBe(1);
+        f.expire();
+        expect(f.count()).toBe(0);
+    });
+
+    it('can be dropped on demand, and never stacks', () => {
+        const f = fakeDoc();
+        suppressNextContextMenu(f.doc);
+        suppressNextContextMenu(f.doc);
+        expect(f.count()).toBe(1);
+        cancelContextMenuSuppression();
+        expect(f.count()).toBe(0);
+    });
+
+    it('is armed by the DRAG, for a right press only', () => {
+        // The grid that latched the press is remounted while a button drag is
+        // in flight (ListModeContent swaps the sortable block), so the
+        // suppression is armed from the drag provider, which is not.
+        const context = codeOf('contexts/ButtonDragContext.tsx');
+        expect(context).toMatch(
+            /const activator = event\.activatorEvent as MouseEvent \| undefined;\s*if \(activator\?\.button === MOUSE_BUTTON\.right\) \{\s*suppressNextContextMenu\(activeDocument\);/
         );
     });
 });
 
-// --- 3. One mode --------------------------------------------------------------------
+// --- 4. One mode --------------------------------------------------------------------
 
 describe('the panel runs in one mode', () => {
     const panel = codeOf('components/buttons-panel/PanelContent.tsx');
@@ -221,7 +353,6 @@ describe('the panel runs in one mode', () => {
     });
 
     it('leaves every layout affordance permanently available', () => {
-        // They still ask the same question; the answer is now always yes.
         expect(allowsLayoutEditing(SINGLE_INTERACTION_MODE)).toBe(true);
         expect(panel).toMatch(/const enableEditMode = allowsLayoutEditing\(interactionMode\);/);
         const gridSource = codeOf('components/buttons-panel/CategoryButtonGrid.tsx');
@@ -235,8 +366,6 @@ describe('the panel runs in one mode', () => {
     });
 
     it('touches neither the stored value nor the schema', () => {
-        // The prototype is one constant; the setting keeps whatever it holds,
-        // so going back is one line and no data moves.
         const settings = readFileSync(
             new URL('../src/types/settings.ts', import.meta.url),
             'utf8'
@@ -247,19 +376,12 @@ describe('the panel runs in one mode', () => {
             'utf8'
         );
         expect(migrations).toMatch(/normalizeInteractionMode/);
-        const mode = readFileSync(
-            new URL('../src/utils/interactionMode.ts', import.meta.url),
-            'utf8'
+        expect(codeOf('utils/interactionMode.ts')).toMatch(
+            /export function allowsLayoutEditing/
         );
-        expect(mode).toMatch(/export function allowsLayoutEditing/);
     });
 
     it('a stored "locked" changes nothing at runtime', () => {
-        // Whatever is in the file, the panel runs the one mode.
-        for (const stored of ['locked', 'edit', undefined]) {
-            void stored;
-            expect(SINGLE_INTERACTION_MODE).toBe('edit');
-        }
         expect(panel).not.toMatch(/interactionMode === 'locked'|isLocked/);
     });
 });

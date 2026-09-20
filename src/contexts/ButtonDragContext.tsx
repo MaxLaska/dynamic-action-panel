@@ -25,6 +25,8 @@ import {
 } from '@/utils/touchScrollActivation';
 import { isCoarsePointerDevice } from '@/utils/isCoarsePointerDevice';
 import { setPanelTouchDragLock } from '@/utils/touchDragLock';
+import { suppressNextContextMenu } from '@/utils/contextMenuSuppression';
+import { MOUSE_BUTTON } from '@/utils/gridPointerIntent';
 import { Notice, setIcon, type App } from 'obsidian';
 import type { ButtonConfig, CategoryConfig } from '@/types';
 import type { StoredCategory } from '@/types/settings';
@@ -669,6 +671,15 @@ export const ButtonDragProvider: React.FC<ButtonDragProviderProps> = ({
 
     const handleDragStart = useCallback(
         (event: DragStartEvent) => {
+            // A tool moves on a RIGHT drag, and the browser reports a
+            // `contextmenu` for the release that ends it. That menu belongs to
+            // the click this press did NOT turn out to be, so it is swallowed
+            // once — armed here because the grid that latched the press is
+            // remounted while a drag is in flight.
+            const activator = event.activatorEvent as MouseEvent | undefined;
+            if (activator?.button === MOUSE_BUTTON.right) {
+                suppressNextContextMenu(activeDocument);
+            }
             const activeId = String(event.active.id);
             dndDebug('dragStart', activeId);
             dragForceCancelledRef.current = false;

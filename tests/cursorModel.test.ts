@@ -249,40 +249,32 @@ const cursorRule = (rules: CssRule[], selector: string): CssRule => {
 const MODEL = {
     grid: 'body .buttons-panel .ocap-palette-grid',
     cell: 'body .buttons-panel .ocap-palette-grid .ocap-grid-slot',
-    lockedTool:
+    toolButton:
         'body .buttons-panel .ocap-palette-grid .ocap-grid-slot button.buttons-panel-simple-button',
     add: 'body .buttons-panel .ocap-palette-grid .ocap-grid-slot button.ocap-slot-add',
     movableWrapper: 'body .buttons-panel .ocap-palette-grid .ocap-grid-slot .sortable-button-item',
-    movableTool:
-        'body .buttons-panel .ocap-palette-grid .ocap-grid-slot .sortable-button-item button.buttons-panel-simple-button',
 };
 
 describe('the cursor on each grid surface, without a modifier', () => {
-    it('a movable tool (edit mode) shows the open hand', () => {
-        expect(cursorRule(palette, MODEL.movableTool).declarations.get('cursor')).toBe(
-            'var(--ocap-selection-cursor, grab)'
-        );
+    it('a tool shows the POINTER: the left button runs it', () => {
+        // Corrected 2026-09-20: the open hand used to sit here, from when a
+        // left drag moved a tool. A tool moves on a RIGHT drag now, so a
+        // permanent hand would advertise the wrong button.
         expect(cursorRule(palette, MODEL.movableWrapper).declarations.get('cursor')).toBe(
-            'var(--ocap-selection-cursor, grab)'
-        );
-    });
-
-    it('...and actually wins over the tool’s own pointer', () => {
-        // The bug this replaces: the hand sat on the drag WRAPPER, but the
-        // pointer is over the BUTTON, whose own `cursor: pointer` won there.
-        const toolPointer = buttonCss.find(
-            (r) =>
-                r.declarations.get('cursor') === 'pointer' &&
-                r.selector.includes('button.buttons-panel-simple-button')
-        )!;
-        expect(beats(MODEL.movableTool, toolPointer.selector)).toBe(true);
-        expect(beats(MODEL.movableTool, MODEL.lockedTool)).toBe(true);
-    });
-
-    it('a tool that is not movable (locked, a search) keeps the click pointer', () => {
-        expect(cursorRule(palette, MODEL.lockedTool).declarations.get('cursor')).toBe(
             'var(--ocap-selection-cursor, pointer)'
         );
+        expect(cursorRule(palette, MODEL.toolButton).declarations.get('cursor')).toBe(
+            'var(--ocap-selection-cursor, pointer)'
+        );
+    });
+
+    it('...and no rule anywhere puts a resting hand on a tool', () => {
+        const resting = [...palette, ...buttonCss, ...buttonDragCss].filter(
+            (r) =>
+                /sortable-button-item|buttons-panel-simple-button/.test(r.selector) &&
+                r.declarations.get('cursor') === 'grab'
+        );
+        expect(resting.map((r) => r.selector)).toEqual([]);
     });
 
     it('an empty cell and the gutters show the plain arrow — nothing to grab', () => {
@@ -436,11 +428,12 @@ describe('a list category moves only by its handle', () => {
         expect(block).not.toMatch(/'category-drag-handle'/);
     });
 
-    it('hands dnd-kit its listeners unwrapped: the left button always drags', () => {
-        // Selecting moved to the right button (2026-09-20), so a held
-        // modifier no longer has to suppress anything here.
-        expect(block).toMatch(/const dragListeners = listeners;/);
-        expect(block).not.toMatch(/suppressDragOnSelectionModifier/);
+    it('drags on the LEFT button, and never while a selection modifier is held', () => {
+        // A TOOL moves on the right button; the grip keeps the ordinary one,
+        // because it has no other meaning (2026-09-20).
+        expect(block).toMatch(
+            /const dragListeners = activateOnButton\(listeners, MOUSE_BUTTON\.left, \{\s*blockSelectionModifier: true,\s*\}\);/
+        );
     });
 
     it('a click on the handle neither folds the header it sits in nor bubbles on', () => {

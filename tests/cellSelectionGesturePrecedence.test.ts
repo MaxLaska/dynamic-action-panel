@@ -3,10 +3,10 @@
 // Two rules that only show up as BUGS if they ever drift, and neither of which
 // a pure-value test can reach on its own:
 //
-// 1. **a selection press reserves the press.** Shift or Ctrl/Cmd with the
-//    RIGHT button means the user is building a selection, so nothing else may
-//    claim it — no tool move, no swap, no category reorder, no context menu —
-//    on a filled and on an empty cell alike (spec §4a);
+// 1. **a modifier press reserves the SELECTION.** Shift or Ctrl/Cmd with the
+//    left button means the user is building a selection, so nothing else may
+//    claim the press — no tool move, no swap, no category reorder — on a
+//    filled and on an empty cell alike (spec §4a);
 // 2. **the ephemeral paint colour is ephemeral.** It is armed by applying a
 //    colour, dropped with the selection session that armed it, previewed
 //    during a drag and persisted exactly ONCE, on pointer-up.
@@ -29,12 +29,13 @@ function codeOf(relativePath: string): string {
         .replace(/^\s*\/\/.*$/gm, '');
 }
 
-describe('the left button is never a selection gesture', () => {
-    // Superseded on 2026-09-20: a modifier used to reserve a LEFT press for
-    // the selection, so every drag handle outside a grid had to be wrapped in
-    // a guard that swallowed it. Selecting moved to the right button, so the
-    // left one means the same thing whatever is held — and the guard, and its
-    // "why did my drag not start?" class of bug, are gone with it.
+describe('a selection modifier reserves the press it lands on', () => {
+    // Shift or Ctrl/Cmd + LEFT is the selection gesture (corrected
+    // 2026-09-20). Inside a grid the press never reaches a drag activator —
+    // the grid claims it in the capture phase. OUTSIDE one, on the surfaces
+    // that are themselves drag handles, the activator has to refuse it: there
+    // is no cell to select out there, but a category reordering under a held
+    // Shift would be a surprise.
     const handles = [
         'components/buttons-panel/SortableCategoryBlock.tsx',
         'components/buttons-panel/SortableCategoryTab.tsx',
@@ -42,15 +43,21 @@ describe('the left button is never a selection gesture', () => {
     ];
 
     for (const handle of handles) {
-        it(`${handle} hands dnd-kit its listeners unwrapped`, () => {
+        it(`${handle} refuses a modified press, and the right button`, () => {
             const code = codeOf(handle);
-            expect(code).toMatch(/const dragListeners = listeners;/);
-            expect(code).not.toMatch(/suppressDragOnSelectionModifier/);
+            expect(code).toMatch(
+                /const dragListeners = activateOnButton\(listeners, MOUSE_BUTTON\.left, \{\s*blockSelectionModifier: true,\s*\}\);/
+            );
+            // The raw listeners must not also be spread somewhere, or the
+            // filter would be bypassed on that element.
+            expect(code).not.toMatch(/\{\.\.\.listeners\}/);
         });
     }
 
-    it('and no guard module is left behind to be wired up again', () => {
-        expect(() => sourceOf('utils/dragSelectionGuard.ts')).toThrow();
+    it('and a TOOL answers to the right button instead', () => {
+        expect(codeOf('components/button/SortableButtonItem.tsx')).toMatch(
+            /activateOnButton\(listeners, MOUSE_BUTTON\.right\)/
+        );
     });
 });
 

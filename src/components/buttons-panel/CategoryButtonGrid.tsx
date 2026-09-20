@@ -40,7 +40,7 @@ import {
     type GridSelectionContextKey,
 } from '@/utils/gridCellSelection';
 import { pointerIntentOfEvent } from '@/utils/cellSelectionGesture';
-import { isSelectionIntent, type GridPointerIntent } from '@/utils/gridPointerIntent';
+import type { GridPointerIntent } from '@/utils/gridPointerIntent';
 import { resolveGridCellColorCss } from '@/utils/gridCellColor';
 import { useCellColorActions } from '@/hooks/useCellColorActions';
 import { useCellRectangleSelection } from '@/hooks/useCellRectangleSelection';
@@ -367,14 +367,14 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     };
 
     /**
-     * The right button asks for the context menu — but only when this press was
-     * a plain right press that stayed put.
+     * The right button asks for the context menu — but only when the press
+     * stayed put.
      *
-     * A selection gesture must not also open a menu, and a right press that
-     * turned into a drag must not open one on release. Both are stopped here,
-     * in the capture phase, which is what keeps the tool's own `contextmenu`
-     * listener (see Button.tsx) from ever seeing them. A plain click is left
-     * alone and reaches exactly the menu it would have reached before.
+     * A right press that travelled is a tool MOVE, and a move must not end in
+     * a menu. That single case is stopped here, in the capture phase, which is
+     * what keeps the tool's own `contextmenu` listener (see Button.tsx) from
+     * ever seeing it. Everything else is left alone and reaches exactly the
+     * menu it would have reached before: the suppression is never global.
      */
     const handleGridContextMenuCapture = (event: React.MouseEvent<HTMLDivElement>) => {
         const intent = pressIntentRef.current;
@@ -383,7 +383,7 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         if (intent === null) {
             return;
         }
-        if (isSelectionIntent(intent) || travelled) {
+        if (intent === 'secondary' && travelled) {
             event.preventDefault();
             event.stopPropagation();
         }
@@ -403,6 +403,13 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
     React.useEffect(() => {
         if (isDragging) {
             pressOriginRef.current = null;
+            // The same press, seen from the other side: once dnd-kit has taken
+            // it up, it has travelled by definition. Saying so here is what
+            // makes the rule survive a drag whose pointer events the grid
+            // never sees — the drag overlay follows the cursor and becomes the
+            // event target, so `onPointerMoveCapture` below stops firing the
+            // moment the drag starts.
+            pressTravelledRef.current = true;
         }
     }, [isDragging]);
 
@@ -462,15 +469,19 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         const origin = pressOriginRef.current;
         const intent = pressIntentRef.current;
         pressOriginRef.current = null;
-        const wasClick = isClickNotDrag(
-            event.detail,
-            origin,
-            { x: event.clientX, y: event.clientY },
-            RESIZE_DRAG_THRESHOLD_PX
-        );
-        // An activated drag has already dropped the origin (see the effect
-        // above), so its closing click cannot pass as one.
-        if (intent === 'layout' && wasClick) {
+        // Travelled ONCE is travelled for good: a press that wandered off and
+        // came back releases at its origin, and the endpoint distance alone
+        // would call that a click and run the tool. The latch decides first;
+        // the distance still catches the ordinary case.
+        const wasClick =
+            !pressTravelledRef.current &&
+            isClickNotDrag(
+                event.detail,
+                origin,
+                { x: event.clientX, y: event.clientY },
+                RESIZE_DRAG_THRESHOLD_PX
+            );
+        if (intent === 'use' && wasClick) {
             return;
         }
         event.stopPropagation();

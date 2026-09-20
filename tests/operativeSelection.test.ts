@@ -33,21 +33,20 @@ const at = (x: number, y: number) => ({ x, y });
 // --- 1. The pure click decision ------------------------------------------------
 
 describe('what a click on a grid cell means', () => {
-    // Superseded on 2026-09-20: the BUTTON decides now, so a click means one
-    // of two things instead of three, and the whole matrix lives in
-    // tests/mouseGrammar.test.ts. What survives here is the half that made
-    // this model work in the first place — a drag never also runs a tool.
+    // The full matrix lives in tests/mouseGrammar.test.ts; what belongs to
+    // THIS file's subject is that using a tool and choosing cells are still
+    // different gestures, and that a drag never also runs a tool.
     it('runs the tool on a plain LEFT click', () => {
         expect(gridPointerIntent({ button: 0, shiftKey: false, ctrlKey: false, metaKey: false }, false)).toBe(
-            'layout'
+            'use'
         );
     });
 
-    it('selects with the RIGHT button, so a left click never has to choose', () => {
-        expect(gridPointerIntent({ button: 2, shiftKey: true, ctrlKey: false, metaKey: false }, false)).toBe(
+    it('selects with a MODIFIER, so a plain click never has to choose', () => {
+        expect(gridPointerIntent({ button: 0, shiftKey: true, ctrlKey: false, metaKey: false }, false)).toBe(
             'select-add'
         );
-        expect(gridPointerIntent({ button: 2, shiftKey: false, ctrlKey: true, metaKey: false }, false)).toBe(
+        expect(gridPointerIntent({ button: 0, shiftKey: false, ctrlKey: true, metaKey: false }, false)).toBe(
             'select-remove'
         );
     });
@@ -121,13 +120,13 @@ describe('the grid decides what a click means, before the tool sees it', () => {
     });
 
     it('lets a plain left click through to the tool', () => {
-        expect(handler).toMatch(/if \(intent === 'layout' && wasClick\) \{\s*return;\s*\}/);
+        expect(handler).toMatch(/if \(intent === 'use' && wasClick\) \{\s*return;\s*\}/);
     });
 
     it('keeps every other click from the tool', () => {
-        // A drag's closing click, a rectangle's, macOS' Ctrl secondary click:
-        // none of them may also run something.
-        const afterRunTool = handler.slice(handler.indexOf("intent === 'layout'"));
+        // A selection gesture's closing click, a reserved left drag's, macOS'
+        // Ctrl secondary click: none of them may also run something.
+        const afterRunTool = handler.slice(handler.indexOf("intent === 'use'"));
         expect(afterRunTool).toMatch(/event\.stopPropagation\(\);/);
     });
 

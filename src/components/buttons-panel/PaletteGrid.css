@@ -1156,12 +1156,14 @@ body .buttons-panel .ocap-palette-grid .ocap-grid-slot button.ocap-slot-add {
     cursor: var(--ocap-selection-cursor, pointer);
 }
 
-/* 4 — a tool that can be moved. The drag wrapper exists exactly when the tool
-   is draggable (CategoryButtonGrid renders SortableButtonItem only then), so
-   the hand never promises a move that cannot happen. A click still runs it. */
-body .buttons-panel .ocap-palette-grid .ocap-grid-slot .sortable-button-item,
-body .buttons-panel .ocap-palette-grid .ocap-grid-slot .sortable-button-item button.buttons-panel-simple-button {
-    cursor: var(--ocap-selection-cursor, grab);
+/* 4 — a tool that can be moved keeps the POINTER of a thing you click.
+   Corrected 2026-09-20: the open hand used to sit here, from when a left drag
+   moved a tool. It moves on a RIGHT drag now, so a permanent hand would
+   advertise the wrong button — and the left button's own answer, "this runs",
+   is what the pointer says. The closed hand still appears for the duration of
+   a real drag (rule 1). */
+body .buttons-panel .ocap-palette-grid .ocap-grid-slot .sortable-button-item {
+    cursor: var(--ocap-selection-cursor, pointer);
 }
 
 /* 4/5 — a swatch speaks the same grammar as a cell: plain applies or selects

@@ -5,6 +5,8 @@ import { useDroppable } from '@dnd-kit/core';
 import { tabDroppableId } from '@/utils/buttonDragItems';
 import { categorySortableId } from '@/utils/categoryDragItems';
 import { useButtonDragOptional, useCategoryDragOptional } from '@/contexts/ButtonDragContext';
+import { activateOnButton } from '@/utils/dragActivator';
+import { MOUSE_BUTTON } from '@/utils/gridPointerIntent';
 
 function assignRef<T>(ref: React.Ref<T> | undefined, value: T | null): void {
     if (typeof ref === 'function') {
@@ -62,7 +64,16 @@ export const SortableCategoryFolder: React.FC<SortableCategoryFolderProps> = ({
     // The left button belongs to the layout, whatever key is held: selecting
     // moved to the right button, so nothing here has to step aside for a
     // modifier any more.
-    const dragListeners = listeners;
+    /**
+     * A category moves on a LEFT drag from here — the grip has no other
+     * meaning, so it answers to the ordinary button. A press carrying a
+     * selection modifier belongs to the selection and is swallowed: there is no
+     * cell to select out here, but reordering under a held Shift would be a
+     * surprise.
+     */
+    const dragListeners = activateOnButton(listeners, MOUSE_BUTTON.left, {
+        blockSelectionModifier: true,
+    });
 
     const { setNodeRef: setButtonDropRef, isOver: isButtonDropOver } = useDroppable({
         id: tabDroppableId(categoryId),
