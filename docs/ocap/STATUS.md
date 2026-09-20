@@ -1,11 +1,31 @@
 # OCAP – Status
 
-Last updated: 2026-09-20 (Free panel surface now really clears the
-selection — beside the swatches, beside the variant controls, inside a
-category and below the last one; implemented locally and live-smoke-tested
-in an isolated Obsidian; awaiting the user's own manual acceptance)
+Last updated: 2026-09-20 (The colour bar is a paint tool: choose a
+colour, then work with it — arming needs no selection and the chosen
+colour is visible; implemented locally and live-smoke-tested in an
+isolated Obsidian; awaiting the user's own manual acceptance)
 
 ## Newest work first
+
+- **A swatch is a paint colour (2026-09-20) — implemented locally,
+  live-smoke-tested, deployed only to the disposable smoke vault. Not pushed,
+  not in the productive vault.** Normative: `cell-selection-colors.md` §8,
+  §8.2, §10, §10.1; `DECISIONS.md` "A swatch is a paint colour: choose it,
+  then work with it".
+  - **A plain click always means "paint with this"**: it chooses the colour,
+    and paints the selection too if there is one. It never selects — that is
+    what Shift (add the colour's cells) and Ctrl/Cmd (remove them) are for, and
+    those never paint and never change the chosen colour.
+  - **Supersedes the same day's "plain click with nothing selected selects that
+    colour group"**, which failed manual acceptance as a hidden special case.
+  - **Arming needs no selection**: the paint survives exactly the transition
+    from no selection to one, so "choose red, then Shift-collect cells" paints
+    them red. Escape and a background click drop it, selection or not.
+  - **The chosen colour is visible**: an accent ring on its swatch (the loud
+    marker, for the state with no other representation); what the selection
+    currently is keeps a quiet border. Neither moves a pixel.
+  - Tests **1305/1305**, `tsc`, `eslint`, build green. **Live smoke 411/411**
+    over twelve stages, 0 console problems.
 
 - **A container is not a control (2026-09-20) — implemented locally,
   live-smoke-tested, deployed only to the disposable smoke vault. Not pushed,

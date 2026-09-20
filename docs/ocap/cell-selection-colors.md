@@ -580,23 +580,28 @@ färben, also ist der Klick dort die Primäraktion der Farbleiste: die Farbgrupp
 
 ---
 
-## 8. Farbe als Selection-Werkzeug (Grammatik normativ seit 2026-09-20)
+## 8. Die Farbleiste ist ein Malwerkzeug (normativ seit 2026-09-20)
 
-Die Farbleiste spricht **dieselbe Grammatik wie das Grid** (Abschnitt 4.1):
+> **Farbe anklicken = mit dieser Farbe weiterarbeiten.**
+
+Ein normaler Klick auf ein Farbfeld bedeutet **immer dasselbe**, ob etwas ausgewählt ist oder nicht:
+diese Farbe wählen. Die Modifier sind die Grammatik des Grids, angewandt auf die Zellen, die diese
+Farbe tragen (Abschnitt 4.1):
 
 ```
-normaler Klick  = Primäraktion
+normaler Klick  = Farbe wählen (und eine vorhandene Auswahl damit färben)
 Shift           = hinzufügen
 Strg/Cmd        = entfernen   (macOS: Cmd)
 ```
 
-Ein Farbfeld benennt eine **Gruppe von Zellen** — alle Zellen dieser Farbe im aktuell sichtbaren
-Grid. „Keine Farbe“ ist dabei eine Gruppe wie jede andere: die ungefärbten Zellen.
+Ein Farbfeld ist damit zweierlei: eine **Farbe**, die der Klick wählt, und der Name einer **Gruppe
+von Zellen** — aller Zellen dieser Farbe im aktuell sichtbaren Grid —, die die Modifier adressieren.
+„Keine Farbe“ ist beides ebenso: eine Wahl und die Gruppe der ungefärbten Zellen.
 
 | Geste | Keine Auswahl | Auswahl vorhanden |
 |---|---|---|
-| **Klick** | Zellen dieser Farbe **auswählen** | Auswahl **färben** (die einzige schreibende Geste) |
-| **Shift + Klick** | Gruppe hinzufügen (= dasselbe Ergebnis) | Gruppe **zur Auswahl hinzufügen** |
+| **Klick** | Farbe **scharf stellen** — nichts wird ausgewählt, nichts geschrieben | Auswahl **färben** (die einzige schreibende Geste) und Farbe scharf stellen |
+| **Shift + Klick** | Gruppe wird die Auswahl | Gruppe **zur Auswahl hinzufügen** |
 | **Strg/Cmd + Klick** | **no-op** — es gibt nichts zu entfernen | Gruppe **aus der Auswahl entfernen** |
 
 Die tragende Regel bleibt bestehen und wird sogar schärfer:
@@ -607,25 +612,32 @@ Die tragende Regel bleibt bestehen und wird sogar schärfer:
 - Gilt ausdrücklich **auch für leere gefärbte Zellen**.
 - Strikt nur im **aktuell sichtbaren Grid-Kontext** — also in genau der Kategorie und genau der
   Variant, die gerade angezeigt wird. Niemals über andere Kategorien oder Varianten hinweg.
+- **Ein Modifier auf einem Farbfeld stellt nie eine Farbe scharf** und schreibt nie. War Rot
+  scharf und der Nutzer holt per `Shift + Blau` die blauen Zellen dazu, bleibt **Rot** die Farbe,
+  die die nächste hinzugefügte Zelle bekommt — die blauen Zellen werden nicht umgefärbt.
+  Mengen-Operationen der Leiste und Mal-Gesten im Grid bleiben bewusst getrennt.
 - **Auswählen ist ein `hinzufügen`, kein `ersetzen`.** Dadurch gilt die panelweite Kontextregel
-  (Abschnitt 4.2) unverändert: Ein Klick auf eine Farbleiste, deren Grid gerade keine Auswahl hält,
-  holt den einen aktiven Kontext dorthin; Strg/Cmd greift nie über die Grid-Grenze.
+  (Abschnitt 4.2) unverändert: Ein **Shift**-Klick auf eine Farbleiste, deren Grid gerade keine
+  Auswahl hält, holt den einen aktiven Kontext dorthin; Strg/Cmd greift nie über die Grid-Grenze.
+  Ein normaler Klick verschiebt gar nichts — er wählt ja nur eine Farbe.
 - Findet sich keine Zelle der Farbe, ist die Auswahl anschließend **leer**, ohne Meldung. Das leere
   Ergebnis ist die Antwort.
 - Verglichen wird der **rohe gespeicherte Wert**, nicht die gerenderte CSS-Farbe. Ein `ocap:red` und
   ein zufällig gleich aussehendes Hex sind verschiedene Farben.
 - Identisch in **Locked und Edit**; die Farbleiste ist operativ (Abschnitt 3).
 
-**Überholt am 2026-09-20 — die frühere Sonderregel:**
+**Zwei überholte Lesarten des normalen Klicks — beide am 2026-09-20:**
 
 ```
-Strg + Klick auf Rot  →  Auswahl wird ERSETZT durch alle roten Zellen
+1. Strg + Klick auf Rot → Auswahl wird ERSETZT durch alle roten Zellen   (früh am Tag ersetzt)
+2. Klick ohne Auswahl   → alle roten Zellen werden ausgewählt            (am selben Tag verworfen)
 ```
 
-Sie war historisch gewachsen und die einzige Stelle im Panel, an der Strg/Cmd nicht „entfernen"
-bedeutete. Die damals bewusst akzeptierte Asymmetrie („Strg heißt auf einer Zelle entfernen, auf
-einem Farbfeld ersetzen") ist damit aufgelöst: Was „ersetzen" leistete, leistet jetzt der normale
-Klick ohne Auswahl — und zwar an der Stelle, an der er ohnehin nichts zu färben hatte.
+(1) war die einzige Stelle im Panel, an der Strg/Cmd nicht „entfernen" bedeutete; die damals bewusst
+akzeptierte Asymmetrie ist aufgelöst. (2) war der Versuch, das Nützliche daran zu retten, und in der
+manuellen Abnahme durchgefallen: Derselbe Klick hätte damit zwei unverwandte Dinge bedeutet, je nach
+einem Zustand, den man nicht sieht. Eine Farbgruppe zu holen ist die Aufgabe der Modifier, und die
+sagen auf jeder Fläche des Panels dasselbe. Der normale Klick gehört der Farbe.
 
 ### 8.1 Shift auf einem Farbfeld (entschieden 2026-09-18)
 
@@ -634,10 +646,11 @@ Shift + Klick auf Farbfeld
 → alle Zellen dieser Farbe zur bestehenden Auswahl hinzufügen
 ```
 
-Damit ist `Rot`, dann `Shift + Blau` = alle roten **und** blauen Zellen gemeinsam auswählen und in
-einem Zug umfärben. Konsistent mit „Shift = hinzufügen“ überall sonst, und es schreibt nicht. Auf
-der Farbleiste eines **anderen** Grids wechselt es den einen aktiven Kontext dorthin, genau wie ein
-Shift-Klick auf eine Zelle (Abschnitt 4.2). Die Farbleiste färbt immer nur den aktiven Kontext.
+Damit ist `Shift + Rot`, dann `Shift + Blau` = alle roten **und** blauen Zellen gemeinsam
+auswählen und in einem Zug umfärben. Konsistent mit „Shift = hinzufügen“ überall sonst, und es
+schreibt nicht. Auf der Farbleiste eines **anderen** Grids wechselt es den einen aktiven Kontext
+dorthin, genau wie ein Shift-Klick auf eine Zelle (Abschnitt 4.2). Die Farbleiste färbt immer nur
+den aktiven Kontext.
 
 Verworfen wurde „Shift = wie ein normaler Klick“: ein verrutschter Shift würde dann schreiben und
 bräche die Regel *ein Modifier schreibt nie*.
@@ -654,19 +667,24 @@ Wer eben Rot auf seine Auswahl angewendet hat und sie danach per Shift erweitert
 Eigenschaft der *laufenden Auswahl*:
 
 ```
-Auswahl vorhanden + normaler Klick auf ein Farbfeld
-→ Farbe anwenden (unverändert)
-→ zusätzlich: diese Farbe ist ab jetzt die Auswahlfarbe
+normaler Klick auf ein Farbfeld
+→ diese Farbe ist ab jetzt die Auswahlfarbe
+→ und falls eine Auswahl besteht: sie wird damit gefärbt
 ```
+
+**Scharf stellen geht auch ohne Auswahl (normativ seit 2026-09-20).** Das ist der Kern des
+Malwerkzeugs: erst die Farbe wählen, dann per Shift die Zellen aufsammeln, die sie bekommen sollen.
+*Überholt:* Bis dahin hieß es „ohne Auswahl passiert nichts“ bzw. „ohne Auswahl wählt der Klick die
+Farbgruppe aus“.
 
 - **„Keine Farbe“ ist eine ebenso bewusste Wahl** und wird genauso scharf gestellt: danach
   hinzugefügte Zellen werden ungefärbt.
 - **Modifier-Klicks auf Farbfeldern ändern sie nie** — sie schreiben nicht, und sie stellen nichts
   scharf. Die Regel „ein Modifier auf einem Farbfeld schreibt nie“ bleibt vollständig gültig.
-- **Ohne Auswahl wird nichts scharf gestellt.** Der normale Klick wählt dort nur die Farbgruppe aus
-  (Abschnitt 8); scharf stellt ausschließlich das *Auftragen* auf eine vorhandene Auswahl. Es gibt
-  keinen dauerhaft „bewaffneten“ Farbpinsel. *Präzisiert 2026-09-20:* vorher stand hier „ohne
-  Auswahl passiert nichts“, weil der Klick damals wirkungslos war.
+- **Es gibt trotzdem keinen dauerhaft „bewaffneten“ Farbpinsel.** Die scharfe Farbe gehört der
+  Auswahl-Session und stirbt mit ihr (Lebensdauer unten). Ein ausdrückliches „doch nicht“ —
+  **Escape oder ein Klick auf freien Hintergrund** — beendet die Session und nimmt die Farbe mit,
+  auch wenn noch gar nichts ausgewählt war.
 
 **Wirkung:** Eine additive Geste — Shift-Klick wie Shift-Rechteck — färbt **genau die Zellen, die
 sie neu hinzufügt**. Bereits ausgewählte Zellen werden nicht erneut angefasst, und ein
@@ -674,9 +692,10 @@ Strg-Entfernen färbt grundsätzlich nichts: Eine rote Zelle, die aus der Auswah
 bleibt rot. Auswahl und Zellfarbe bleiben getrennte Konzepte.
 
 **Lebensdauer:** Die Auswahlfarbe gehört der Auswahl-Session und stirbt mit ihr — Auswahl geleert,
-Escape, Edit-Mode verlassen, Kategorie oder Variant gewechselt, Grid-Kontext gewechselt. Eine Regel
-deckt alle diese Fälle ab, weil sie alle damit enden, dass die Auswahl ein anderes Grid oder gar
-keines mehr benennt. Sie wird **nicht persistiert**: nicht in `data.json`, nicht in den Settings,
+Escape, Kategorie oder Variant gewechselt, Grid-Kontext gewechselt. Eine Regel deckt fast alle diese
+Fälle ab, weil sie alle damit enden, dass die Auswahl ein anderes Grid oder gar keines mehr benennt.
+**Genau eine Ausnahme (2026-09-20):** der Übergang von *keiner* Auswahl zu *einer* behält sie — eben
+diese Geste soll die scharfe Farbe ja tragen. Ein Moduswechsel allein beendet nichts (Abschnitt 11). Sie wird **nicht persistiert**: nicht in `data.json`, nicht in den Settings,
 nicht in einem Template.
 
 **Schreibverhalten:** Während des Ziehens wird **nichts** gespeichert; die Zellen zeigen die Farbe
@@ -830,14 +849,18 @@ aussehen. „Keine Farbe“ ist ein Swatch desselben Formats in derselben Reihe,
 diagonaler Strich auf transparentem Grund, ohne Text: Es ist dieselbe Art von Aktion und nimmt an
 denselben Regeln teil.
 
-**Aktiv-Indikator:**
+**Zwei Anzeigen, bewusst verschieden laut (präzisiert 2026-09-20):**
 
-| Zustand der Auswahl | Anzeige |
-|---|---|
-| alle ausgewählten Zellen haben dieselbe Farbe | dieses Swatch ist als aktiv markiert |
-| alle ausgewählten Zellen sind ungefärbt | „Keine Farbe“ ist als aktiv markiert |
-| gemischte Farben | **kein** Swatch aktiv |
-| keine Auswahl | kein Swatch aktiv |
+| Was | Wann | Anzeige |
+|---|---|---|
+| **scharfe Farbe** (`selectionPaintColor`) | eine Farbe ist gewählt — auch ganz ohne Auswahl | **Ring** in der Akzentfarbe um das Swatch |
+| **Farbe der Auswahl** | alle ausgewählten Zellen haben denselben Wert (auch „ungefärbt“) | Rand des Swatch in `--text-normal` |
+| — | gemischte Farben, keine Auswahl, keine scharfe Farbe | nichts |
+
+Der Ring ist die laute Anzeige, weil er einen Zustand zeigt, den man sonst **nirgends** sehen kann:
+was der nächste Shift-Zug malen wird. Er hängt an der fachlichen Variablen, nicht an `:focus` —
+er überlebt also einen Klick woanders hin und verschwindet, wenn die Farbe nicht mehr scharf ist.
+Beides sind `outline` bzw. `border-color`: **kein Pixel der Leiste bewegt sich**, in keinem Theme.
 
 ### 10.1 Der Tooltip sagt genau eine Sache (normativ seit 2026-09-20)
 
@@ -848,7 +871,7 @@ Er ändert sich live mit dem Zustand der Auswahl und mit der gehaltenen Taste:
 
 | Zustand | Farbfeld „Blau“ | „Keine Farbe“ |
 |---|---|---|
-| keine Auswahl | `Select all blue cells` | `Select all uncolored cells` |
+| keine Auswahl | `Paint with blue from now on` | `Paint with no color from now on` |
 | Auswahl vorhanden | `Apply blue to selection` | `Clear color from selection` |
 | Shift gehalten | `Add all blue cells to selection` | `Add all uncolored cells to selection` |
 | Strg/Cmd + Auswahl | `Remove all blue cells from selection` | `Remove all uncolored cells from selection` |

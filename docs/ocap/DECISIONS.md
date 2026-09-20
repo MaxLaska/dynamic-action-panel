@@ -1209,6 +1209,37 @@ modal and another leaf remain none of the panel's business.
 Click-vs-drag is unchanged: nothing happens on the press, a click decides, and a
 press that ever travelled past the shared threshold forfeits its click.
 
+## 2026-09-20 – A swatch is a paint colour: choose it, then work with it
+
+**Decision:** a plain click on a swatch always means the same thing — paint
+with this colour. With cells selected it paints them and stays chosen; with
+nothing selected it just gets chosen, and the next Shift gesture in the grid
+carries it onto the cells it brings in. Shift and Ctrl/Cmd keep addressing that
+colour's cells as a SET (add / remove) and never paint, never change the chosen
+colour.
+
+This **supersedes**, on the same day, "with nothing selected, a plain click
+selects that colour's cells" (the rule that replaced `Ctrl + swatch = replace
+the selection`). Manual acceptance rejected it: the same gesture would have
+meant two unrelated things depending on a state the user cannot see — and a
+swatch that sometimes selects instead of painting is a special case, not a
+grammar. Fetching a colour's cells is what the modifiers are for, and they say
+the same thing on every surface of the panel.
+
+**Arming needs no selection.** The paint colour could previously only be set by
+applying it, so it was reset by the very transition that now has to keep it:
+from no selection to one. The context watcher keeps the colour across exactly
+that step and disarms on every other change, and an explicit "never mind" —
+Escape or a click on free background — drops it outright, which is why both of
+those now stay active while a colour is armed and nothing is selected.
+
+**The chosen colour is visible.** It gets the loud marker — an accent ring
+around its swatch — because it is the one state with no other representation on
+screen: what the next Shift gesture will paint. What the SELECTION currently is
+keeps a quieter one, the swatch's own border in `--text-normal`. Both are
+outline/border only, so no pixel of the bar moves, and both follow the domain
+values rather than `:focus`.
+
 ## Open decisions
 
 The following are still open:

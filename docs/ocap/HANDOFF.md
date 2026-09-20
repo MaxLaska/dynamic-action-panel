@@ -859,6 +859,34 @@ container is not a control because it holds one".
   (ohne `placements`) reißt das Rendering mit „e is not iterable" mit. Der
   Fall ist strukturgleich zur Farbleiste und im Unit-Test abgedeckt.
 
+### 2m. Die Farbleiste als Malwerkzeug (2026-09-20)
+
+Normativ: `docs/ocap/cell-selection-colors.md` §8, §8.2, §10, §10.1.
+`DECISIONS.md`: „A swatch is a paint colour: choose it, then work with it".
+
+- **`cellPaletteAction.ts`:** `select-group` ist durch `arm` ersetzt
+  (`writes: false`, `arms: true`, `gesture: null`). Ein normaler Klick gibt der
+  Auswahl nie mehr eine Geste; nur Shift/Strg tun das.
+- **`CellColorPalette`** ruft `onApply` für beide armenden Aktionen
+  (`apply` und `arm`) und bekommt `paint` als Prop: Swatch-Klassen
+  `--armed` (scharfe Farbe) und `--uniform` (Farbe der Auswahl, früher
+  `--active`), `aria-pressed` folgt jetzt `--armed`.
+- **`CategoryButtonGrid.handleApplyColor`** armt **vor** dem Early-Return und
+  schreibt nur, wenn Zellen ausgewählt sind.
+- **Lebensdauer (`PanelContent`):** Der Reset vergleicht jetzt den vorherigen
+  mit dem neuen Context-Key (`previousContextKeyRef`) und behält die Farbe
+  genau beim Übergang `null → Grid`. `clearCellSelection` nullt die Farbe
+  zusätzlich selbst, weil es ohne Auswahl keinen Context-Wechsel zu sehen gibt.
+- **`CellSelectionEscape` / `CellSelectionBackdrop`** hängen an
+  `hasSession = cells.size > 0 || paint !== null` statt an `hasSelection` —
+  sonst wäre eine ohne Auswahl scharf gestellte Farbe nicht mehr abzuwählen
+  (live gefunden, nicht im Review).
+- **i18n:** `cell_palette_tip_select*` → `cell_palette_tip_arm*`
+  („Paint with {color} from now on“) in en/ru/zh.
+- Tests gesamt **1305**; Live-Smoke **411/411** über zwölf Stufen (Stufen 4, 8
+  und 11 auf die neue Regel umgestellt, Stufe 11 prüft zusätzlich den
+  Active-Ring und das Malen per Shift mit scharfer Farbe).
+
 ### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
 
 `ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&
