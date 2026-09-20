@@ -123,23 +123,31 @@ Rechtecks und für den macOS-Sekundärklick. Die Funktion hat bewusst **keinen**
 
 ## 3a. Die Maus-Grammatik (normativ seit 2026-09-20, experimentell)
 
-> **Links = benutzen und bewegen. Rechts = Kontext. Shift+Rechts = hinzufügen.
-> Strg/Cmd+Rechts = entfernen.**
+> **Links klicken = benutzen. Shift/Strg + Links = auswählen.
+> Rechts klicken = Kontext. Rechts ziehen = Tool bewegen.**
 
 Die Maustaste trägt einen Teil der Bedeutung. Das ist der Grund, warum der
 Moduskontrakt (Abschnitt 3) überflüssig geworden ist: Eine belegte Zelle musste
-mit *einer* Taste „Tool ausführen" und „genau diese Zelle auswählen" zugleich
+mit *einer* Geste „Tool ausführen" und „genau diese Zelle auswählen" zugleich
 bedeuten können — dieser Konflikt war es, den Locked/Edit gelöst hat. Er
 existiert nicht mehr.
 
+> **Überholt am selben Tag:** Der erste Versuch legte die Auswahl auf die
+> **rechte** Taste und den Tool-Move auf die linke. Die manuelle Abnahme hat
+> ihn verworfen: Die linke Taste ist die, an der eine Hand „benutzen" erwartet,
+> und das Herumschieben eines Tools ist die ungewöhnliche Aufgabe, die auf die
+> ungewöhnliche Taste gehört. Der **linke Drag bleibt bewusst leer** — er ist
+> der offensichtliche Platz für einen späteren Outbound-Resource-Drag, und
+> nichts anderes darf ihn in der Zwischenzeit belegen.
+
 | Geste | Bedeutung |
 |---|---|
-| **Links, kurz** | Tool ausführen (leere Zelle: nichts; : Tool anlegen) |
-| **Links, gezogen** | Tool bewegen / tauschen — und das Tool läuft danach **nicht** |
+| **Links, kurz** | Tool ausführen (leere Zelle: nichts; `+`: Tool anlegen) |
+| **Links, gezogen** | **reserviert** — kein Move, keine Auswahl, und danach auch **kein** Ausführen |
+| **Shift + Links** | Zelle bzw. Rechteck zur Auswahl **hinzufügen** |
+| **Strg/Cmd + Links** | Zelle bzw. Rechteck aus der Auswahl **entfernen** |
 | **Rechts, kurz** | Kontextmenü dessen, was unter dem Zeiger liegt |
-| **Rechts, gezogen** | **reserviert** — kein Menü, keine Auswahl, keine Bewegung |
-| **Shift + Rechts** | Zelle bzw. Rechteck zur Auswahl **hinzufügen** |
-| **Strg/Cmd + Rechts** | Zelle bzw. Rechteck aus der Auswahl **entfernen** |
+| **Rechts, gezogen** | Tool **bewegen / tauschen** — und danach kein Menü |
 | **Mittlere / weitere Tasten** | nichts |
 
 - **Eine Entscheidung pro Druck.** Taste und Modifier werden beim *PointerDown*
@@ -147,14 +155,19 @@ existiert nicht mehr.
   Klick, Rechteck und Kontextmenü lesen diesen Latch, statt das Ereignis erneut
   zu befragen. Eine mitten in der Geste losgelassene Taste ändert also nichts
   mehr an dem, was die Geste ist.
-- **Ein Modifier ändert an der linken Taste nichts.** Shift+Links führt aus,
-  Strg+Links führt aus, ein Shift-Drag verschiebt. Die frühere Regel „ein
-  Modifier reserviert den Druck für die Auswahl" (Abschnitt 4a.5) gilt jetzt
-  für die **rechte** Taste; die Drag-Guards an Kategorie-Griff, Tabs und
-  Folder-Kacheln sind ersatzlos entfallen.
-- **Kein Menü nach einer Auswahl-Geste und keines nach einem Rechts-Drag.**
-  Das native `contextmenu` wird in der Capture-Phase des Grids unterdrückt,
-  bevor der Tool-eigene Listener es sieht.
+- **Die rechte Taste hat genau zwei Lesarten**, und welche es ist, entscheidet
+  der Weg, nicht eine Taste: unter der Schwelle das Menü, darüber der Move. Ein
+  Modifier ändert daran nichts.
+- **Kein Menü nach einem Rechts-Drag.** Ein einziges `contextmenu` wird
+  verschluckt, und zwar vom **Drag** aus scharf gestellt
+  (`contextMenuSuppression.ts`, armiert in `ButtonDragContext`): Das Grid,
+  das den Druck gelatcht hat, wird während eines Tool-Drags neu gemountet, kann
+  sich also nicht mehr an ihn erinnern. Keine dauerhafte Sperre — sie feuert
+  einmal und räumt sich per Timeout selbst weg.
+- **Welche Taste welchen Drag startet**, entscheidet nicht der Sensor, sondern
+  jedes Draggable (`activateOnButton`): das **Tool** hört auf rechts, der
+  **Kategorie-Griff** (und Tabs, Folder-Kacheln) auf links — und dort zusätzlich
+  nie, während ein Auswahl-Modifier gehalten wird.
 - **macOS:** Strg+Links *ist* dort der Sekundärklick und zählt deshalb als
   Kontext, nicht als Layout-Druck; die subtraktive Taste ist Cmd.
 - **Die Farbleiste bleibt links.** Ein Swatch ist ein ausdrückliches
@@ -177,16 +190,16 @@ identisch; der Auswahlmechanismus weiß nicht, ob eine Zelle belegt ist.
 ### 4.1 Die Gesten (normativ seit 2026-09-19, Taste ergänzt 2026-09-20)
 
 ```
-Links           = Tool benutzen / bewegen — KEINE Selection
-Rechts          = Kontext
-Shift  + Rechts = hinzufügen
-Strg   + Rechts = entfernen      (macOS: Cmd + Rechts)
+Links, kurz     = Tool benutzen — KEINE Selection
+Links, gezogen  = reserviert
+Shift  + Links  = hinzufügen
+Strg   + Links  = entfernen      (macOS: Cmd + Links)
+Rechts          = Kontext (kurz) bzw. Tool bewegen (gezogen)
 ```
 
-*Überholt am 2026-09-20:* Bis dahin lagen Shift und Strg auf der **linken**
-Taste. Die Mengenlehre darunter — Shift wählt nie ab, Strg wählt nie aus, kein
-Toggle — ist unverändert; nur die Taste, auf der sie liegt, ist eine andere
-(Abschnitt 3a).
+Die Mengenlehre darunter — Shift wählt nie ab, Strg wählt nie aus, kein Toggle —
+ist seit jeher unverändert. *Zwischenzeitlich lagen Shift und Strg am 2026-09-20
+kurzzeitig auf der rechten Taste; das ist verworfen (Abschnitt 3a).*
 
 | Geste | Zelle ist nicht ausgewählt | Zelle ist ausgewählt |
 |---|---|---|
@@ -286,17 +299,17 @@ Strg:  preview = baseline − rechteck
 Niemals inkrementell pro PointerMove. Nur so führt Aufziehen-und-wieder-Zusammenziehen innerhalb
 *derselben* Geste zuverlässig auf `baseline ± aktuelles Rechteck` zurück.
 
-### 4a.5 Die rechte Taste reserviert die Auswahl — nicht Drag-and-Drop
+### 4a.5 Ein Modifier reserviert die Auswahl — nicht Drag-and-Drop
 
-Sobald ein PointerDown die **rechte Taste** mit Shift oder Strg/Cmd trägt, gehört die Geste der
-Auswahl, und zwar vollständig: **kein Tool-Move, kein Swap, kein Category-Reorder, kein
-Kontextmenü** — auf belegten wie auf leeren Zellen. Die Geste wird **beim PointerDown** entschieden;
-ein später gedrücktes Shift verwandelt einen laufenden Drag nicht nachträglich, und ein
-losgelassener Modifier macht aus einer Auswahl-Geste keinen Drag.
+Sobald ein PointerDown Shift oder Strg/Cmd trägt, gehört die Geste der Auswahl, und zwar
+vollständig: **kein Swap, kein Category-Reorder, kein Tool-Start** — auf belegten wie auf leeren
+Zellen. Die Geste wird **beim PointerDown** entschieden; ein später gedrücktes Shift verwandelt
+einen laufenden Drag nicht nachträglich, und ein losgelassener Modifier macht aus einer
+Auswahl-Geste keinen Drag.
 
-*Überholt am 2026-09-20:* Bis dahin reservierte ein Modifier den **linken** Druck, weshalb jeder
-Drag-Griff außerhalb eines Grids (Kategorie-Handle, Tabs, Folder-Kacheln) in einen Guard gewickelt
-war, der solche Drucke verschluckte. Der Guard ist entfallen: Links heißt überall dasselbe.
+Umgesetzt an zwei Stellen: **im Grid** fängt `CategoryButtonGrid` den Druck in der Capture-Phase
+ab; **außerhalb** (Kategorie-Griff, Tabs, Folder-Kacheln) filtert `activateOnButton` den
+Aktivator — linke Taste ja, mit Auswahl-Modifier nein.
 
 Umgesetzt an zwei Stellen, ohne globalen Schalter, der nach einem KeyUp hängen bleiben könnte:
 
@@ -447,13 +460,15 @@ Die Prioritäten, von oben nach unten:
 | 1 | ein Layout-Drag läuft gerade | `grabbing` |
 | 2 | Strg/Cmd gehalten | **Minus** (entfernen) |
 | 3 | Shift gehalten | `cell` — das fette Plus des Systems (hinzufügen) |
-| 4 | ein Tool, das bewegt werden kann | `grab` |
+| 4 | ein Tool | `pointer` — die linke Taste führt es aus |
 | 5 | sonst die eigene Bedeutung der Fläche | Tool ausführen `pointer`, `+` `pointer`, Zelle/Lücke `default` |
 
-*Präzisiert 2026-09-20:* Stufe 4 hängt nicht mehr am Modus (es gibt nur einen), sondern daran, ob
-das Tool wirklich beweglich ist. Die Stufen 2 und 3 kündigen jetzt an, was ein Druck der **rechten**
-Taste täte — die Taste, auf der die Auswahl liegt. Der Cursor bleibt damit die ehrlichste verfügbare
-Ansage: Er zeigt die Bedeutung des gehaltenen Modifiers, nicht die einer bestimmten Taste.
+*Korrigiert 2026-09-20:* Stufe 4 zeigte zwischenzeitlich die offene Hand, aus der Zeit, als ein
+linker Drag ein Tool verschob. Ein Tool bewegt sich jetzt auf einem **rechten** Drag, eine
+dauerhafte Hand würde also die falsche Taste bewerben — und die Antwort der linken Taste, „das hier
+läuft", ist genau der Pointer. Die geschlossene Hand erscheint weiterhin für die Dauer eines echten
+Drags (Stufe 1). Die Stufen 2 und 3 sagen, was der gehaltene Modifier bedeutet — auf der linken
+Taste, wo die Auswahl liegt.
 
 Dazu gehören ausdrücklich:
 
@@ -531,8 +546,9 @@ unter der nichts zu greifen war — auch über leeren Zellen, die nun wirklich n
 
 - Der Handle sitzt **ganz links im Header, vor dem Icon**, klein und eindeutig (Obsidians
   `grip-vertical`).
-- **Nur er startet einen Reorder.** Header, Icon, Name, Grid, leere Zellen, der Raum unter dem Grid
-  und die übrige Kategoriefläche starten keinen mehr.
+- **Nur er startet einen Reorder**, und zwar mit der **linken** Taste (ein TOOL bewegt sich auf der
+  rechten — der Griff hat keine zweite Bedeutung, also behält er die gewöhnliche). Header, Icon,
+  Name, Grid, leere Zellen, der Raum unter dem Grid und die übrige Kategoriefläche starten keinen.
 - **Der Header klappt weiterhin** die Kategorie auf und zu — jetzt als seine einzige Aufgabe.
 - **Ein Klick auf den Handle tut nichts:** Er klappt nicht (er stoppt seinen Klick, bevor der Header
   ihn sieht) und leert keine Auswahl (er steht auf der Ausschlussliste, Abschnitt 4.4).

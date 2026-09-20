@@ -927,6 +927,44 @@ the meaning".
   Codemod auf Shift/Strg + RECHTS umgestellt, `refixture.mjs` setzt jetzt auch
   Escape, Menüs, Varianten und eingeklappte Kategorien zurück.
 
+### 2o. Korrigierte Maus-Grammatik (2026-09-20, experimentell)
+
+Normativ: `docs/ocap/cell-selection-colors.md` §3a, §4.1, §4a.5, §4.5, §5a.
+`DECISIONS.md`: „Corrected: left uses, right moves". **Ersetzt** die wenige
+Stunden ältere Fassung (Auswahl auf rechts, Move auf links).
+
+- **`gridPointerIntent`** liefert jetzt `use | select-add | select-remove |
+  secondary | none`. Links plain = `use` (Klick führt aus, Drag reserviert),
+  Shift/Strg+Links = Auswahl, Rechts (jeder Modifier) = `secondary` (Klick =
+  Menü, Drag = Move). macOS: Strg+Links ist der Sekundärklick → `secondary`,
+  Cmd+Links = entfernen. Neu `pressCarriesSelectionModifier` für die Griffe
+  außerhalb des Grids.
+- **`ScrollAwarePointerSensor`** überschreibt `static activators` und lässt
+  auch Button 2 zu (dnd-kit selbst verlangt Button 0).
+- **Neu `utils/dragActivator.ts`:** `activateOnButton(listeners, button,
+  {blockSelectionModifier})`. Tool → `MOUSE_BUTTON.right`; Kategorie-Block,
+  Tab, Folder-Kachel → `left` + `blockSelectionModifier: true`.
+- **Neu `utils/contextMenuSuppression.ts`:** `suppressNextContextMenu(doc)`,
+  armiert in `ButtonDragContext.handleDragStart`, wenn
+  `event.activatorEvent.button === MOUSE_BUTTON.right`. Einmalig, mit
+  Timeout-Selbstabbau. Grund: Das Grid wird während eines Button-Drags neu
+  gemountet (`ListModeContent` tauscht den Sortable-Block), seine Refs
+  überleben den Drag also nicht.
+- **`CategoryButtonGrid`:** Klick erreicht das Tool nur bei
+  `intent === 'use' && wasClick`; `wasClick` prüft zuerst den Travel-Latch
+  (`!pressTravelledRef.current`), weil ein Weg-und-zurück-Drag am Ursprung
+  endet. Der `isDragging`-Effekt setzt den Latch ebenfalls, da während eines
+  dnd-Drags das Overlay die Pointer-Events bekommt.
+  `onContextMenuCapture` unterdrückt nur noch `secondary && travelled`.
+- **Cursor:** Tool ruht auf `pointer` (Regel 4 in `PaletteGrid.css`), Griff
+  bleibt `grab`, `grabbing` weiterhin nur während eines echten Drags.
+- Tests gesamt **1323** (`tests/mouseGrammar.test.ts` umgeschrieben, 29).
+  Live-Smoke **462/462** über dreizehn Stufen; Stufen 2, 5, 7, 8, 10 auf
+  „Tool-Move = rechter Drag" umgestellt, Stufe 13 komplett neu, Stufen 2–12 per
+  Codemod zurück auf Shift/Strg + LINKS. Harness: Save-Zähler-Wrapper sind
+  jetzt instanzgebunden (`__saveCountPatchedFor`), sonst zählt nach einem
+  Plugin-Reload niemand mehr.
+
 ### 2f. Collapse-State gehört dem Nutzer (2026-09-18)
 
 `ListModeContent` hatte `isVisuallyOpen = isOpen || (sortableEnabled &&

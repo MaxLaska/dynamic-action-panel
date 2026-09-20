@@ -1,11 +1,35 @@
 # OCAP – Status
 
-Last updated: 2026-09-20 (EXPERIMENTAL: the mouse button carries the
-meaning — left uses and moves, right is context, Shift/Ctrl + right
-select — and the locked/edit mode is gone from the UI; implemented
-locally and live-smoke-tested, awaiting the user's judgement in use)
+Last updated: 2026-09-20 (EXPERIMENTAL, corrected: left click uses,
+Shift/Ctrl + left selects, right click is context, right drag moves a
+tool — the same-day version with selection on the right button is
+superseded; implemented locally and live-smoke-tested, awaiting the
+user's judgement in use)
 
 ## Newest work first
+
+- **Corrected mouse grammar — EXPERIMENTAL PROTOTYPE (2026-09-20), implemented
+  locally, live-smoke-tested, deployed only to the disposable smoke vault. Not
+  pushed, not in the productive vault.** Normative:
+  `cell-selection-colors.md` §3a, §4.1, §4a.5, §4.5, §5a; `DECISIONS.md`
+  "Corrected: left uses, right moves".
+  - **left click = use, Shift/Ctrl + left = select, right click = context,
+    right drag = move the tool.** The left DRAG is reserved: no move, no
+    selection, and no run on release.
+  - **Supersedes the same day's first attempt** (selection on the right button,
+    move on the left), which manual use rejected. The button still carries part
+    of the meaning and the mode is still gone; only the assignment changed.
+  - **Two drags, two buttons, one dnd-kit**: the sensor accepts both and each
+    draggable filters (`activateOnButton`) — tool right, category grip left
+    (and never while a selection modifier is held).
+  - **One context menu is swallowed after a right drag**, armed from the drag
+    itself because the grid remounts mid-drag. No standing block.
+  - **A tool rests on `pointer`** again; the closed hand shows only during a
+    real drag.
+  - Tests **1323/1323**, `tsc`, `eslint`, build green. **Live smoke 462/462**
+    over thirteen stages, 0 console problems.
+  - **Open, deliberately:** the left drag stays free for a future outbound
+    resource drag.
 
 - **The mouse button carries the meaning — EXPERIMENTAL PROTOTYPE
   (2026-09-20), implemented locally, live-smoke-tested, deployed only to the

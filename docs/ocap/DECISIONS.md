@@ -1289,6 +1289,47 @@ nav-bar button. A stored "locked" is proven at runtime to change nothing.
 outbound resource drag (a PDF from the panel into a note) will be told apart
 from a left-drag move. Both are reserved, not solved.
 
+## 2026-09-20 – Corrected: left uses, right moves
+
+**Decision, after using the first attempt:**
+
+    left click           use it — run the tool
+    left drag            RESERVED: no move, no selection, and no run on release
+    Shift + left         add to the selection (a cell, or a rectangle)
+    Ctrl/Cmd + left      take out of the selection
+    right click          the context menu
+    right drag           move the tool / swap
+
+This **supersedes "The mouse button carries the meaning"** of the same day,
+which had the selection on the right button and the layout move on the left.
+The idea survives — the button carries part of the meaning, and the mode is
+gone — but the assignment was backwards: the left button is where a hand
+expects "use this", and moving a tool around is the odd job that belongs on the
+odd button. Selecting cells with the right button also fought every habit the
+rest of the panel already had (the palette's modifiers are left-button), and
+the two Shift gestures then meant different things depending on the button.
+
+**The left drag is deliberately empty.** It is the obvious place for a future
+outbound resource drag (a PDF from the panel into a note), so it is kept free
+rather than given a second-best job now. It must not run the tool on release
+either: a press that has travelled stays travelled, which is the same rule the
+click check has always used, now latched instead of measured from the endpoint.
+
+**Two drags, two buttons, one dnd-kit.** The sensor accepts both buttons and
+each draggable filters the press (`activateOnButton`): a TOOL answers to the
+right button, a CATEGORY grip to the left — and there, never while a selection
+modifier is held, because there is no cell to select out there but reordering
+under a held Shift would still be a surprise.
+
+**One menu is swallowed after a right drag**, armed from the drag itself
+(`suppressNextContextMenu`) rather than from the grid, because a button drag
+remounts the category subtree and the grid forgets the press that started it.
+It fires once and clears itself; there is no standing block.
+
+**The cursor follows:** a tool rests on `pointer` — the left button runs it —
+and shows the closed hand only for the duration of a real drag. The grip keeps
+`grab`.
+
 ## Open decisions
 
 The following are still open:
