@@ -1,0 +1,10 @@
+{
+  "id": "nexus-theme-studio",
+  "name": "Nexus Theme Studio",
+  "version": "0.1.0",
+  "minAppVersion": "1.13.4",
+  "description": "Live editor for the Nexus theme: named profiles of token overrides, applied to the running workspace as you change them.",
+  "author": "Max Laska",
+  "authorUrl": "https://github.com/MaxLaska/dynamic-action-panel",
+  "isDesktopOnly": true
+}

@@ -1,0 +1,52 @@
+/* styles.css — the Theme Studio's own chrome.
+ *
+ * Deliberately tiny, and deliberately NOT about Nexus. Nothing here declares or
+ * consumes a `--nexus-*` token: this plugin edits the theme's language, it does
+ * not speak it. Every value below is one of Obsidian's own semantic variables,
+ * so the editor looks right in whatever theme it happens to be opened under —
+ * including the moment before Nexus is selected, which is exactly when a new
+ * user opens it.
+ */
+
+.nexus-studio-hint {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    margin: var(--size-4-2) 0 var(--size-4-4);
+}
+
+/* The literal value is the authoritative control, so it gets room for a
+ * `color-mix()` rather than the width of six hex digits. Monospace because
+ * these are CSS values and a mistyped digit should be easy to see. */
+.nexus-studio-token input.nexus-studio-value {
+    font-family: var(--font-monospace);
+    width: 18em;
+}
+
+/* A textarea does not belong in the narrow control column beside a label, so
+ * the scratch row stacks instead. */
+.setting-item.nexus-studio-scratch {
+    display: block;
+}
+
+.setting-item.nexus-studio-scratch .setting-item-control {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--size-4-2);
+    margin-top: var(--size-4-2);
+    padding-top: 0;
+}
+
+.setting-item.nexus-studio-scratch textarea {
+    flex: 1 0 100%;
+    min-height: 10em;
+    resize: vertical;
+    font-family: var(--font-monospace);
+}
+
+textarea.nexus-studio-transfer {
+    width: 100%;
+    min-height: 14em;
+    resize: vertical;
+    font-family: var(--font-monospace);
+}
