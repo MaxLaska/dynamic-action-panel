@@ -9,7 +9,9 @@ export default tseslint.config(
 			'**/dist/**',
 			'**/scripts/**',
 			'**/references/**',
-			'esbuild.config.mjs',
+			// Build configs, wherever they live: the root one and the
+			// companion plugin's own.
+			'**/esbuild.config.mjs',
 			'eslint.config.mjs',
 			'version-bump.mjs',
 			'versions.json',
@@ -47,6 +49,18 @@ export default tseslint.config(
 			// a literal directory name and not something a Vault API could be
 			// asked about.
 			'obsidianmd/hardcoded-config-path': 'off',
+		},
+	},
+	{
+		// The companion plugin works inside the iframe document of the reader
+		// ZotFlow embeds. That is a SEPARATE REALM: Obsidian augments its own
+		// window's prototypes, never that frame's, so `createEl` and the rest
+		// of the convenience API simply do not exist on those nodes. The plain
+		// DOM call is not a missed shortcut here, it is the only thing that
+		// works.
+		files: ['companion/**/*.ts'],
+		rules: {
+			'obsidianmd/prefer-create-el': 'off',
 		},
 	},
 );

@@ -1388,3 +1388,36 @@ The following are still open:
 - locked-mode empty state when every category is context-hidden;
 - packaging and release strategy for OCAP;
 - final OCAP manifest `id` and public product naming details.
+
+## 2026-09-22 – Reader extensions are a companion plugin, not part of DAP
+
+**Decision:** Changes to the reader ZotFlow embeds live in a **separate Obsidian
+plugin**, `zotflow-reader-extensions`, whose source sits in this repository
+under `companion/zotflow-reader-extensions/` with its own manifest, its own
+esbuild config, its own `data.json` and its own smoke-only deploy script. It is
+not a DAP feature, does not import DAP code, and DAP does not import it.
+
+**Reason:** the two have different owners and different lifetimes. DAP is a
+panel in the Obsidian sidebar; this is a runtime adjustment to somebody else's
+iframe, pinned to DOM names that belong to the Zotero reader fork and that a
+ZotFlow update may move. Folding it into DAP would put a fragile,
+version-coupled dependency inside a plugin that has none, and would make a
+reader change a reason to reinstall the panel. Keeping it separate also keeps
+the existing line intact: DAP still only ever *reads* ZotFlow.
+
+It stays in this repository rather than getting its own one because it shares
+this project's toolchain, its test runner and its deploy safety machinery, and
+because the audit it rests on
+(`audits/2026-09-22-zotflow-reader-sidebar-side.md`) is already here. A second
+repository would buy separation that the directory boundary already provides.
+
+**Consequence:** `scripts/deployCore.mjs` keeps pinning `PLUGIN_ID` to
+`dynamic-action-panel` — deliberately, because an id that can vary is an id that
+stops being part of the check. The companion brings its own pin in its own
+script, reuses the allowlist, the link check and the `data.json` proof, and can
+resolve only the `smoke` target. There is no companion path to the productive
+vault at all.
+
+**Scope of v1:** exactly one capability, `sidebarSide: "left" | "right"`. It is
+not a patch framework, and a second capability is a new decision, not an
+extension of this one.

@@ -1,12 +1,36 @@
 # OCAP – Status
 
-Last updated: 2026-09-20 (help button and context routing, on top of the
-EXPERIMENTAL corrected mouse grammar: left click uses, Shift/Ctrl + left
-selects, right click is context, right drag moves a tool — the same-day
-version with selection on the right button is superseded; implemented
-locally and live-smoke-tested, awaiting the user's judgement in use)
+Last updated: 2026-09-22 (reader sidebar side, as a separate companion plugin —
+`zotflow-reader-extensions`, which is not part of the panel; on top of the
+help button and context routing, and the EXPERIMENTAL corrected mouse
+grammar: left click uses, Shift/Ctrl + left selects, right click is context,
+right drag moves a tool — the same-day version with selection on the right
+button is superseded; implemented locally and live-smoke-tested, awaiting the
+user's judgement in use)
 
 ## Newest work first
+
+- **Reader sidebar side (2026-09-22), implemented locally, smoke-tested,
+  deployed only to the disposable smoke vault. Not pushed, not in the
+  productive vault.** Normative: `DECISIONS.md` "Reader extensions are a
+  companion plugin…"; audit `audits/2026-09-22-zotflow-reader-sidebar-side.md`.
+  - **A separate plugin, not a DAP feature.** `companion/zotflow-reader-extensions/`
+    (`zotflow-reader-extensions`) adjusts the reader ZotFlow embeds from outside
+    its iframe. No ZotFlow fork, no reader fork, no bundle patch.
+  - **One capability:** `sidebarSide: "left" | "right"`, in the plugin's own
+    `data.json`. Default `left` is the reader untouched. Right-click the reader's
+    sidebar toggle to choose; the toggle always lives on the sidebar's side.
+  - **Two traps the audit caught:** the reader ships both `.split-view` and
+    `#split-view` and only the id one carries the PDF; the resizer maths is
+    hardcoded to the left edge and is re-derived through `_reader.setSidebarWidth`.
+  - **One trap the smoke caught:** `target instanceof Element` is always false
+    across the iframe realm boundary, which silently disabled both the right-hand
+    resize and the context menu. Guards are duck-typed now, with a test.
+  - **Fails soft:** an unfamiliar reader DOM is a logged no-op, never a half patch.
+  - 54/54 live smoke checks, 42 unit tests; below the reader's own 768px
+    breakpoint it mirrors the reader's overlay mode. Known narrow-width limit:
+    the toolbar already scrolls there, so the right-hand toggle sits in that
+    scroll area.
 
 - **Help button and context routing (2026-09-20), implemented locally,
   live-smoke-tested, deployed only to the disposable smoke vault. Not pushed,

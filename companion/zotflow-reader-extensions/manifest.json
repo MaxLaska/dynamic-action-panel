@@ -1,0 +1,10 @@
+{
+  "id": "zotflow-reader-extensions",
+  "name": "ZotFlow Reader Extensions",
+  "version": "0.1.0",
+  "minAppVersion": "1.13.4",
+  "description": "Small UI extensions for the reader ZotFlow embeds. v1: the reader sidebar can live on the left or the right.",
+  "author": "Max Laska",
+  "authorUrl": "https://github.com/MaxLaska",
+  "isDesktopOnly": true
+}
