@@ -36,8 +36,16 @@ const distDir = path.join(here, '..', 'dist');
 /** This plugin's folder name, pinned here for the same reason DAP pins its own. */
 const COMPANION_PLUGIN_ID = 'zotflow-reader-extensions';
 
-/** No styles.css: this plugin's CSS is injected into the reader, not shipped. */
-const COMPANION_FILES = ['main.js', 'manifest.json'];
+/**
+ * styles.css is here, and it is not the reader's CSS.
+ *
+ * This plugin now has stylesheets in two realms, and only one of them can be a
+ * file. The reader lives in an iframe that Obsidian's stylesheet loader cannot
+ * reach, so its rules are injected at runtime by sidebarPatch.ts. Everything
+ * about OBSIDIAN's own workspace — the side docks, the edge between a dock and
+ * the document — is ordinary plugin CSS, and ships as ordinary plugin CSS.
+ */
+const COMPANION_FILES = ['main.js', 'manifest.json', 'styles.css'];
 
 /** The only target this script will ever resolve. */
 const TARGET_NAME = 'smoke';

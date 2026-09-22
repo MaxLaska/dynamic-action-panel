@@ -1,8 +1,10 @@
 # OCAP – Status
 
-Last updated: 2026-09-22 (a section shortcut now lands exactly where the
+Last updated: 2026-09-22 (the workspace, the reader's sidebar and the pages are
+now three distinguishable surfaces with a legible edge between them, on top of a
+section shortcut landing exactly where the
 reader's own outline lands, on top of outline sections as panel tools and the
-reader sidebar side — the latter two in `zotflow-reader-extensions`, which is
+reader sidebar side — those three in `zotflow-reader-extensions`, which is
 not part of the panel; and on top of the
 help button and context routing, and the EXPERIMENTAL corrected mouse
 grammar: left click uses, Shift/Ctrl + left selects, right click is context,
@@ -52,6 +54,41 @@ user's judgement in use)
     sidebar right the group reads Search → Appearance → Toggle.
   - 39/39 outline smoke checks and 56/56 sidebar smoke checks against a live
     reader; 1493 unit tests.
+
+- **Panel surface hierarchy (2026-09-22), implemented locally, verified
+  visually and by test, deployed only to the disposable smoke vault. Not
+  pushed, not in the productive vault.** In `zotflow-reader-extensions`, not in
+  the panel.
+  - **The problem was that there was no hierarchy.** Obsidian's side docks and
+    the reader's own sidebar were both painted `#282828` — the same grey, from
+    two unrelated variables that happened to agree. With the reader's sidebar
+    docked right, it and the right dock formed one uninterrupted slab and
+    nothing said where the document ended.
+  - **Three levels now, measured:** the side docks ≈`#333` (workspace), the
+    reader's sidebar ≈`#232323` (the document's own panel), the pages `#1C1C1C`.
+    Both colours are mixed from the theme's / the reader's own tokens, never
+    fixed, and the whole thing is scoped to `body.theme-dark`.
+  - **Two stylesheets, two realms, deliberately.** `styles.css` is ordinary
+    plugin CSS for Obsidian's workspace and knows nothing about the reader;
+    `surfaceStylesheet()` is injected into the reader's iframe, which no
+    stylesheet loader can reach, and knows nothing about Obsidian. The
+    companion orchestrates both; the panel is not involved.
+  - **A workspace rule, not a panel rule.** Nothing names DAP, so the docks look
+    the same with Backlinks, Properties or Tags open — verified in all four.
+  - **The boundary is the side-dock `.workspace-leaf-resize-handle`**, not the
+    reader's internal `.sidebar-resizer`, which moves a different edge. A 1px
+    neutral hairline idle, 2px brighter on hover, brighter still while dragged;
+    the drag state hangs off Obsidian's own `.is-active`, because the pointer
+    leaves the 3px strip immediately. The grab zone is untouched.
+  - **Neutral throughout.** Obsidian paints this handle with `--color-accent`
+    while dragging, via both `background-color` and `border-color`; both are
+    reset. Accent colours mean cell colour and selection in this panel, and an
+    edge is not a meaning.
+  - Deliberately out of scope: light theme, any colour-settings UI, and the
+    known narrow-reader resizer bug below 768px (still open, see caveats).
+  - `styles.css` now ships with the plugin: `COPIED` in `esbuild.config.mjs`,
+    `COMPANION_FILES` in `deploySmoke.mjs`. 18 new unit tests; the four existing
+    smoke suites re-run unchanged.
 
 - **Reader sidebar side (2026-09-22), implemented locally, smoke-tested,
   deployed only to the disposable smoke vault. Not pushed, not in the

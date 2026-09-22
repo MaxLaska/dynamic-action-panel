@@ -35,13 +35,25 @@ Copyright (c) 2026 Max Laska
 */
 `;
 
-function copyManifest() {
+/**
+ * The two files that are copied rather than compiled.
+ *
+ * styles.css is hand-written and shipped as-is: it is the half of this plugin's
+ * CSS that applies to OBSIDIAN's workspace, which Obsidian loads from the
+ * plugin folder itself. The other half belongs to the reader's iframe, which no
+ * stylesheet loader can reach, and is injected at runtime instead.
+ */
+const COPIED = ['manifest.json', 'styles.css'];
+
+function copyStaticFiles() {
     fs.mkdirSync(outDir, { recursive: true });
-    fs.copyFileSync(path.join(here, 'manifest.json'), path.join(outDir, 'manifest.json'));
+    for (const name of COPIED) {
+        fs.copyFileSync(path.join(here, name), path.join(outDir, name));
+    }
 }
 
 async function main() {
-    copyManifest();
+    copyStaticFiles();
     await esbuild.build({
         banner: { js: banner },
         entryPoints: [path.join(here, 'src', 'main.ts')],

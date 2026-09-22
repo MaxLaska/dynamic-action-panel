@@ -74,8 +74,19 @@ export const SELECTORS = {
 export const OWN = {
     /** Set on the reader's `body` while the sidebar is on the right. */
     rightClass: 'zfrx-sidebar-right',
-    /** The injected stylesheet. */
+    /** The injected stylesheet for the side flip. */
     styleId: 'zfrx-sidebar-style',
+    /**
+     * The injected stylesheet for the sidebar's surface colour.
+     *
+     * Separate from `styleId` on purpose, and not a stray second tag. The side
+     * flip describes the RIGHT state only, which is what keeps "left" a genuine
+     * no-op; the surface applies on BOTH sides. Folding them together would
+     * have meant either scoping the surface to the right — a hierarchy that
+     * vanishes when the sidebar is moved — or giving up the guarantee that left
+     * is the reader untouched. Two ids, two concerns, one lifecycle.
+     */
+    surfaceStyleId: 'zfrx-surface-style',
     /** Marks the divider orphaned by moving the toggle out of `.start`. */
     orphanDivider: 'zfrx-orphan-divider',
     /** Records the side currently applied, for cheap idempotency checks. */

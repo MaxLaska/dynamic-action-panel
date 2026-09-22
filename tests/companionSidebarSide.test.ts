@@ -22,6 +22,7 @@ import {
     normalizeSettings,
     rightSidebarWidth,
     sidebarStylesheet,
+    surfaceStylesheet,
 } from '../companion/zotflow-reader-extensions/src/sidebarSide';
 
 describe('the default is the reader\'s own behaviour', () => {
@@ -179,6 +180,189 @@ describe('the injected stylesheet', () => {
 
     it('is stable, so re-applying it changes nothing', () => {
         expect(sidebarStylesheet()).toBe(css);
+    });
+});
+
+// Three levels, in two realms, from one plugin. The tests below are mostly
+// about the seam between them: which rules live in which file, and that neither
+// file quietly grows a dependency on the other.
+describe('the surface hierarchy', () => {
+    const reader = surfaceStylesheet();
+    const host = readFileSync('companion/zotflow-reader-extensions/styles.css', 'utf8');
+    const patch = readFileSync(
+        'companion/zotflow-reader-extensions/src/sidebarPatch.ts',
+        'utf8'
+    );
+
+    /**
+     * The CSS with its comments removed.
+     *
+     * Both files explain themselves at length, and those explanations NAME the
+     * things the rules must not touch — "not the reader's `.sidebar-resizer`",
+     * "Obsidian fills this handle with the accent colour". Asserting against
+     * the raw text would fail on the very sentence that documents the care.
+     */
+    const rulesOnly = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    /** Every selector the sheet declares, one per entry. */
+    const selectorsOf = (css: string) =>
+        rulesOnly(css)
+            .split('}')
+            .map((block) => block.slice(0, block.indexOf('{')))
+            .filter((head) => head.trim())
+            .flatMap((head) => head.split(','))
+            .map((s) => s.trim())
+            .filter(Boolean);
+
+    describe('the reader half', () => {
+        it('recolours the sidebar the reader actually has', () => {
+            expect(reader).toContain(SELECTORS.sidebarContainer);
+            expect(reader).toContain('background-color');
+        });
+
+        // The whole point of a separate sheet. Scoped to the right-hand class,
+        // the hierarchy would disappear the moment the user moved the sidebar
+        // back to the left — where this feature started.
+        it('applies on BOTH sides, so it is not scoped to the right', () => {
+            expect(reader).not.toContain(OWN.rightClass);
+        });
+
+        // A fixed grey would win against a reader that reskins itself; mixing
+        // the reader's own tokens means it moves with them.
+        it('derives its colour from the reader\'s own variables', () => {
+            expect(reader).toContain('var(--material-background)');
+            expect(reader).toContain('var(--material-sidepane)');
+            expect(reader).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+        });
+
+        // Re-pointing the side-pane token ON the container is what lets every
+        // header and row inside the sidebar follow without being enumerated.
+        // Doing it globally would have recoloured things outside the sidebar.
+        it('re-points the side-pane token on the container, not globally', () => {
+            const container = reader.slice(reader.indexOf(SELECTORS.sidebarContainer));
+            expect(container).toContain('--material-sidepane:');
+            const body = reader.slice(reader.indexOf('body {'), reader.indexOf(SELECTORS.sidebarContainer));
+            expect(body).not.toContain('--material-sidepane:');
+        });
+
+        it('is stable, so re-applying it changes nothing', () => {
+            expect(surfaceStylesheet()).toBe(reader);
+        });
+    });
+
+    describe('the host half', () => {
+        it('lightens the side docks as one workspace level', () => {
+            expect(host).toContain('.mod-sidedock');
+            expect(host).toContain('--zfrx-workspace-surface');
+        });
+
+        // The requirement was a workspace level, not a panel. A rule naming the
+        // panel would break the moment Backlinks or Properties was open
+        // instead, and would be a different colour for the same surface.
+        it('names no plugin, view or panel of its own', () => {
+            expect(host).not.toMatch(/ocap-|dynamic-action-panel|buttons-panel|backlink/i);
+        });
+
+        it('derives its colour from the theme rather than fixing one', () => {
+            expect(host).toContain('var(--background-secondary)');
+        });
+
+        // Accent colours carry meaning in this panel — cell colours, selection.
+        // An edge is not a meaning, and Obsidian's own accent-filled hover on
+        // this handle is exactly what the neutral line replaces.
+        it('stays neutral, borrowing no accent colour', () => {
+            const rules = rulesOnly(host);
+            expect(rules).not.toContain('--interactive-accent');
+            expect(rules).not.toContain('--color-accent');
+            const colours = rules.match(/rgba?\([^)]*\)/g) ?? [];
+            for (const colour of colours) {
+                const [r, g, b] = colour.match(/[\d.]+/g)!.map(Number);
+                expect(r).toBe(g);
+                expect(g).toBe(b);
+            }
+        });
+
+        // Obsidian's side-dock handle, not the reader's internal one. The
+        // reader's `.sidebar-resizer` lives inside the iframe and moves the
+        // reader's own sidebar; styling it would decorate the wrong boundary.
+        it('styles Obsidian\'s dock handle and not the reader\'s resizer', () => {
+            expect(host).toContain('.workspace-leaf-resize-handle');
+            expect(rulesOnly(host)).not.toContain(SELECTORS.sidebarResizer);
+        });
+
+        it('gives the edge three distinct states', () => {
+            for (const state of ['--zfrx-edge-idle', '--zfrx-edge-hover', '--zfrx-edge-active']) {
+                expect(host).toContain(state);
+            }
+            expect(host).toContain(':hover');
+            // Obsidian's own marker while the handle is dragged, measured
+            // rather than guessed: the pointer leaves the 3px strip at once,
+            // so `:active` alone would flicker off mid-drag.
+            expect(host).toContain('.is-active');
+        });
+
+        // Deriving a light theme's surfaces is a different piece of work, and
+        // one that could not be verified from here.
+        it('confines itself to the dark theme it was judged in', () => {
+            const selectors = selectorsOf(host);
+            expect(selectors.length).toBeGreaterThan(0);
+            for (const selector of selectors) expect(selector).toContain('body.theme-dark');
+        });
+
+        // The grab zone is Obsidian's, and every user already has the muscle
+        // memory for it. The line makes the edge visible; it does not move it.
+        it('leaves the hit zone exactly where Obsidian put it', () => {
+            const rules = rulesOnly(host);
+            const handle = rules.slice(rules.indexOf('.workspace-leaf-resize-handle'));
+            // Widths belong to the ::after hairline only, never to the handle.
+            for (const block of handle.split('}')) {
+                if (!block.includes('{') || block.includes('::after')) continue;
+                expect(block).not.toMatch(/(^|[^-])width:/);
+            }
+        });
+    });
+
+    describe('the two realms stay separate', () => {
+        it('keeps Obsidian\'s selectors out of the reader sheet', () => {
+            expect(reader).not.toContain('workspace-');
+            expect(reader).not.toContain('theme-dark');
+        });
+
+        it('keeps the reader\'s selectors out of the host sheet', () => {
+            expect(rulesOnly(host)).not.toContain(SELECTORS.sidebarContainer);
+            expect(rulesOnly(host)).not.toContain('--material-');
+        });
+
+        // Two ids, or a re-apply would stack sheets in a document that survives
+        // dozens of toggles.
+        it('injects the two sheets under two distinct ids', () => {
+            expect(OWN.surfaceStyleId).not.toBe(OWN.styleId);
+            expect(patch).toContain('OWN.surfaceStyleId, surfaceStylesheet()');
+        });
+
+        // Unloading has to leave the reader as it was found, or the sidebar
+        // stays recoloured by a plugin no longer there to explain it.
+        it('removes both sheets when the patch is undone', () => {
+            const remove = patch.slice(patch.indexOf('export function removePatch'));
+            expect(remove).toContain('OWN.styleId');
+            expect(remove).toContain('OWN.surfaceStyleId');
+        });
+
+        // The host half is a file because Obsidian loads it from the plugin
+        // folder; the reader half cannot be, because no stylesheet loader
+        // reaches into an iframe. So the file has to actually ship.
+        it('ships the host stylesheet with the plugin', () => {
+            const deploy = readFileSync(
+                'companion/zotflow-reader-extensions/scripts/deploySmoke.mjs',
+                'utf8'
+            );
+            expect(deploy).toMatch(/COMPANION_FILES = \[[^\]]*'styles\.css'/);
+            const build = readFileSync(
+                'companion/zotflow-reader-extensions/esbuild.config.mjs',
+                'utf8'
+            );
+            expect(build).toMatch(/COPIED = \[[^\]]*'styles\.css'/);
+        });
     });
 });
 

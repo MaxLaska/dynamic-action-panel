@@ -19,7 +19,12 @@ import {
     readerInstance,
     type ReaderParts,
 } from './readerContract';
-import { rightSidebarWidth, sidebarStylesheet, type SidebarSide } from './sidebarSide';
+import {
+    rightSidebarWidth,
+    sidebarStylesheet,
+    surfaceStylesheet,
+    type SidebarSide,
+} from './sidebarSide';
 
 /**
  * An event target as something that can be asked about its ancestors.
@@ -44,24 +49,27 @@ export function appliedSide(body: HTMLElement): SidebarSide | null {
 }
 
 /**
- * Puts this plugin's stylesheet in the reader document, once.
+ * Puts one of this plugin's stylesheets in the reader document, once.
  *
  * Reused rather than replaced when it is already there: a fresh `<style>` on
  * every apply would leave a stack of identical sheets behind in a document that
  * survives dozens of toggles.
+ *
+ * Identified by id rather than by position, so the two sheets this plugin
+ * injects stay two — the layout one and the surface one — however many times
+ * either is re-asserted.
  */
-function ensureStylesheet(parts: ReaderParts): void {
-    const existing = parts.doc.getElementById(OWN.styleId);
+function ensureStylesheet(parts: ReaderParts, id: string, css: string): void {
+    const existing = parts.doc.getElementById(id);
     // Plain `createElement`, not Obsidian's `createEl`: this is the reader's
     // own iframe document, a separate realm whose prototypes Obsidian has
     // never patched, so the helper does not exist there. See the companion
     // override in eslint.config.mjs.
     const style = existing ?? parts.doc.createElement('style');
     if (!existing) {
-        style.id = OWN.styleId;
+        style.id = id;
         parts.doc.head.appendChild(style);
     }
-    const css = sidebarStylesheet();
     // Comparing first keeps a re-apply from invalidating style resolution for
     // no reason; this runs on every layout change.
     if (style.textContent !== css) style.textContent = css;
@@ -136,7 +144,11 @@ function orderEndGroup(parts: ReaderParts, order: 'find-first' | 'reader-default
 export function applySide(doc: Document | null | undefined, side: SidebarSide): boolean {
     const parts = probeReader(doc);
     if (!parts) return false;
-    ensureStylesheet(parts);
+    ensureStylesheet(parts, OWN.styleId, sidebarStylesheet());
+    // Unconditional, and not inside a `side === 'right'` branch: the surface
+    // hierarchy is about which level this panel belongs to, and it belongs to
+    // the same level whichever edge it is docked against.
+    ensureStylesheet(parts, OWN.surfaceStyleId, surfaceStylesheet());
     orderEndGroup(parts, 'find-first');
     placeToggle(parts, side);
     parts.body.classList.toggle(OWN.rightClass, side === 'right');
@@ -158,7 +170,10 @@ export function removePatch(doc: Document | null | undefined): void {
     orderEndGroup(parts, 'reader-default');
     parts.body.classList.remove(OWN.rightClass);
     parts.body.removeAttribute(OWN.appliedAttr);
+    // Both sheets, or unloading the plugin would leave the reader's sidebar
+    // recoloured by a plugin that is no longer there to explain it.
     parts.doc.getElementById(OWN.styleId)?.remove();
+    parts.doc.getElementById(OWN.surfaceStyleId)?.remove();
 }
 
 /** What one bound reader document needs torn down again. */

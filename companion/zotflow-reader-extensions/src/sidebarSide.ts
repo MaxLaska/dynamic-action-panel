@@ -129,3 +129,50 @@ export function sidebarStylesheet(): string {
         `}`,
     ].join('\n');
 }
+
+/**
+ * The stylesheet that gives the reader's sidebar its own surface colour.
+ *
+ * Unlike `sidebarStylesheet`, this one applies on BOTH sides — the hierarchy is
+ * about which LEVEL the panel belongs to, and that does not change when it is
+ * moved from one edge to the other.
+ *
+ * The problem, measured before this was written: the reader's sidebar and
+ * Obsidian's side docks were painted the same colour (#282828 in this theme, on
+ * both sides of the boundary, from two unrelated variables that happened to
+ * agree). Docked on the right, the reader's sidebar and the right dock formed
+ * one continuous slab with no visible seam, and nothing said where the document
+ * ended and the workspace began.
+ *
+ * So the sidebar moves a step DOWN, towards the pages it belongs to, while the
+ * host stylesheet moves the docks a step UP. The step is small on purpose: this
+ * panel is part of the reader, and it has to keep reading as part of the reader
+ * rather than as a foreign module dropped into it.
+ *
+ * Two details carry the robustness:
+ *
+ * - The colour is mixed from the reader's OWN tokens, so a reader that reskins
+ *   itself takes this with it instead of being overridden by a fixed grey.
+ * - `--material-sidepane` is re-pointed ON the container rather than globally.
+ *   Everything inside the sidebar that paints the side-pane colour — headers,
+ *   rows, its own toolbar — inherits the new value without this file having to
+ *   enumerate a single one of them, and everything OUTSIDE the sidebar keeps
+ *   the original. The intermediate variable is what makes that possible: the
+ *   mix is computed on `body`, where `--material-sidepane` is still the
+ *   reader's, so re-pointing it on the container is not a cycle.
+ */
+export function surfaceStylesheet(): string {
+    return [
+        `/* Injected by zotflow-reader-extensions. The reader's sidebar sits one`,
+        `   step below the workspace and one step above the page, on both sides. */`,
+        `body {`,
+        `  --zfrx-toggle-surface: color-mix(`,
+        `    in srgb, var(--material-background) 40%, var(--material-sidepane) 60%`,
+        `  );`,
+        `}`,
+        `${SELECTORS.sidebarContainer} {`,
+        `  --material-sidepane: var(--zfrx-toggle-surface);`,
+        `  background-color: var(--zfrx-toggle-surface);`,
+        `}`,
+    ].join('\n');
+}
