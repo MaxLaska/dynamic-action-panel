@@ -5,8 +5,8 @@ import { ButtonEditModal } from '@/components/modal/ButtonEditModal';
 import { useButtonOperations } from './useButtonOperations';
 import { useContextTarget } from '@/contexts/GridContextTarget';
 import { useGridCellSelection } from '@/contexts/GridCellSelectionContext';
-import { t, tWithParams } from '@/utils/i18n';
-import { offersSelectionDelete, type ContextTarget } from '@/utils/contextTarget';
+import { t } from '@/utils/i18n';
+import { deleteTargetsOfContext, type ContextTarget } from '@/utils/contextTarget';
 import type { ButtonConfig, CategoryConfig } from '@/types';
 
 /**
@@ -18,20 +18,25 @@ import type { ButtonConfig, CategoryConfig } from '@/types';
  * tool under the pointer, or the selection that tool is part of
  * (`resolveContextTarget`).
  *
- * Edit, Copy and Delete always act on the CLICKED tool, in both contexts — a
- * selection does not change what editing or copying this one tool means. What a
- * selection context adds, below them, is the first entry that acts on the
- * selection itself: deleting all the tools it holds, in one operation, after
- * one confirmation.
+ * Edit and Copy always act on the CLICKED tool: a selection does not change
+ * what editing or copying this one tool means.
+ *
+ * Delete is the one entry whose SUBJECT the context decides. There is exactly
+ * one of it, always titled the same, and `deleteTargetsOfContext` answers what
+ * it removes — every tool a selection holds when the click was inside one, the
+ * clicked tool otherwise. The number belongs in the confirmation, which names
+ * them; a menu offering both "Delete" and "Delete 4 selected items" would be
+ * offering one action twice.
  *
  * The click never touches the selection. Right-clicking a tool outside the
  * selection does not reduce the selection to it, and right-clicking inside does
  * not extend it: reading is all this path does. The selection is dropped in
- * exactly one case — after a selection delete has actually been written.
+ * exactly one case — after a delete whose subject WAS the selection has
+ * actually been written.
  */
 export function useButtonMenu(button: ButtonConfig, category: CategoryConfig) {
     const { plugin, app } = usePluginContext();
-    const { copyButton, deleteButton, deleteTools } = useButtonOperations();
+    const { copyButton, deleteTools } = useButtonOperations();
     const { clearCellSelection } = useGridCellSelection();
     const contextTarget = useContextTarget();
 
@@ -62,36 +67,26 @@ export function useButtonMenu(button: ButtonConfig, category: CategoryConfig) {
                     });
             });
 
-            menu.addItem((item: MenuItem) => {
-                item.setTitle(t('delete') || 'Delete')
-                    .setIcon('trash')
-                    .onClick(() => {
-                        deleteButton(button, category);
-                    });
-            });
-
-            // The selection's own entry, and the first one there has ever been.
-            //
-            // Offered only when the selection holds MORE than one tool. With
-            // exactly one, the plain Delete above already deletes precisely
-            // that tool, and a second entry saying the same thing in different
-            // words would be a choice without a difference. Empty selected
-            // cells are not targets and are not counted — `toolIds` is what the
-            // cells actually hold, so a selection of nothing but empty cells
-            // never reaches this at all.
-            if (offersSelectionDelete(target)) {
-                menu.addSeparator();
+            // ONE Delete. What it removes is the context's business, not the
+            // menu's: inside a selection it is every tool the selection holds,
+            // anywhere else it is the tool under the pointer. The count belongs
+            // in the confirmation, where there is room to name them; a menu
+            // entry that says "Delete 4 selected items" makes a second action
+            // out of what is one.
+            const doomed = deleteTargetsOfContext(target);
+            if (doomed.length > 0) {
                 menu.addItem((item: MenuItem) => {
-                    item.setTitle(
-                        tWithParams('delete_selected_count', {
-                            count: target.toolIds.length,
-                        })
-                    )
+                    item.setTitle(t('delete') || 'Delete')
                         .setIcon('trash')
                         .onClick(() => {
                             // The selection is dropped only once the write has
-                            // landed; a cancelled dialog leaves it standing.
-                            deleteTools(target.toolIds, category, clearCellSelection);
+                            // landed, and only when it WAS the subject: deleting
+                            // one tool outside the selection leaves it standing.
+                            deleteTools(
+                                doomed,
+                                category,
+                                target.kind === 'selection' ? clearCellSelection : undefined
+                            );
                         });
                 });
             }
@@ -107,7 +102,7 @@ export function useButtonMenu(button: ButtonConfig, category: CategoryConfig) {
                 dom.dataset.ocapContextKind = target.kind;
                 dom.dataset.ocapContextCells = String(target.cellCount);
                 dom.dataset.ocapContextTools = String(target.toolIds.length);
-                dom.dataset.ocapSelectionDelete = String(offersSelectionDelete(target));
+                dom.dataset.ocapDeleteTargets = String(deleteTargetsOfContext(target).length);
             }
         },
         [
@@ -116,7 +111,6 @@ export function useButtonMenu(button: ButtonConfig, category: CategoryConfig) {
             plugin,
             app,
             copyButton,
-            deleteButton,
             deleteTools,
             clearCellSelection,
             contextTarget,

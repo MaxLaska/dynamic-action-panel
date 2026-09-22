@@ -116,7 +116,6 @@
     "delete_button_tooltip": "Удалить",
     "delete_button_warning": "⚠️ Предупреждение: Это действие нельзя отменить.",
     "delete_selected": "Удалить выбранные объекты",
-    "delete_selected_count": "Удалить выбранные объекты ({count})",
     "delete_category": "Удалить категорию",
     "delete_category_error": "Ошибка удаления категории",
     "delete_category_success": "Категория \"{categoryName}\" и её {buttonCount} кнопок удалены",

@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest';
 import type { GridCellKey } from '@/types/settings';
 import {
     getSelectionDescriptor,
-    offersSelectionDelete,
+    deleteTargetsOfContext,
     resolveContextTarget,
     toolOnlyContextTarget,
 } from '@/utils/contextTarget';
@@ -282,7 +282,8 @@ describe('the wiring from the grid to the menu', () => {
         expect(menu).not.toMatch(/selectCell\b|selectCells|restoreCellSelection/);
         // Handed over as a callback, never invoked here: the delete decides
         // whether it ever runs, and a cancelled dialog means it does not.
-        expect(menu).toContain('deleteTools(target.toolIds, category, clearCellSelection)');
+        expect(menu).toContain('doomed,');
+        expect(menu).toContain("target.kind === 'selection' ? clearCellSelection : undefined");
         expect(menu).not.toMatch(/clearCellSelection\s*\(/);
     });
 
@@ -304,9 +305,9 @@ describe('the wiring from the grid to the menu', () => {
     });
 });
 
-// --- what the menu offers for a selection ---------------------------------------
+// --- what Delete acts on -------------------------------------------------------
 
-describe('when the menu offers to delete the selection', () => {
+describe('what Delete acts on', () => {
     const target = (clickedCell: GridCellKey | null, selected: string[]) =>
         resolveContextTarget({
             clickedCell,
@@ -315,36 +316,39 @@ describe('when the menu offers to delete the selection', () => {
             toolIdOfCell,
         });
 
-    it('offers it for a selection holding several tools', () => {
-        expect(offersSelectionDelete(target('r0c0', ['r0c0', 'r0c1', 'r1c0']))).toBe(true);
+    it('takes every tool of the selection when the click was inside it', () => {
+        expect(deleteTargetsOfContext(target('r0c0', ['r0c0', 'r0c1', 'r1c0']))).toEqual([
+            'tool-a',
+            'tool-b',
+            'tool-c',
+        ]);
     });
 
-    // The plain Delete above it already deletes exactly that one tool; a second
-    // entry saying the same thing differently is a choice without a difference.
-    it('does not offer it when the selection holds only the clicked tool', () => {
-        expect(offersSelectionDelete(target('r0c0', ['r0c0']))).toBe(false);
+    // Empty cells are never targets: ten selected cells over three tools delete
+    // three things, and the confirmation says three.
+    it('ignores the empty cells of a selection', () => {
+        expect(deleteTargetsOfContext(target('r0c0', ['r0c0', 'r0c2', 'r0c3', 'r3c3']))).toEqual([
+            'tool-a',
+        ]);
     });
 
-    // Empty cells are never delete targets, so they never make a second target.
-    it('does not offer it when the extra cells are empty', () => {
-        expect(offersSelectionDelete(target('r0c0', ['r0c0', 'r0c2', 'r0c3']))).toBe(false);
+    // The same entry, the same title — only its subject is smaller.
+    it('takes the one selected tool when that is all the selection holds', () => {
+        expect(deleteTargetsOfContext(target('r0c0', ['r0c0']))).toEqual(['tool-a']);
     });
 
-    it('does not offer it for a click outside the selection', () => {
-        // A tool context: the selection stands, but the click is not about it.
-        expect(offersSelectionDelete(target('r1c2', ['r0c0', 'r0c1']))).toBe(false);
+    it('takes only the clicked tool for a click OUTSIDE the selection', () => {
+        expect(deleteTargetsOfContext(target('r1c2', ['r0c0', 'r0c1']))).toEqual(['tool-d']);
     });
 
-    it('does not offer it when nothing is selected', () => {
-        expect(offersSelectionDelete(target('r0c0', []))).toBe(false);
+    it('takes the clicked tool when nothing is selected', () => {
+        expect(deleteTargetsOfContext(target('r0c0', []))).toEqual(['tool-a']);
     });
 
-    it('does not offer it outside a grid at all', () => {
-        expect(offersSelectionDelete(toolOnlyContextTarget('tool-a'))).toBe(false);
+    it('takes the clicked tool outside a grid entirely', () => {
+        expect(deleteTargetsOfContext(toolOnlyContextTarget('tool-a'))).toEqual(['tool-a']);
     });
 
-    // One tool placed in two selected cells is one thing being deleted, and the
-    // descriptor already collapses it — so this stays a single-target case.
     it('counts a tool once however many selected cells hold it', () => {
         const twice: Record<string, string> = { r0c0: 'tool-a', r0c1: 'tool-a' };
         const resolved = resolveContextTarget({
@@ -353,33 +357,51 @@ describe('when the menu offers to delete the selection', () => {
             selectedCells: cells('r0c0', 'r0c1'),
             toolIdOfCell: (cell) => twice[cell] ?? null,
         });
-        expect(resolved.toolIds).toEqual(['tool-a']);
-        expect(offersSelectionDelete(resolved)).toBe(false);
+        expect(deleteTargetsOfContext(resolved)).toEqual(['tool-a']);
+    });
+
+    // Nothing to delete means no menu entry at all, rather than one that would
+    // open a dialog about nothing.
+    it('has no targets for a selection of nothing but empty cells', () => {
+        expect(deleteTargetsOfContext(target('r0c2', ['r0c2', 'r0c3']))).toEqual([]);
+    });
+
+    it('has no targets when the click named nothing and nothing is selected', () => {
+        expect(deleteTargetsOfContext(toolOnlyContextTarget(null))).toEqual([]);
     });
 });
 
-describe('the selection delete is wired to the one delete path', () => {
+describe('there is exactly one Delete, and one path behind it', () => {
     const menu = read('src/hooks/useButtonMenu.ts');
     const operations = read('src/hooks/useButtonOperations.ts');
+    const key = read('src/components/buttons-panel/CellSelectionDeleteKey.tsx');
 
-    it('asks the predicate rather than re-deciding in the component', () => {
-        expect(menu).toContain('offersSelectionDelete(target)');
+    it('adds a single Delete entry, titled only "Delete"', () => {
+        expect(menu.match(/setTitle\(t\('delete'\)/g) ?? []).toHaveLength(1);
+        expect(menu).not.toContain('delete_selected_count');
+        // The rejected wording must not reach a title. It is quoted once in a
+        // comment explaining why, which is not the same thing.
+        expect(menu).not.toMatch(/setTitle\([^)]*selected/i);
     });
 
-    it('deletes through the same operation the single delete uses', () => {
-        expect(menu).toContain('deleteTools(target.toolIds, category, clearCellSelection)');
-        expect(operations).toContain('deleteTools([button.id], category, onDelete)');
+    it('lets the context decide what that one entry removes', () => {
+        expect(menu).toContain('deleteTargetsOfContext(target)');
+        expect(menu).toContain('if (doomed.length > 0)');
     });
 
-    it('removes the tools in ONE batch, not one at a time', () => {
+    it('offers no second delete action', () => {
+        // One `deleteTools` call in the menu, and no separate single-tool
+        // delete function left to drift away from it.
+        expect(menu.match(/deleteTools\(/g) ?? []).toHaveLength(1);
+        expect(operations).not.toContain('deleteButton');
+    });
+
+    it('sends the key through the very same operation', () => {
+        expect(key).toContain('deleteTools(toolIds, grid, clearCellSelection)');
         expect(operations).toContain('removeToolsFromCategory(');
-        expect(operations).not.toMatch(/for\s*\(.*of\s+targets[\s\S]*commitToolState/);
     });
 
-    it('writes once, after the confirmation and never before it', () => {
-        // The delete's only commit sits inside the modal's confirm callback:
-        // opening the menu or the dialog touches no settings, and Cancel or
-        // Escape simply never reach it.
+    it('still writes once, after the confirmation and never before it', () => {
         const deletePath = operations.slice(operations.indexOf('const deleteTools'));
         const beforeDialog = deletePath.slice(0, deletePath.indexOf('new ButtonDeleteModal'));
         expect(beforeDialog).not.toContain('commitToolState');
@@ -387,8 +409,15 @@ describe('the selection delete is wired to the one delete path', () => {
         expect(afterDialog.match(/commitToolState/g) ?? []).toHaveLength(1);
     });
 
-    it('clears the selection only after the write, through the existing clear', () => {
-        expect(menu).toContain('clearCellSelection');
-        expect(operations).toContain('if (onDeleted) {');
+    it('clears the selection only when the selection was the subject', () => {
+        expect(menu).toContain("target.kind === 'selection' ? clearCellSelection : undefined");
+        expect(menu).not.toMatch(/clearCellSelection\s*\(/);
+    });
+
+    it('reads what a cell holds in ONE place, shared by the menu and the key', () => {
+        const grid = read('src/components/buttons-panel/CategoryButtonGrid.tsx');
+        expect(grid.match(/const toolIdOfSelectedCell = React\.useCallback/g) ?? []).toHaveLength(1);
+        expect(grid).toContain('toolIdOfCell: toolIdOfSelectedCell');
+        expect(grid).toContain('toolIdOfCell={toolIdOfSelectedCell}');
     });
 });

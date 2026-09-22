@@ -22,6 +22,7 @@ import {
 } from '@/components/buttons-panel/GridResizeControls';
 import { VariantSelector } from '@/components/buttons-panel/VariantSelector';
 import { CellColorPalette } from '@/components/buttons-panel/CellColorPalette';
+import { CellSelectionDeleteKey } from '@/components/buttons-panel/CellSelectionDeleteKey';
 import {
     RESIZE_DRAG_THRESHOLD_PX,
     gridCellKeyOfSlot,
@@ -653,28 +654,36 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
         columns: dimensions.columns,
     };
 
+    /**
+     * What a cell of THIS grid holds, read at call time.
+     *
+     * One implementation, used by the context menu and by the Delete key alike:
+     * both have to agree on what a selection would delete, and two copies of
+     * this mapping would be two chances to disagree. A selected cell that holds
+     * nothing, or holds something this grid no longer has, answers null and
+     * contributes no id.
+     */
+    const toolIdOfSelectedCell = React.useCallback((cell: GridCellKey): string | null => {
+        const { slots, columns } = contextTargetRef.current;
+        if (slots === null) {
+            return null;
+        }
+        const position = parseGridCellKey(cell);
+        if (position === null || position.column >= columns) {
+            return null;
+        }
+        return slots[position.row * columns + position.column]?.id ?? null;
+    }, []);
+
     const resolveTarget = React.useCallback<GridTargetResolver>(
-        (clickedCell, clickedToolId) => {
-            const { selectedCells: cells, slots, columns } = contextTargetRef.current;
-            return resolveContextTarget({
+        (clickedCell, clickedToolId) =>
+            resolveContextTarget({
                 clickedCell,
                 clickedToolId,
-                selectedCells: cells,
-                // A selected cell that holds nothing, or holds something this
-                // grid no longer has, answers null and contributes no id.
-                toolIdOfCell: (cell) => {
-                    if (slots === null) {
-                        return null;
-                    }
-                    const position = parseGridCellKey(cell);
-                    if (position === null || position.column >= columns) {
-                        return null;
-                    }
-                    return slots[position.row * columns + position.column]?.id ?? null;
-                },
-            });
-        },
-        []
+                selectedCells: contextTargetRef.current.selectedCells,
+                toolIdOfCell: toolIdOfSelectedCell,
+            }),
+        [toolIdOfSelectedCell]
     );
 
     const renderButton = (
@@ -953,6 +962,18 @@ export const CategoryButtonGrid: React.FC<CategoryButtonGridProps> = ({
                     yet, and it outlives the pointer by design (it is held until
                     the saved dimensions catch up). A palette live in that window
                     would search one grid while the user looks at another. */}
+                {/* The Delete key, mounted where the selection is: only the
+                    rendered grid knows what a cell holds, and only one grid
+                    holds a selection at a time. It listens only while this one
+                    does. */}
+                {selectionActive && selectionContext !== null && (
+                    <CellSelectionDeleteKey
+                        category={category}
+                        selectedCells={selectedCells}
+                        toolIdOfCell={toolIdOfSelectedCell}
+                        scopeRef={gridRef}
+                    />
+                )}
                 {selectionActive && selectionContext !== null && (
                     <CellColorPalette
                         cellStyles={cellStyles}

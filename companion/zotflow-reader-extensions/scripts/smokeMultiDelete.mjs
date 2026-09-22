@@ -122,7 +122,7 @@ const openMenu = () =>
             kind: menu.dataset.ocapContextKind ?? null,
             cells: menu.dataset.ocapContextCells ?? null,
             tools: menu.dataset.ocapContextTools ?? null,
-            offersDelete: menu.dataset.ocapSelectionDelete ?? null,
+            deleteTargets: menu.dataset.ocapDeleteTargets ?? null,
         };
     })()`);
 
@@ -181,6 +181,12 @@ async function dismissMenus() {
         "(() => { document.querySelectorAll('.menu').forEach((m) => m.remove()); return true; })()"
     );
     await pause(400);
+}
+
+/** The real Delete key, through the browser input pipeline. */
+async function pressDelete() {
+    await session.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46, nativeVirtualKeyCode: 46 });
+    await session.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46, nativeVirtualKeyCode: 46 });
 }
 
 // ---------------------------------------------------------------- run
@@ -269,8 +275,12 @@ check('a menu opened', menu.open === true);
 check('it knows it is about the selection', menu.kind === 'selection', String(menu.kind));
 check('it counts the cells, empty ones included', Number(menu.cells) === selectedSlots.length, `${menu.cells} vs ${selectedSlots.length}`);
 check('it counts only the occupied ones as tools', Number(menu.tools) === selectedFilled.length, `${menu.tools} vs ${selectedFilled.length}`);
-check('it offers the selection delete', menu.offersDelete === 'true', String(menu.offersDelete));
-check('the entry names the number of tools, not cells', menu.items.some((i) => new RegExp(`\\b${selectedFilled.length}\\b`).test(i) && /selected/i.test(i)), JSON.stringify(menu.items));
+check('Delete targets the whole selection', Number(menu.deleteTargets) === selectedFilled.length, String(menu.deleteTargets));
+// One action, one entry, one word. The count belongs in the confirmation,
+// which names the tools; a menu offering both "Delete" and "Delete 4 selected
+// items" would be offering the same action twice.
+check('there is exactly ONE Delete entry', menu.items.filter((i) => /^delete$/i.test(i)).length === 1, JSON.stringify(menu.items));
+check('and no second entry naming a count', !menu.items.some((i) => /selected items/i.test(i)), JSON.stringify(menu.items));
 check('the single-tool entries are still there', ['edit', 'copy', 'delete'].every((w) => menu.items.some((i) => new RegExp(w, 'i').test(i))), JSON.stringify(menu.items));
 check('right-clicking did not disturb the selection', (await gridState()).slots.filter((s) => s.selected).length === selectedSlots.length);
 
@@ -281,7 +291,7 @@ if (outsider) {
     await rightClickSlot(outsider.slot);
     const outsideMenu = await openMenu();
     check('it is about that one tool, not the selection', outsideMenu.kind === 'tool', String(outsideMenu.kind));
-    check('it offers no selection delete', outsideMenu.offersDelete === 'false', String(outsideMenu.offersDelete));
+    check('Delete targets only that one tool', Number(outsideMenu.deleteTargets) === 1, String(outsideMenu.deleteTargets));
     check('it still offers the tool entries', ['edit', 'copy', 'delete'].every((w) => outsideMenu.items.some((i) => new RegExp(w, 'i').test(i))), JSON.stringify(outsideMenu.items));
     check('the entry list is exactly the single-tool one', outsideMenu.items.length === 3, JSON.stringify(outsideMenu.items));
     // The standing rule: a click outside the selection does not reduce it.
@@ -293,7 +303,7 @@ if (outsider) {
 
 console.log('\n== Cancel changes nothing ==');
 await rightClickSlot(selectedFilled[0].slot);
-await clickMenuItem('selected');
+await clickMenuItem('^delete$');
 await pause(900);
 let dialog = await openDialog();
 check('the confirmation opened', dialog.open === true);
@@ -309,7 +319,7 @@ check('the selection still stands', afterCancel.slots.filter((s) => s.selected).
 
 console.log('\n== Escape changes nothing either ==');
 await rightClickSlot(selectedFilled[0].slot);
-await clickMenuItem('selected');
+await clickMenuItem('^delete$');
 await pause(900);
 check('the confirmation opened again', (await openDialog()).open === true);
 await pressEscape();
@@ -323,7 +333,7 @@ console.log('\n== confirming deletes exactly the selected tools ==');
 const doomedIds = selectedFilled.map((s) => s.toolId);
 const survivorIds = filledBefore.filter((s) => !doomedIds.includes(s.toolId)).map((s) => s.toolId);
 await rightClickSlot(selectedFilled[0].slot);
-await clickMenuItem('selected');
+await clickMenuItem('^delete$');
 await pause(900);
 await clickDialogButton('delete');
 await pause(2500);
@@ -336,7 +346,70 @@ const namesAfter = await toolNames();
 check('the definitions were collected too', doomedIds.every((id) => namesAfter[id] === undefined), JSON.stringify(doomedIds.filter((id) => namesAfter[id] !== undefined)));
 check('the surviving definitions were NOT collected', survivorIds.every((id) => namesAfter[id] !== undefined));
 
+console.log('\n== the Delete key opens the same door ==');
+const keyState = await gridState();
+const keyFilled = keyState.slots.filter((s) => s.filled);
+if (keyFilled.length >= 2) {
+    // A fresh selection over the tools that are left.
+    await shiftRectangle(keyFilled[0].slot, keyFilled[1].slot);
+    const keySelected = (await gridState()).slots.filter((s) => s.selected && s.filled);
+    check('a new selection stands', keySelected.length >= 2, `${keySelected.length} occupied`);
+
+    // A text field first: the key must belong to whoever is typing.
+    await session.eval(`(() => {
+        const input = document.createElement('input');
+        input.id = 'zfrx-smoke-input';
+        document.body.appendChild(input);
+        input.focus();
+        return true;
+    })()`);
+    await pressDelete();
+    await pause(900);
+    check('typing in a text field is left alone', (await openDialog()).open === false);
+    check('and nothing was deleted', (await gridState()).slots.filter((s) => s.filled).length === keyFilled.length);
+    await session.eval(`(() => { document.getElementById('zfrx-smoke-input')?.remove(); document.body.focus(); return true; })()`);
+    await pause(400);
+
+    // Now from the panel itself.
+    await session.eval(`(() => {
+        const leaf = window.app.workspace.getLeavesOfType(${JSON.stringify(PANEL_VIEW)})[0];
+        leaf.view.containerEl.querySelector('.ocap-grid-slot')?.focus?.();
+        return true;
+    })()`);
+    await pressDelete();
+    await pause(900);
+    let keyDialog = await openDialog();
+    check('the Delete key opened the confirmation', keyDialog.open === true);
+    check('for the selected tools', (keyDialog.items ?? []).length === keySelected.length || /\b1\b/.test(keyDialog.message ?? ''), JSON.stringify(keyDialog.items ?? keyDialog.message));
+
+    // A second Delete must not stack another dialog on top.
+    await pressDelete();
+    await pause(700);
+    check('a second Delete does not stack a second dialog', (await session.eval("(() => document.querySelectorAll('.modal-container .buttons-panel.button-delete').length)()")) === 1);
+
+    await clickDialogButton('cancel');
+    await pause(1000);
+    check('Cancel from the key deletes nothing', (await gridState()).slots.filter((s) => s.filled).length === keyFilled.length);
+    check('and the selection survives', (await gridState()).slots.filter((s) => s.selected).length > 0);
+
+    const doomedByKey = keySelected.map((s) => s.toolId);
+    await pressDelete();
+    await pause(900);
+    await clickDialogButton('delete');
+    await pause(2500);
+    const afterKey = await gridState();
+    check('confirming from the key deleted them', doomedByKey.every((id) => !afterKey.slots.some((s) => s.toolId === id)), JSON.stringify(doomedByKey));
+    check('and cleared the selection', afterKey.slots.filter((s) => s.selected).length === 0);
+} else {
+    check('there are enough tools left to test the Delete key', false, `${keyFilled.length}`);
+}
+
 console.log('\n== a reload agrees ==');
+// Taken HERE, not before the key section: that section deleted more tools, and
+// comparing against a list captured earlier would report its own deletions as
+// survivors that went missing.
+const beforeReload = await toolNames();
+const survivingIds = Object.keys(beforeReload);
 await session.eval(`(async () => {
     await window.app.plugins.disablePlugin(${JSON.stringify(PANEL)});
     await new Promise((r) => setTimeout(r, 700));
@@ -354,7 +427,11 @@ await session.eval(`(async () => {
 await pause(2500);
 const reloaded = await toolNames();
 check('the deleted tools are still gone after a reload', doomedIds.every((id) => reloaded[id] === undefined));
-check('the survivors are still there after a reload', survivorIds.every((id) => reloaded[id] !== undefined));
+check(
+    'every tool that was there before the reload is there after it',
+    survivingIds.every((id) => reloaded[id] !== undefined),
+    JSON.stringify(survivingIds.filter((id) => reloaded[id] === undefined))
+);
 
 const failed = results.filter((r) => !r.passed);
 console.log(`\n==== ${results.length - failed.length}/${results.length} checks passed ====`);

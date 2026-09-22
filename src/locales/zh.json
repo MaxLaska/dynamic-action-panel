@@ -116,7 +116,6 @@
     "delete_button_tooltip": "删除",
     "delete_button_warning": "⚠️ 警告：此操作无法撤销。",
     "delete_selected": "删除所选对象",
-    "delete_selected_count": "删除所选的 {count} 个对象",
     "delete_category": "删除分类",
     "delete_category_error": "删除分类时出错",
     "delete_category_success": "已删除分类 \"{categoryName}\" 及其中的 {buttonCount} 个按钮",

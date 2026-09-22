@@ -103,24 +103,29 @@ export function resolveContextTarget(input: ContextTargetInput): ContextTarget {
 }
 
 /**
- * Whether the menu should offer to delete the SELECTION rather than just the
- * clicked tool.
+ * What Delete acts on, here.
  *
- * Three things have to be true, and each rules out a menu entry that would be
- * noise or a lie:
+ * There is ONE action called Delete. Whether it removes one tool or six is not
+ * a second action and not a second menu entry — it is this function reading the
+ * context the user is already in:
  *
- * - the click was about the selection, not a tool outside it;
- * - the selection holds tools at all — a selection of nothing but empty cells
- *   has nothing to delete, and empty cells are never targets;
- * - it holds MORE than one. With exactly one, the menu's plain Delete already
- *   deletes precisely that tool, and a second entry saying the same thing in
- *   different words is a choice without a difference.
+ * - inside a selection that holds tools → all of them;
+ * - anywhere else → the tool under the pointer;
+ * - a selection of nothing but empty cells, or a click on nothing → no
+ *   targets, and a menu with no Delete rather than one that would do nothing.
  *
- * A predicate rather than an `if` inside the menu, because it is a product
- * decision and belongs next to the one that decided what the click is about.
+ * Empty cells are never targets: `toolIds` is what the selected cells actually
+ * HOLD, so ten selected cells over six tools delete six things.
+ *
+ * A function rather than an `if` inside the menu, because it is the product
+ * decision and belongs next to the one that decided what the click is about —
+ * and because the Delete key has to ask exactly the same question.
  */
-export function offersSelectionDelete(target: ContextTarget): boolean {
-    return target.kind === 'selection' && target.toolIds.length > 1;
+export function deleteTargetsOfContext(target: ContextTarget): string[] {
+    if (target.kind === 'selection' && target.toolIds.length > 0) {
+        return target.toolIds;
+    }
+    return target.clickedToolId ? [target.clickedToolId] : [];
 }
 
 /** The answer outside any grid — a flow category, the overflow row, a tab. */

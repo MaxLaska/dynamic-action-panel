@@ -53,8 +53,12 @@ export function useButtonOperations() {
     /**
      * Asks, then removes the named tools from this category in ONE operation.
      *
-     * One confirmation, one state transition, one write — whether it is one
-     * tool or a whole selection. The batch is not a loop over the single case:
+     * THE delete. One tool and a whole selection come through here alike —
+     * there is no second function for the single case, so the two cannot drift
+     * apart — and the confirmation phrases itself from the number of targets.
+     *
+     * One confirmation, one state transition, one write. The batch is not a
+     * loop over the single case:
      * `removeToolsFromCategory` strips every placement first and collects the
      * definitions afterwards, so garbage collection judges "is this still
      * referenced" against the finished state rather than a half-updated one.
@@ -92,22 +96,8 @@ export function useButtonOperations() {
         [plugin, app]
     );
 
-    /**
-     * Removes one button after a confirmation dialog.
-     *
-     * A list of one through the same path, so the single delete cannot drift
-     * away from the many.
-     */
-    const deleteButton = useCallback(
-        (button: ButtonConfig, category: CategoryConfig, onDelete?: () => void) => {
-            deleteTools([button.id], category, onDelete);
-        },
-        [deleteTools]
-    );
-
     return {
         copyButton,
-        deleteButton,
         deleteTools,
     };
 }
