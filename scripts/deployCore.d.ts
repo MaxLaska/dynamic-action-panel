@@ -19,12 +19,15 @@ export type DeployTargets = Record<string, DeployTarget>;
 
 export declare const DEPLOY_TARGETS: DeployTargets;
 export declare const PLUGIN_ID: string;
+export declare const THEME_NAME: string;
+export declare const THEME_FILES: string[];
 export declare const BACKUP_ROOT: string;
 export declare const DEPLOYABLE_FILES: string[];
 export declare const PROTECTED_FILES: string[];
 
 export declare function canonicalPath(inputPath: string): string;
 export declare function pluginDirFor(vaultPath: string, pluginId: string): string;
+export declare function themeDirFor(vaultPath: string, themeName: string): string;
 
 export declare function resolveTarget(
     name: string | null | undefined,

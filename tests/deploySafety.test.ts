@@ -37,6 +37,8 @@ import {
     DEPLOY_TARGETS,
     PLUGIN_ID,
     PROTECTED_FILES,
+    THEME_FILES,
+    THEME_NAME,
     assertDeployableNames,
     assertAllowedPluginDir,
     assertNoLinkedAncestor,
@@ -47,6 +49,7 @@ import {
     inventory,
     pluginDirFor,
     resolveTarget,
+    themeDirFor,
     stageFile,
     commitStaged,
     validateBuildArtifacts,
@@ -325,6 +328,28 @@ describe('a deployment target is allowlisted or refused', () => {
         expect(pluginDirFor('C:/v', 'dynamic-action-panel')).toBe(
             path.join('C:/v', '.obsidian', 'plugins', 'dynamic-action-panel')
         );
+    });
+
+    // A theme is not a plugin. It goes into a different folder, and it is named
+    // by its DISPLAY NAME rather than by a manifest id, because that is the
+    // only identity Obsidian gives a theme. Two functions rather than one
+    // parameter, so that confusing them is a compile error and not a theme
+    // installed into the plugin list.
+    it('derives the theme directory from a vault root', () => {
+        expect(themeDirFor('C:/v', THEME_NAME)).toBe(
+            path.join('C:/v', '.obsidian', 'themes', THEME_NAME)
+        );
+        expect(themeDirFor('C:/v', THEME_NAME)).not.toBe(pluginDirFor('C:/v', THEME_NAME));
+    });
+
+    it('installs a theme as a theme, and never as user state', () => {
+        expect(THEME_FILES).toContain('theme.css');
+        expect(THEME_FILES).toContain('manifest.json');
+        // The same guard the plugin file list gets: nothing that is the user's.
+        expect(() => assertDeployableNames(THEME_FILES)).not.toThrow();
+        for (const protectedName of PROTECTED_FILES) {
+            expect(THEME_FILES).not.toContain(protectedName);
+        }
     });
 });
 

@@ -1,116 +1,36 @@
-/* styles.css — the HOST half of the surface hierarchy.
+/* styles.css — intentionally empty.
  *
- * Obsidian loads this file for as long as the plugin is enabled. It is the
- * right home for everything that is about the WORKSPACE: the left and right
- * side docks, and the edge between a side dock and the document area. The
- * other half — the reader's own sidebar, inside its iframe — is injected by
- * sidebarSide.ts, because a plugin stylesheet cannot reach into a frame.
- * Nothing here knows about the reader, and nothing there knows about Obsidian.
+ * This file used to hold the HOST half of the surface hierarchy: the left and
+ * right side docks, the left ribbon, and the edge between a dock and the
+ * document. That was the right place to FIND those colours — the experiment
+ * lived next to the reader work it was serving, and it could be judged in one
+ * evening. It is the wrong place to keep them.
  *
- * The problem this solves, measured before it was written: the reader's sidebar
- * and Obsidian's side docks were painted the SAME colour (#282828 in this
- * theme, both from --background-secondary). With the reader's sidebar on the
- * right, it and the right dock formed one uninterrupted slab, and there was no
- * visible answer to "where does the document end".
+ * Two reasons, and the second is the one that matters:
  *
- * So there are now three levels rather than two:
+ * 1. Obsidian's workspace does not belong to a reader companion. Disabling this
+ *    plugin for an afternoon should cost the reader's sidebar, not the
+ *    appearance of every dock in the vault.
  *
- *   LEFT PANEL / RIGHT PANEL   workspace      lightest   (this file)
- *   TOGGLE PANEL               the document   in between (reader stylesheet)
- *   the pages themselves       the document   darkest    (unchanged)
+ * 2. A colour that two files may define is a colour that will eventually be
+ *    defined twice, differently. There is now a theme — `theme/nexus/` — whose
+ *    entire job is to be the one place a host surface is named.
  *
- * DARK THEME ONLY, deliberately. Re-deriving a light theme's surfaces is a
- * different piece of work with different judgements, and one that cannot be
- * verified from here.
+ * So all of it moved, unchanged in effect, to `theme/nexus/theme.css`:
+ *
+ *   --zfrx-workspace-surface  ->  --nexus-workspace-surface
+ *   --zfrx-edge-idle          ->  --nexus-splitter-idle
+ *   --zfrx-edge-hover         ->  --nexus-splitter-hover
+ *   --zfrx-edge-active        ->  --nexus-splitter-active
+ *
+ * The file itself stays, rather than being deleted, for a practical reason: a
+ * deployment installs files and never removes them, so dropping it from the
+ * build would leave the OLD copy installed in every vault that already has one,
+ * still applying the rules this comment says have moved. An empty file
+ * overwrites it. When no vault carries a stale copy any more, this can go.
+ *
+ * What is still this plugin's: everything inside the reader's iframe, which no
+ * stylesheet loader reaches. That half is injected at runtime — see
+ * sidebarSide.ts — and it now reads the Nexus tokens through nexusBridge.ts
+ * instead of choosing its own colours.
  */
-
-body.theme-dark {
-    /*
-     * A step lighter than the theme's own secondary surface, in the theme's own
-     * terms rather than a fixed colour — so a theme with different greys moves
-     * with it. Deliberately small: enough to separate two planes, not enough to
-     * read as a different component. Lands on ~#333 in this theme, which is
-     * where the tab-header strip already sits, so the dock reads as one slab.
-     */
-    --zfrx-workspace-surface: color-mix(in srgb, var(--background-secondary) 95%, #fff 5%);
-
-    /* Neutral by intent. Accent colours carry meaning elsewhere in this panel —
-     * cell colours, selection, hover — and an edge is not a meaning. */
-    --zfrx-edge-idle: rgba(255, 255, 255, 0.1);
-    --zfrx-edge-hover: rgba(255, 255, 255, 0.28);
-    --zfrx-edge-active: rgba(255, 255, 255, 0.45);
-}
-
-/* --- the workspace plane ------------------------------------------------- */
-
-/* The leaf is what actually gets painted; the split behind it shows only at
- * edges, and the vault profile strip is its own surface. All three, or the
- * dock would be lighter in patches. `mod-sidedock` keeps this off the document
- * area, which must stay the darkest plane. */
-body.theme-dark .workspace-split.mod-sidedock,
-body.theme-dark .workspace-split.mod-sidedock .workspace-leaf,
-body.theme-dark .workspace-sidedock-vault-profile {
-    background-color: var(--zfrx-workspace-surface);
-}
-
-/* The ribbon is the outer edge of the same plane; leaving it behind would put a
- * seam down the far left. */
-body.theme-dark .workspace-ribbon.mod-left {
-    background-color: var(--zfrx-workspace-surface);
-}
-
-/* --- the edge between a dock and the document ---------------------------- */
-/*
- * This is Obsidian's own side-dock resize handle: `position: absolute`, 3px
- * wide, `z-index: 15`, `cursor: col-resize`, transparent — the direct child of
- * the dock split. It is NOT the reader's internal `.sidebar-resizer`, which
- * lives inside the iframe and moves the reader's own sidebar; styling that one
- * would have decorated the wrong boundary entirely.
- *
- * The grab zone is left exactly as Obsidian sized it. Widening it would have
- * been a change to a hit target that every Obsidian user already has the muscle
- * memory for, to buy nothing the line itself does not.
- */
-body.theme-dark .workspace-split.mod-sidedock > .workspace-leaf-resize-handle::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    /* One hairline, centred in the 3px handle: the edge should be legible, not
-     * loud. It widens rather than brightens alone, so the change is felt at a
-     * glance and not only by careful comparison. */
-    left: 1px;
-    width: 1px;
-    background-color: var(--zfrx-edge-idle);
-    transition:
-        background-color 120ms ease-out,
-        width 120ms ease-out,
-        left 120ms ease-out;
-}
-
-body.theme-dark .workspace-split.mod-sidedock > .workspace-leaf-resize-handle:hover::after {
-    left: 0.5px;
-    width: 2px;
-    background-color: var(--zfrx-edge-hover);
-}
-
-/* `is-active` is Obsidian's own marker while the handle is being dragged —
- * measured, not guessed — so the drag state survives the pointer leaving the
- * 3px strip, which it does immediately. */
-body.theme-dark .workspace-split.mod-sidedock > .workspace-leaf-resize-handle.is-active::after {
-    left: 0.5px;
-    width: 2px;
-    background-color: var(--zfrx-edge-active);
-    transition: none;
-}
-
-/* While the handle is dragged, Obsidian fills it with the accent colour — and
- * sets `border-color` to the same, which is a second, separate way for it to
- * come through. Both are reset. The edge is a boundary, not a highlight, and
- * the accent is spoken for: the line above says the same thing without
- * borrowing a colour that means something else in this panel. */
-body.theme-dark .workspace-split.mod-sidedock > .workspace-leaf-resize-handle:hover,
-body.theme-dark .workspace-split.mod-sidedock > .workspace-leaf-resize-handle.is-active {
-    background-color: transparent;
-    border-color: var(--divider-color);
-}

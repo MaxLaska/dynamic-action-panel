@@ -61,6 +61,20 @@ export const DEPLOY_TARGETS = {
  */
 export const PLUGIN_ID = 'dynamic-action-panel';
 
+/**
+ * The theme folder name, pinned for exactly the reason `PLUGIN_ID` is.
+ *
+ * Obsidian identifies a theme by the NAME OF ITS FOLDER — there is no `id`
+ * field in a theme manifest — so the folder name is both the destination and
+ * the identity. Reading it from the manifest on both sides of a comparison
+ * would make the comparison unable to fail; pinning it here makes the name part
+ * of what is checked.
+ */
+export const THEME_NAME = 'Nexus';
+
+/** The complete set of files a theme deployment installs. */
+export const THEME_FILES = ['theme.css', 'manifest.json'];
+
 /** Where backups go: outside the repository, so a vault's configuration can
  * never be published by committing the working tree. */
 export const BACKUP_ROOT = 'C:/Users/flash/ObsidianTestVaults/ocap-backups';
@@ -138,6 +152,18 @@ export function canonicalPath(inputPath) {
 /** The plugin directory a vault root implies. */
 export function pluginDirFor(vaultPath, pluginId) {
     return path.join(vaultPath, '.obsidian', 'plugins', pluginId);
+}
+
+/**
+ * The theme directory a vault root implies.
+ *
+ * A separate function rather than a parameter on `pluginDirFor`, because the
+ * two are not variants of one thing: a plugin folder is named by a manifest id
+ * and a theme folder is named by the theme's display name, and confusing them
+ * writes a theme into the plugin list.
+ */
+export function themeDirFor(vaultPath, themeName) {
+    return path.join(vaultPath, '.obsidian', 'themes', themeName);
 }
 
 /**

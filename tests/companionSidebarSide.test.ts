@@ -250,75 +250,47 @@ describe('the surface hierarchy', () => {
         });
     });
 
-    describe('the host half', () => {
-        it('lightens the side docks as one workspace level', () => {
-            expect(host).toContain('.mod-sidedock');
-            expect(host).toContain('--zfrx-workspace-surface');
+    // THE HOST HALF IS GONE FROM THIS PLUGIN, and that is the assertion now.
+    //
+    // It used to live in `styles.css` here: the side docks, the left ribbon,
+    // and the edge between a dock and the document. Every property it was held
+    // to — one workspace level rather than a per-plugin colour, a neutral edge
+    // with three states, the hit zone left where Obsidian put it, dark theme
+    // only — is still asserted, in tests/nexusTheme.test.ts, against the file
+    // that owns those rules now: `theme/nexus/theme.css`.
+    //
+    // What is left to check HERE is the seam: that this plugin did not keep a
+    // copy. A colour two files may define is a colour that will eventually be
+    // defined twice, differently, and that is the failure this migration
+    // exists to make impossible.
+    describe('the host half has moved to the theme', () => {
+        it('declares no host rule of its own any more', () => {
+            expect(selectorsOf(host)).toHaveLength(0);
+            expect(rulesOnly(host).trim()).toBe('');
         });
 
-        // The requirement was a workspace level, not a panel. A rule naming the
-        // panel would break the moment Backlinks or Properties was open
-        // instead, and would be a different colour for the same surface.
-        it('names no plugin, view or panel of its own', () => {
-            expect(host).not.toMatch(/ocap-|dynamic-action-panel|buttons-panel|backlink/i);
+        it('keeps none of the workspace variables it used to own', () => {
+            for (const variable of [
+                '--zfrx-workspace-surface',
+                '--zfrx-edge-idle',
+                '--zfrx-edge-hover',
+                '--zfrx-edge-active',
+            ]) {
+                expect(rulesOnly(host)).not.toContain(variable);
+            }
         });
 
-        it('derives its colour from the theme rather than fixing one', () => {
-            expect(host).toContain('var(--background-secondary)');
-        });
-
-        // Accent colours carry meaning in this panel — cell colours, selection.
-        // An edge is not a meaning, and Obsidian's own accent-filled hover on
-        // this handle is exactly what the neutral line replaces.
-        it('stays neutral, borrowing no accent colour', () => {
+        it('names no Obsidian workspace selector any more', () => {
             const rules = rulesOnly(host);
-            expect(rules).not.toContain('--interactive-accent');
-            expect(rules).not.toContain('--color-accent');
-            const colours = rules.match(/rgba?\([^)]*\)/g) ?? [];
-            for (const colour of colours) {
-                const [r, g, b] = colour.match(/[\d.]+/g)!.map(Number);
-                expect(r).toBe(g);
-                expect(g).toBe(b);
-            }
+            expect(rules).not.toContain('.workspace-split');
+            expect(rules).not.toContain('.workspace-leaf-resize-handle');
+            expect(rules).not.toContain('.workspace-ribbon');
         });
 
-        // Obsidian's side-dock handle, not the reader's internal one. The
-        // reader's `.sidebar-resizer` lives inside the iframe and moves the
-        // reader's own sidebar; styling it would decorate the wrong boundary.
-        it('styles Obsidian\'s dock handle and not the reader\'s resizer', () => {
-            expect(host).toContain('.workspace-leaf-resize-handle');
-            expect(rulesOnly(host)).not.toContain(SELECTORS.sidebarResizer);
-        });
-
-        it('gives the edge three distinct states', () => {
-            for (const state of ['--zfrx-edge-idle', '--zfrx-edge-hover', '--zfrx-edge-active']) {
-                expect(host).toContain(state);
-            }
-            expect(host).toContain(':hover');
-            // Obsidian's own marker while the handle is dragged, measured
-            // rather than guessed: the pointer leaves the 3px strip at once,
-            // so `:active` alone would flicker off mid-drag.
-            expect(host).toContain('.is-active');
-        });
-
-        // Deriving a light theme's surfaces is a different piece of work, and
-        // one that could not be verified from here.
-        it('confines itself to the dark theme it was judged in', () => {
-            const selectors = selectorsOf(host);
-            expect(selectors.length).toBeGreaterThan(0);
-            for (const selector of selectors) expect(selector).toContain('body.theme-dark');
-        });
-
-        // The grab zone is Obsidian's, and every user already has the muscle
-        // memory for it. The line makes the edge visible; it does not move it.
-        it('leaves the hit zone exactly where Obsidian put it', () => {
-            const rules = rulesOnly(host);
-            const handle = rules.slice(rules.indexOf('.workspace-leaf-resize-handle'));
-            // Widths belong to the ::after hairline only, never to the handle.
-            for (const block of handle.split('}')) {
-                if (!block.includes('{') || block.includes('::after')) continue;
-                expect(block).not.toMatch(/(^|[^-])width:/);
-            }
+        // The rules moved; the explanation of where they went did not. A reader
+        // who opens this file next year has to be able to find them.
+        it('says where the rules went', () => {
+            expect(host).toContain('theme/nexus');
         });
     });
 
