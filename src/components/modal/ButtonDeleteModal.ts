@@ -1,15 +1,23 @@
 import { App, Modal, Setting } from 'obsidian';
 import { ButtonsPanelPlugin } from '@/types/plugin';
-import { CategoryConfig, ButtonConfig } from '@/types';
+import { CategoryConfig } from '@/types';
 import { t, tWithParams } from '@/utils/i18n';
+import type { DeleteTarget } from '@/utils/deleteTargets';
 
 /**
- * Confirmation modal for deleting a button.
- * The button is removed only after the user confirms.
+ * Confirmation modal for deleting tools. Nothing is removed until the user
+ * confirms, and Cancel and Escape both mean "nothing happened".
+ *
+ * ONE modal for one target and for many, on purpose. A selection delete is the
+ * same question asked about more things, and a second dialog would be a second
+ * place for the wording, the warning and the destructive-button conventions to
+ * drift. Deleting one tool is a list of one and reads exactly as it always did
+ * — same title, same sentence, same warning — so generalising it cost the
+ * single case nothing.
  */
 export class ButtonDeleteModal extends Modal {
     plugin: ButtonsPanelPlugin;
-    button: ButtonConfig;
+    targets: DeleteTarget[];
     category: CategoryConfig;
     onDelete: () => void;
 
@@ -17,20 +25,20 @@ export class ButtonDeleteModal extends Modal {
      * Initializes the modal.
      * @param app Obsidian app instance
      * @param plugin Plugin instance
-     * @param button Button to delete
-     * @param category Category the button belongs to
-     * @param onDelete Called after the deletion
+     * @param targets Tools to delete, already named for display
+     * @param category Category the tools belong to
+     * @param onDelete Called after the user confirms
      */
     constructor(
         app: App,
         plugin: ButtonsPanelPlugin,
-        button: ButtonConfig,
+        targets: DeleteTarget[],
         category: CategoryConfig,
         onDelete: () => void
     ) {
         super(app);
         this.plugin = plugin;
-        this.button = button;
+        this.targets = targets;
         this.category = category;
         this.onDelete = onDelete;
     }
@@ -44,13 +52,32 @@ export class ButtonDeleteModal extends Modal {
         contentEl.addClass('buttons-panel');
         contentEl.addClass('button-delete');
 
+        const single = this.targets.length <= 1;
+
         // Use the Obsidian Modal title bar, consistent with the add-category modal.
-        titleEl.setText(t('delete_button'));
+        titleEl.setText(single ? t('delete_button') : t('delete_selected'));
         titleEl.addClass('buttons-panel-delete-title');
+
         contentEl.createEl('p', {
-            text: tWithParams('confirm_delete_button', { buttonName: this.button.name }),
+            text: single
+                ? tWithParams('confirm_delete_button', {
+                      buttonName: this.targets[0]?.label ?? '',
+                  })
+                : tWithParams('confirm_delete_selection', {
+                      count: this.targets.length,
+                  }),
             cls: 'delete-message',
         });
+
+        // The list only appears for a selection: naming the one tool twice —
+        // once in the sentence, once under it — would say nothing new.
+        if (!single) {
+            const list = contentEl.createEl('ul', { cls: 'delete-target-list' });
+            for (const target of this.targets) {
+                list.createEl('li', { text: target.label });
+            }
+        }
+
         contentEl.createEl('p', {
             text: t('delete_button_warning'),
             cls: 'warning-message',
@@ -72,6 +99,10 @@ export class ButtonDeleteModal extends Modal {
 
     /**
      * Called when the modal closes; clears its content.
+     *
+     * Closing is not confirming. Cancel, Escape and the title-bar × all land
+     * here without `onDelete` ever having run, which is what makes "nothing
+     * happened" the default outcome rather than a case to remember.
      */
     onClose() {
         this.titleEl.removeClass('buttons-panel-delete-title');

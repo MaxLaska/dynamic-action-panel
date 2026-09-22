@@ -27,6 +27,24 @@
     line-height: 1.5;
 }
 
+/* What a selection delete is about, listed by name.
+   Bounded and scrollable, so forty tools produce a dialog the same height as
+   six and the buttons never leave the screen. */
+.buttons-panel.button-delete .delete-target-list {
+    margin: 0 0 12px;
+    padding-left: 22px;
+    max-height: 220px;
+    overflow-y: auto;
+    line-height: 1.5;
+}
+
+.buttons-panel.button-delete .delete-target-list li {
+    /* A long file name shortens on screen instead of widening the dialog. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .buttons-panel.category-delete .warning-message,
 .buttons-panel.button-delete .warning-message {
     margin-top: 0;

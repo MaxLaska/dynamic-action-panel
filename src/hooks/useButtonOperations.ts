@@ -5,8 +5,9 @@ import { ButtonDeleteModal } from '@/components/modal/ButtonDeleteModal';
 import { commitToolState, toolStateOf } from '@/utils/categoryStore';
 import {
     copyToolInCategory,
-    removeToolFromCategory,
+    removeToolsFromCategory,
 } from '@/domain/categoryOps';
+import { deleteTargetsOf } from '@/utils/deleteTargets';
 import { freshId } from '@/utils/id';
 import { t } from '@/utils/i18n';
 import type { ButtonConfig, CategoryConfig } from '@/types';
@@ -50,21 +51,40 @@ export function useButtonOperations() {
     );
 
     /**
-     * Removes a button after a confirmation dialog
-     * @param button Button to remove
-     * @param category Category the button belongs to
-     * @param onDelete Called after a successful removal
+     * Asks, then removes the named tools from this category in ONE operation.
+     *
+     * One confirmation, one state transition, one write — whether it is one
+     * tool or a whole selection. The batch is not a loop over the single case:
+     * `removeToolsFromCategory` strips every placement first and collects the
+     * definitions afterwards, so garbage collection judges "is this still
+     * referenced" against the finished state rather than a half-updated one.
+     *
+     * Nothing happens until the user confirms, and `onDeleted` runs only after
+     * the write actually landed — so a caller can clear the selection knowing
+     * the tools are really gone, and a cancelled dialog leaves it standing.
+     *
+     * @param toolIds Tools to remove; ids that name nothing are ignored
+     * @param category Category the tools belong to
+     * @param onDeleted Called after the write, never after a cancel
      */
-    const deleteButton = useCallback(
-        (button: ButtonConfig, category: CategoryConfig, onDelete?: () => void) => {
-            new ButtonDeleteModal(app, plugin, button, category, () => {
+    const deleteTools = useCallback(
+        (toolIds: readonly string[], category: CategoryConfig, onDeleted?: () => void) => {
+            const targets = deleteTargetsOf(toolStateOf(plugin).tools, toolIds);
+            if (targets.length === 0) {
+                return;
+            }
+            new ButtonDeleteModal(app, plugin, targets, category, () => {
                 void (async () => {
                     await commitToolState(
                         plugin,
-                        removeToolFromCategory(toolStateOf(plugin), category.id, button.id)
+                        removeToolsFromCategory(
+                            toolStateOf(plugin),
+                            category.id,
+                            targets.map((target) => target.toolId)
+                        )
                     );
-                    if (onDelete) {
-                        onDelete();
+                    if (onDeleted) {
+                        onDeleted();
                     }
                 })();
             }).open();
@@ -72,8 +92,22 @@ export function useButtonOperations() {
         [plugin, app]
     );
 
+    /**
+     * Removes one button after a confirmation dialog.
+     *
+     * A list of one through the same path, so the single delete cannot drift
+     * away from the many.
+     */
+    const deleteButton = useCallback(
+        (button: ButtonConfig, category: CategoryConfig, onDelete?: () => void) => {
+            deleteTools([button.id], category, onDelete);
+        },
+        [deleteTools]
+    );
+
     return {
         copyButton,
         deleteButton,
+        deleteTools,
     };
 }

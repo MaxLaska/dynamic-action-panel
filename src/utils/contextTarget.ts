@@ -102,6 +102,27 @@ export function resolveContextTarget(input: ContextTargetInput): ContextTarget {
     };
 }
 
+/**
+ * Whether the menu should offer to delete the SELECTION rather than just the
+ * clicked tool.
+ *
+ * Three things have to be true, and each rules out a menu entry that would be
+ * noise or a lie:
+ *
+ * - the click was about the selection, not a tool outside it;
+ * - the selection holds tools at all — a selection of nothing but empty cells
+ *   has nothing to delete, and empty cells are never targets;
+ * - it holds MORE than one. With exactly one, the menu's plain Delete already
+ *   deletes precisely that tool, and a second entry saying the same thing in
+ *   different words is a choice without a difference.
+ *
+ * A predicate rather than an `if` inside the menu, because it is a product
+ * decision and belongs next to the one that decided what the click is about.
+ */
+export function offersSelectionDelete(target: ContextTarget): boolean {
+    return target.kind === 'selection' && target.toolIds.length > 1;
+}
+
 /** The answer outside any grid — a flow category, the overflow row, a tab. */
 export function toolOnlyContextTarget(clickedToolId: string | null): ContextTarget {
     return {

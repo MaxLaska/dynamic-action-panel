@@ -358,12 +358,38 @@ export function removeToolFromCategory(
     categoryId: string,
     toolId: string
 ): ToolState {
+    return removeToolsFromCategory(state, categoryId, [toolId]);
+}
+
+/**
+ * The same removal, for several tools at once — ONE state, ONE collection.
+ *
+ * Deleting a selection is not "delete, then delete, then delete". It is one
+ * operation with several targets, and the difference is not cosmetic: garbage
+ * collection asks "is this definition still referenced ANYWHERE" against the
+ * finished categories, so it has to see the finished categories. Stripping the
+ * tools one at a time and collecting after each would ask that question of
+ * half-updated states, which is exactly the shape of bug that leaves a
+ * definition behind or takes one that a surviving placement still needs.
+ *
+ * Deleting one tool is this function with a list of one, so the single and the
+ * many can never drift apart — there is no second delete to keep in step.
+ *
+ * Ids that name nothing are harmless: stripping a placement that is not there
+ * removes nothing, and collecting a definition that does not exist is a no-op.
+ */
+export function removeToolsFromCategory(
+    state: ToolState,
+    categoryId: string,
+    toolIds: readonly string[]
+): ToolState {
     const category = findCategory(state, categoryId);
-    if (!category) {
+    const doomed = new Set(toolIds);
+    if (!category || doomed.size === 0) {
         return state;
     }
     const strip = (placements: ToolPlacement[] | undefined): ToolPlacement[] =>
-        (placements ?? []).filter((placement) => placement.toolId !== toolId);
+        (placements ?? []).filter((placement) => !doomed.has(placement.toolId));
 
     const nextCategory: StoredCategory = {
         ...category,
@@ -371,7 +397,7 @@ export function removeToolFromCategory(
         ...(category.variants
             ? {
                   variants: category.variants.map((variant) =>
-                      variant.placements?.some((p) => p.toolId === toolId)
+                      variant.placements?.some((p) => doomed.has(p.toolId))
                           ? { ...variant, placements: strip(variant.placements) }
                           : variant
                   ),
@@ -380,7 +406,7 @@ export function removeToolFromCategory(
     };
     const categories = withCategory(state, nextCategory).categories;
     return {
-        tools: gcTools(state.tools, categories, [toolId]),
+        tools: gcTools(state.tools, categories, doomed),
         categories,
     };
 }
