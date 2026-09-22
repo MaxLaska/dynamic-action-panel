@@ -15,6 +15,7 @@ import {
     buildSectionSubpath,
     parseReaderOutlinePayload,
     READER_OBJECT_MIME,
+    sectionDestination,
     type OutlineSectionRef,
 } from '@/utils/readerOutlineDrop';
 import { buildOutlineButtonDraft } from '@/utils/outlineButton';
@@ -71,6 +72,9 @@ describe('reading a dragged outline section', () => {
             level: 2,
             parents: ['A Soziale Arbeit studieren', '1 Studieren'],
             pageIndex: 105,
+            // The reader's own destination point, re-expressed as a PDF
+            // destination — top-left of the rect, zoom left alone.
+            dest: [105, { name: 'XYZ' }, 28, 658.331, null],
             pageLabel: '106',
             nextPageIndex: 110,
         });
@@ -180,11 +184,57 @@ describe('the subpath that navigates to a section', () => {
         expect(buildSectionSubpath(location)).toMatch(/^#page=106#annotation=/);
     });
 
-    it('carries the reader\'s own location object', () => {
-        const subpath = buildSectionSubpath(location);
+    const decodeNavigation = (subpath: string): Record<string, unknown> => {
         const match = /annotation=([^&]+)/.exec(subpath);
-        const decoded: unknown = JSON.parse(decodeURIComponent(match?.[1] ?? ''));
-        expect(decoded).toEqual({ position: location.position });
+        return JSON.parse(decodeURIComponent(match?.[1] ?? '')) as Record<string, unknown>;
+    };
+
+    // The destination branch of the reader's navigation consults no options,
+    // which is the whole point: ZotFlow hands it a hardcoded `{behavior}` with
+    // no `block`, and the position branch then centres the destination instead
+    // of putting it at the top the way the reader's own outline does.
+    it('leads with a destination, which is the branch that ignores options', () => {
+        expect(decodeNavigation(buildSectionSubpath(location)).dest).toEqual([
+            105,
+            { name: 'XYZ' },
+            28,
+            658.3,
+            null,
+        ]);
+    });
+
+    it('still carries the position, for anything that does not know dest', () => {
+        expect(decodeNavigation(buildSectionSubpath(location)).position).toEqual(
+            location.position
+        );
+    });
+
+    it('takes the top-left of the rectangle, not its bottom', () => {
+        // PDF coordinates grow upwards, so the top edge is the larger y.
+        const wide = { position: { pageIndex: 2, rects: [[10, 100, 200, 400]] } };
+        expect(sectionDestination(wide)).toEqual([2, { name: 'XYZ' }, 10, 400, null]);
+    });
+
+    it('leaves the zoom alone', () => {
+        // null in a PDF destination means "keep the current zoom" — the
+        // reader's own outline does not change it either.
+        expect(sectionDestination(location)?.[4]).toBeNull();
+    });
+
+    it('has no destination when the position carries no usable rectangle', () => {
+        expect(sectionDestination({ position: { pageIndex: 3, rects: [] } })).toBeNull();
+        expect(
+            sectionDestination({ position: { pageIndex: 3, rects: [[1, 2]] } })
+        ).toBeNull();
+    });
+
+    // A section with no rectangle still has to navigate, and the position
+    // branch is what a reader without the destination branch uses anyway.
+    it('falls back to the position alone when there is no destination', () => {
+        const pageOnly = { position: { pageIndex: 7, rects: [] } };
+        const decoded = decodeNavigation(buildSectionSubpath(pageOnly));
+        expect(decoded.dest).toBeUndefined();
+        expect(decoded.position).toEqual(pageOnly.position);
     });
 
     it('uses the 1-based physical page, so a plain PDF view still lands right', () => {

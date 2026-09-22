@@ -1463,3 +1463,65 @@ payload field by field, like every other foreign input.
 through the list, never by `id="outline-N"` or `data-id` — those are positions in
 the currently rendered sequence and renumber on every expand. Verified against a
 fully expanded 211-entry outline: 211 of 211 rows resolved to the right node.
+
+## 2026-09-22 – A section navigates by destination, because that branch ignores options
+
+**Decision:** The subpath a section tool stores leads with a PDF **destination**
+— `[pageIndex, { name: 'XYZ' }, left, top, null]` — and keeps the position
+behind it as a fallback. The destination is the reader's own resolved point for
+that outline entry, re-expressed in the standard explicit form; nothing is
+measured, estimated, or converted to pixels, and nothing viewport-dependent is
+stored. This **supersedes** the claim in the previous entry that the position
+form "lands on the precise destination".
+
+**Reason:** the reader's navigation has three branches, and only one of them is
+free of options:
+
+```js
+navigate(e, t = {}) { t.block ||= "center"; …
+  else if (e.dest)     pdfLinkService.goToDestination(e.dest)   // ignores t
+  else if (e.position) navigateToPosition(e.position, t)        // honours t
+```
+
+ZotFlow's own glue calls `reader.navigate(x, {behavior:"smooth"})` — hardcoded,
+with no `block` — so anything arriving through a subpath takes the position
+branch and is **centred**. The reader's own outline does not go through that
+glue at all: it calls the view directly with `{block:"start"}`, which puts the
+destination at the top of the viewport. The two are half a viewport apart, and
+there is no way to reach `block:"start"` from a payload, because the options are
+not part of it. The destination branch sidesteps the question entirely.
+
+**Measured**, scroll offset of the shortcut minus the same entry clicked in the
+reader's own outline, from the same cold distance, every reading taken after the
+scroll settled:
+
+| entry | position form | original `Fit` dest | XYZ from the position |
+|---|---|---|---|
+| Deckblatt | −18 | 0 | **0** |
+| Titelseite | −340 | −60 | **0** |
+| Impressum | −1263 | −60 | **0** |
+| Inhalt | −340 | −60 | **0** |
+| Glossar | −340 | −60 | **0** |
+| Stichwortverzeichnis | −14132 | −60 | **0** |
+
+**Not the document's own destination.** These entries carry `[pageRef, Fit]`,
+which lands at the page corner — a consistent 60px above where the outline
+actually goes, because the reader resolves `Fit` to an inset point and then
+aligns THAT. The reader's resolved point is the thing to preserve, not the raw
+destination it came from.
+
+**Nothing is imitated.** The scroll-versus-jump behaviour the user noticed is
+the reader's own: `navigateToPosition` picks `smooth` when the target page is
+already within one page of the visible range and `instant` otherwise. No rule of
+ours reproduces it, and the destination branch leaves that decision to PDF.js.
+
+**Legacy shortcuts keep working unchanged.** A tool stored before this has only
+the position in its subpath, takes the position branch, and behaves exactly as
+it did — right page, centred. It is not rewritten: a stored subpath is the
+user's data, and the panel's file action is generic and has no business knowing
+about readers. Re-dropping the entry produces the exact landing. No settings
+version bump; `dest` is additive and optional.
+
+**Derived in the panel, not sent by the companion**, so that a payload from an
+older companion build gets the same destination as a new one. The companion
+needed no change for this.

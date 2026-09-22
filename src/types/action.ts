@@ -2,6 +2,15 @@
 // Types for button actions.
 
 /**
+ * A PDF explicit destination, in the array form PDF readers use:
+ * `[pageIndex, { name: 'XYZ' }, left, top, zoom]`.
+ *
+ * Stored verbatim rather than translated. `zoom` is null, which a PDF
+ * destination reads as "keep the current zoom".
+ */
+export type PdfDestination = [number, { name: string }, ...Array<number | null>];
+
+/**
  * A section of a document, as its own table of contents describes it.
  *
  * This is DESCRIPTION, not instruction: the action already knows how to get
@@ -23,6 +32,21 @@ export interface DocumentSectionRef {
     parents?: string[];
     /** 0-based page index the entry points at. */
     pageIndex: number;
+    /**
+     * The entry's destination, in the PDF's own explicit form:
+     * `[pageIndex, { name: 'XYZ' }, left, top, zoom]`.
+     *
+     * A point in PDF user space, not a measurement of anything rendered — no
+     * pixels, no viewport, nothing that changes with the window. It is what
+     * makes a section land exactly where the document's own table of contents
+     * points, rather than merely on the right page, and it is the field later
+     * work should read when it needs the destination rather than the page.
+     *
+     * Absent for a tool created before this was stored, and for an entry whose
+     * position carries no usable rectangle. Navigation still works without it,
+     * from `pageIndex` and the stored subpath.
+     */
+    dest?: PdfDestination;
     /** Printed page label of that page, which need not be `pageIndex + 1`. */
     pageLabel?: string;
     /**

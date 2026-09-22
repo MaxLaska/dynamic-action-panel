@@ -28,7 +28,7 @@
 // with a clear reason instead of being best-effort guessed at; older versions
 // would be migrated in `migrateTemplateDocument` below.
 
-import type { ButtonAction, DocumentSectionRef } from '@/types/action';
+import type { ButtonAction, DocumentSectionRef, PdfDestination } from '@/types/action';
 import type { ButtonCondition } from '@/types/conditions';
 import type { GridCellStyle, GridCellStyles } from '@/types/settings';
 import { isGridCellColor, parseGridCellKey } from '@/utils/categoryGrid';
@@ -286,6 +286,34 @@ function optionalPageIndex(value: unknown): number | undefined {
 }
 
 /**
+ * Rebuild a PDF destination array, or drop it.
+ *
+ * `[pageIndex, { name }, …numbers-or-null]`. Rebuilt element by element like
+ * everything else crossing this boundary; it is data a reader navigates by, and
+ * a malformed one costs the precise landing, never the tool.
+ */
+function readDestination(value: unknown): PdfDestination | undefined {
+    // Kept `unknown[]`: `Array.isArray` on an `unknown` widens to `any[]`, which
+    // would silently disable every check below it.
+    if (!Array.isArray(value) || value.length < 2) return undefined;
+    const entries: unknown[] = value as unknown[];
+    const page = optionalPageIndex(entries[0]);
+    const kind = entries[1];
+    if (page === undefined || !kind || typeof kind !== 'object' || Array.isArray(kind)) {
+        return undefined;
+    }
+    const name = (kind as { name?: unknown }).name;
+    if (typeof name !== 'string' || name.length === 0 || name.length > 32) return undefined;
+    const rest: Array<number | null> = [];
+    for (const entry of entries.slice(2)) {
+        if (entry === null) rest.push(null);
+        else if (typeof entry === 'number' && Number.isFinite(entry)) rest.push(entry);
+        else return undefined;
+    }
+    return [page, { name }, ...rest];
+}
+
+/**
  * Rebuild the section description of a `file` action, or drop it.
  *
  * Deliberately lenient where the rest of this file is strict: a section is
@@ -319,12 +347,14 @@ function readSection(value: unknown, path: string): DocumentSectionRef | undefin
             ? readString(rawLabel, `${path}.pageLabel`, MAX_TEXT_LENGTH).trim()
             : undefined;
     const nextPageIndex = optionalPageIndex(own(node, 'nextPageIndex'));
+    const dest = readDestination(own(node, 'dest'));
 
     return {
         title,
         level: optionalPageIndex(own(node, 'level')) ?? 0,
         ...(parents.length > 0 ? { parents } : {}),
         pageIndex,
+        ...(dest ? { dest } : {}),
         ...(pageLabel !== undefined ? { pageLabel } : {}),
         ...(nextPageIndex !== undefined && nextPageIndex > pageIndex ? { nextPageIndex } : {}),
     };

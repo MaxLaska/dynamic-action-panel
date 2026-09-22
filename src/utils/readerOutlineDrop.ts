@@ -19,18 +19,29 @@
 //     readerNavigate(info)   { this.bridge.navigate(info) }
 //
 // and the reader's `navigate` accepts a location, of which `{annotationID}` is
-// only one shape. `{position: {pageIndex, rects}}` — exactly what an outline
-// entry carries — is another, and it lands on the precise destination rather
-// than the top of a page. Verified end to end against a live reader: both the
-// direct call and the full `setEphemeralState({subpath})` route arrived at the
-// expected page.
+// only one shape. `{dest}` and `{position}` are two others, and WHICH ONE is
+// used decides where the document actually ends up:
+//
+//     navigate(e, t = {}) { t.block ||= "center"; …
+//       else if (e.dest)     pdfLinkService.goToDestination(e.dest)   // ignores t
+//       else if (e.position) navigateToPosition(e.position, t)        // honours t
+//
+// ZotFlow's own glue calls `reader.navigate(x, {behavior:"smooth"})` — hardcoded,
+// with no `block` — so the position branch always centres. The reader's OWN
+// outline calls the view directly with `{block:"start"}`, which aligns the
+// destination to the top of the viewport. That difference is the whole reason
+// this module builds a `dest`: the destination branch consults no options at
+// all, so it reproduces the outline's own landing exactly instead of half a
+// screen below it. Measured against the reader's outline across six entries,
+// the destination form is scroll-position-identical and the position form is
+// not — off by a third of a page nearby and by ten pages far away.
 //
 // So an outline section is an ordinary `file` tool with a subpath, like a
 // dropped annotation before it. What makes it a SECTION rather than a page
 // bookmark is the `section` description stored beside it — see
 // DocumentSectionRef in src/types/action.ts.
 
-import type { DocumentSectionRef } from '@/types/action';
+import type { DocumentSectionRef, PdfDestination } from '@/types/action';
 
 /**
  * The MIME type the companion plugin writes.
@@ -44,6 +55,7 @@ export const READER_OBJECT_MIME = 'application/x-dap-reader-object';
 export interface OutlineLocation {
     position: { pageIndex: number; rects: number[][] };
 }
+
 
 /** A section of a document, as a drag from the reader's outline describes it. */
 export interface OutlineSectionRef {
@@ -130,6 +142,13 @@ export function parseReaderOutlinePayload(raw: string): OutlineSectionRef | null
     const parents = readParents(own(parsed, 'parents'));
     const pageLabel = ownString(parsed, 'pageLabel');
     const nextPageIndex = ownPageIndex(parsed, 'nextPageIndex');
+    const location: OutlineLocation = {
+        position: { pageIndex, rects: readRects(own(positionValue, 'rects')) },
+    };
+    // Derived here rather than taken from the payload, so that a payload
+    // written by an older companion build gets the same destination as a new
+    // one. It is the reader's own point either way, only re-expressed.
+    const dest = sectionDestination(location);
 
     return {
         filePath,
@@ -138,34 +157,73 @@ export function parseReaderOutlinePayload(raw: string): OutlineSectionRef | null
             level,
             ...(parents.length > 0 ? { parents } : {}),
             pageIndex,
+            ...(dest ? { dest } : {}),
             ...(pageLabel !== undefined ? { pageLabel: pageLabel.trim() } : {}),
             // Only a boundary that lies after this section says anything.
             ...(nextPageIndex !== undefined && nextPageIndex > pageIndex
                 ? { nextPageIndex }
                 : {}),
         },
-        location: {
-            position: { pageIndex, rects: readRects(own(positionValue, 'rects')) },
-        },
+        location,
     };
+}
+
+/**
+ * The reader's own destination point, expressed as a PDF destination.
+ *
+ * This is a RE-EXPRESSION, not a new coordinate: the point is exactly the one
+ * the reader resolved for this outline entry, written in the standard explicit
+ * form so that the reader's navigation takes its destination branch. Nothing is
+ * measured, estimated or converted to pixels, and nothing viewport-dependent is
+ * stored.
+ *
+ * `rects[3]` rather than `rects[1]`: PDF coordinates grow upwards, so the top
+ * edge of a rectangle is its larger y. Outline destinations are degenerate
+ * points where the two agree, but the top-left corner is the right reading for
+ * any rectangle.
+ */
+export function sectionDestination(location: OutlineLocation): PdfDestination | null {
+    const rect = location.position.rects[0];
+    const left = rect?.[0];
+    const top = rect?.[3];
+    if (typeof left !== 'number' || typeof top !== 'number') {
+        return null;
+    }
+    return [location.position.pageIndex, { name: 'XYZ' }, left, top, null];
 }
 
 /**
  * The subpath that sends the reader to this section.
  *
- * `#page=` comes first and carries the 1-based physical page: ZotFlow ignores
- * it, but Obsidian's own PDF view understands it, so a vault without ZotFlow
- * still lands on the right page. The `annotation=` part is ZotFlow's parameter
- * name for "navigate here", and its value is the reader's own location object —
- * a position, not an annotation id.
+ * Three parts, each for a different reader, in the one order that works:
  *
- * The order is not cosmetic: ZotFlow extracts the second part with
- * `/annotation=([^&]+)/` and JSON-parses it, so anything appended after it
- * would be swallowed into the JSON and break the parse.
+ * - `#page=` carries the 1-based physical page. ZotFlow ignores it, but
+ *   Obsidian's own PDF view understands it, so a vault without ZotFlow still
+ *   lands on the right page.
+ * - `dest` is the destination the reader's own navigation honours FIRST, and
+ *   the reason this function exists. Its branch calls PDF.js's
+ *   `goToDestination` and consults no options at all — which matters, because
+ *   ZotFlow hands the reader a hardcoded `{behavior:'smooth'}` with no `block`,
+ *   and the position branch then defaults to `block: 'center'`. Centering puts
+ *   the destination in the MIDDLE of the viewport, half a screen below where
+ *   the outline puts it; measured against the reader's own outline, that was
+ *   off by a third of a page nearby and by ten pages far away.
+ * - `position` stays as the fallback for anything that does not know `dest`.
+ *   It is what this plugin stored before, so a reader without the destination
+ *   branch behaves exactly as it did.
+ *
+ * The order of the two subpath segments is not cosmetic: ZotFlow extracts the
+ * second with `/annotation=([^&]+)/` and JSON-parses it, so anything appended
+ * after it would be swallowed into the JSON and break the parse.
  */
 export function buildSectionSubpath(location: OutlineLocation): string {
     const pageIndex = location.position.pageIndex;
+    const dest = sectionDestination(location);
+    const navigation = {
+        ...(dest ? { dest } : {}),
+        position: location.position,
+    };
     return `#page=${pageIndex + 1}#annotation=${encodeURIComponent(
-        JSON.stringify({ position: location.position })
+        JSON.stringify(navigation)
     )}`;
 }

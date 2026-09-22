@@ -19,7 +19,7 @@ import {
     serializeTemplateDocument,
     templateFileName,
 } from '@/export/templateExport';
-import type { ButtonAction } from '@/types/action';
+import type { ButtonAction, DocumentSectionRef } from '@/types/action';
 import { parseTemplateDocument, validateTemplateDocument } from '@/export/templateParse';
 import {
     collectTemplateExternalReferences,
@@ -1041,11 +1041,12 @@ describe('serialization', () => {
 // --- Document sections --------------------------------------------------------
 
 describe('a section survives a template roundtrip', () => {
-    const section = {
+    const section: DocumentSectionRef = {
         title: '1.3 Verhalten an der Hochschule',
         level: 2,
         parents: ['A Soziale Arbeit studieren', '1 Studieren'],
         pageIndex: 105,
+        dest: [105, { name: 'XYZ' }, 28, 658.331, null],
         pageLabel: '106',
         nextPageIndex: 110,
     };
@@ -1143,5 +1144,65 @@ describe('a section survives a template roundtrip', () => {
         const action = parsed.document.tools['t']!.actions[0]!;
         expect(action.type === 'file' && action.parameters.section?.nextPageIndex).toBeUndefined();
         expect(action.type === 'file' && action.parameters.section?.title).toBe('Chapter');
+    });
+});
+
+describe('a destination survives a template roundtrip', () => {
+    const withDest = (dest: unknown): TemplateDocument => ({
+        format: OCAP_TEMPLATE_FORMAT,
+        formatVersion: 1,
+        categories: [{ id: 'c', name: 'C', placements: [{ toolId: 't', slot: 0 }] }],
+        tools: {
+            t: {
+                id: 't',
+                name: 'T',
+                actions: [
+                    {
+                        type: 'file',
+                        parameters: {
+                            filePath: 'a.pdf',
+                            section: { title: 'Chapter', pageIndex: 10, dest },
+                        },
+                    } as unknown as ButtonAction,
+                ],
+            },
+        },
+    });
+    const sectionOf = (document: TemplateDocument) => {
+        const parsed = parseTemplateDocument(JSON.stringify(document));
+        if (!parsed.ok) throw new Error('parse failed');
+        const action = parsed.document.tools['t']!.actions[0]!;
+        return action.type === 'file' ? action.parameters.section : undefined;
+    };
+
+    it('rebuilds a well-formed destination', () => {
+        expect(sectionOf(withDest([10, { name: 'XYZ' }, 28, 658.331, null]))?.dest).toEqual([
+            10,
+            { name: 'XYZ' },
+            28,
+            658.331,
+            null,
+        ]);
+    });
+
+    it('keeps a destination with no trailing arguments', () => {
+        expect(sectionOf(withDest([10, { name: 'Fit' }]))?.dest).toEqual([10, { name: 'Fit' }]);
+    });
+
+    // A damaged destination costs the precise landing, never the tool: the page
+    // is still there and the subpath still navigates.
+    it.each([
+        ['not an array', 'XYZ'],
+        ['too short', [10]],
+        ['a non-integer page', [1.5, { name: 'XYZ' }]],
+        ['a negative page', [-1, { name: 'XYZ' }]],
+        ['no destination type', [10, 'XYZ']],
+        ['a nameless type', [10, {}]],
+        ['a non-numeric argument', [10, { name: 'XYZ' }, 'left']],
+    ])('drops a destination that is %s, keeping the section', (_label, dest) => {
+        const section = sectionOf(withDest(dest));
+        expect(section?.dest).toBeUndefined();
+        expect(section?.title).toBe('Chapter');
+        expect(section?.pageIndex).toBe(10);
     });
 });

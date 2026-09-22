@@ -1,8 +1,9 @@
 # OCAP – Status
 
-Last updated: 2026-09-22 (outline sections as panel tools, on top of the reader
-sidebar side — both in `zotflow-reader-extensions`, which is not part of the
-panel; and on top of the
+Last updated: 2026-09-22 (a section shortcut now lands exactly where the
+reader's own outline lands, on top of outline sections as panel tools and the
+reader sidebar side — the latter two in `zotflow-reader-extensions`, which is
+not part of the panel; and on top of the
 help button and context routing, and the EXPERIMENTAL corrected mouse
 grammar: left click uses, Shift/Ctrl + left selects, right click is context,
 right drag moves a tool — the same-day version with selection on the right
@@ -10,6 +11,25 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **A section now lands exactly where the outline lands (2026-09-22),
+  implemented locally, smoke-tested, smoke vault only. Not pushed, not in the
+  productive vault.** Normative: `DECISIONS.md` "A section navigates by
+  destination, because that branch ignores options".
+  - **The bug:** a section shortcut reached the right page but sat half a
+    viewport too low — up to ten pages off for a far target. ZotFlow hands the
+    reader a hardcoded `{behavior:"smooth"}` with no `block`, so the position
+    branch defaults to `block:"center"`; the reader's own outline calls the
+    view directly with `block:"start"`.
+  - **The fix:** the subpath now leads with a PDF destination
+    `[pageIndex,{name:"XYZ"},left,top,null]` — the reader's own resolved point,
+    re-expressed. That branch calls PDF.js's `goToDestination` and consults no
+    options at all. The position stays behind it as the fallback.
+  - **Measured against the native outline click**, settled scroll offset, six
+    entries: delta 0 for all of them (was −18 to −14132).
+  - **Legacy tools are untouched** and behave as before; re-dropping upgrades
+    them. No settings bump. The destination is derived in the panel, so old
+    drag payloads get it too.
 
 - **Outline sections as tools, and Search before Appearance (2026-09-22),
   implemented locally, smoke-tested, deployed only to the disposable smoke
@@ -23,8 +43,9 @@ user's judgement in use)
     printed label, and the next entry's start. No new action type, no settings
     bump; an older build still opens the file.
   - **Navigation reuses ZotFlow's own channel:** it parses `annotation=<json>`
-    from a subpath and passes the object to the reader's `navigate()`, which
-    takes a position as readily as an annotation id.
+    from a subpath and passes the object to the reader's `navigate()`.
+    *(The claim that a position lands precisely is SUPERSEDED by the entry
+    above: through that channel a position is centred, not top-aligned.)*
   - **The semantic source is `_reader._state.outline`**, not scraped text. Rows
     are matched by index PATH: `outline-N` and `data-id` renumber on expand.
   - **Toolbar:** Search now sits before Appearance on both sides; with the
