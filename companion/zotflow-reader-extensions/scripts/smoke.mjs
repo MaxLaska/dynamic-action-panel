@@ -187,7 +187,28 @@ const loaded = await session.eval(
     })()`
 );
 check('companion plugin is loaded', loaded.loaded === true, JSON.stringify(loaded));
-check('default side is left', loaded.side === 'left', `side=${loaded.side}`);
+check('it has a side at all', loaded.side === 'left' || loaded.side === 'right', `side=${loaded.side}`);
+
+/**
+ * The side this vault had before the suite ran, put back at the end.
+ *
+ * The suite used to REQUIRE left to begin with and finish on left whatever it
+ * found, which meant two things: it had to be run against a wiped data file,
+ * and it quietly overwrote a real preference on its way out. Both of those made
+ * the feature look as though it had failed to survive a restart when all that
+ * had happened was that this script had been here.
+ *
+ * Now it records what it found, starts from a known side of its own accord, and
+ * restores. Nothing outside this file has to be deleted to make it pass.
+ */
+const sideBefore = loaded.side === 'right' ? 'right' : 'left';
+if (sideBefore !== 'left') {
+    await setSide('left');
+    await pause(1500);
+}
+check('the suite starts from left', (await session.eval(
+    `(() => window.app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.sidebarSide)()`
+)) === 'left');
 
 console.log('\n== reader opens and is patched ==');
 await session.eval(
@@ -360,6 +381,17 @@ check('LEFT: toggle back to its original x', restored.toggleX === baseline.toggl
 check('LEFT: icon not mirrored', restored.mirrored === false);
 check('LEFT: right group back to baseline', JSON.stringify(restored.endOrder) === JSON.stringify(baseline.endOrder), restored.endOrder.join(' -> '));
 check('LEFT: second reader followed too', (await state(1)).applied === 'left');
+
+// Put the vault back the way it was found. A test suite that leaves a user
+// preference on its own last step is a suite that manufactures bug reports.
+if (sideBefore !== 'left') {
+    await setSide(sideBefore);
+    await pause(1500);
+}
+const sideAfter = await session.eval(
+    `(() => window.app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.sidebarSide)()`
+);
+check('the preference this vault had is restored', sideAfter === sideBefore, `${sideAfter} vs ${sideBefore}`);
 
 // ---------------------------------------------------------------- report
 const failed = results.filter((r) => !r.passed);

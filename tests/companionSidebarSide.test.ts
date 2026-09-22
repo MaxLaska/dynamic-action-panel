@@ -7,6 +7,7 @@
 // script, which drives a live ZotFlow reader in the disposable vault. Together
 // they cover the behaviour; neither alone would.
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { OWN, SELECTORS, missingParts, probeReader, readerInstance } from '../companion/zotflow-reader-extensions/src/readerContract';
@@ -276,5 +277,54 @@ describe('event targets are matched across realms', () => {
         ['a target whose closest is not callable', { closest: 'no' }],
     ])('declines %s without throwing', (_label, target) => {
         expect(closestFrom(target as unknown as EventTarget, '.anything')).toBeNull();
+    });
+});
+
+// --- the preference has to survive a restart ------------------------------------
+//
+// The half that can be proven here is that the plugin reads its stored value on
+// load, writes it on change, and never puts a default over it. The half that
+// cannot — that Obsidian really hands the file back after a cold start — is
+// proven by `scripts/smokeSidebarRestart.mjs`, which chooses the side through
+// the reader's own menu, quits Obsidian and checks again after a real restart.
+
+describe('where the side is kept', () => {
+    const main = readFileSync('companion/zotflow-reader-extensions/src/main.ts', 'utf8');
+
+    it('reads the stored value before anything else happens', () => {
+        const onload = main.slice(main.indexOf('async onload()'), main.indexOf('onunload()'));
+        expect(onload).toContain('this.settings = normalizeSettings(await this.loadData())');
+        // The load is awaited FIRST: every later line, and every reader the
+        // events reach, sees the stored side rather than the default.
+        expect(onload.indexOf('loadData')).toBeLessThan(onload.indexOf('registerEvent'));
+        expect(onload.indexOf('loadData')).toBeLessThan(onload.indexOf('onLayoutReady'));
+    });
+
+    it('writes on every change, and waits for the write', () => {
+        const setSide = main.slice(main.indexOf('async setSide'), main.indexOf('private sync()'));
+        expect(setSide).toContain('await this.saveData(this.settings)');
+        // And only then does it bring the open readers into line, so a reader
+        // can never show a side the file does not have.
+        expect(setSide.indexOf('saveData')).toBeLessThan(setSide.indexOf('this.sync()'));
+    });
+
+    it('never writes a default over a loaded value', () => {
+        // `saveData` appears once, in setSide. Nothing on the load path writes.
+        expect(main.match(/saveData/g) ?? []).toHaveLength(1);
+    });
+
+    it('applies the loaded side to every reader it finds, new ones included', () => {
+        expect(main).toContain('applySide(doc, this.currentSide())');
+        // Read at call time rather than captured, so a reader opened later gets
+        // the current preference and not the one that was loaded first.
+        expect(main).toContain('private currentSide = (): SidebarSide => this.settings.sidebarSide');
+    });
+
+    it('keeps its preference to itself', () => {
+        // Obsidian's own per-plugin storage, and nothing else: no reaching into
+        // ZotFlow's settings, the panel's, or the vault.
+        expect(main).not.toMatch(/zotflow'\]|dynamic-action-panel/);
+        expect(main).not.toContain('vault.adapter');
+        expect(main).not.toContain('writeFile');
     });
 });
