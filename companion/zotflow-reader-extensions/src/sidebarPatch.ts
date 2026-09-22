@@ -25,6 +25,7 @@ import {
     surfaceStylesheet,
     type SidebarSide,
 } from './sidebarSide';
+import { clearNexusTokens } from './nexusBridge';
 
 /**
  * An event target as something that can be asked about its ancestors.
@@ -174,6 +175,9 @@ export function removePatch(doc: Document | null | undefined): void {
     // recoloured by a plugin that is no longer there to explain it.
     parts.doc.getElementById(OWN.styleId)?.remove();
     parts.doc.getElementById(OWN.surfaceStyleId)?.remove();
+    // And the mirrored theme tokens, for the same reason: they were written
+    // onto the reader's root by this plugin and nothing else will take them off.
+    clearNexusTokens(parts.doc);
 }
 
 /** What one bound reader document needs torn down again. */

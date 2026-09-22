@@ -7,6 +7,21 @@
 // live in sidebarPatch.ts and are deliberately dull.
 
 import { OWN, SELECTORS } from './readerContract';
+import { nexusVariable } from './nexusBridge';
+
+/**
+ * The Nexus custom properties this stylesheet spends, resolved from the token
+ * table rather than spelled out.
+ *
+ * Spelling `--nexus-reader-panel-surface` into this file would create the exact
+ * thing the theme exists to prevent: a second place where a token name lives,
+ * free to drift from the first. Resolving it means a rename in
+ * `theme/nexus/src/tokens.ts` either reaches here or fails the build.
+ */
+const NEXUS = {
+    readerPanelSurface: nexusVariable('readerPanelSurface'),
+    documentSurface: nexusVariable('documentSurface'),
+} as const;
 
 /** Which edge the reader's sidebar lives on. */
 export type SidebarSide = 'left' | 'right';
@@ -131,28 +146,42 @@ export function sidebarStylesheet(): string {
 }
 
 /**
- * The stylesheet that gives the reader's sidebar its own surface colour.
+ * The stylesheet that gives the reader's surfaces their place in the hierarchy.
  *
  * Unlike `sidebarStylesheet`, this one applies on BOTH sides — the hierarchy is
- * about which LEVEL the panel belongs to, and that does not change when it is
- * moved from one edge to the other.
+ * about which LEVEL a surface belongs to, and that does not change when the
+ * sidebar is moved from one edge to the other.
  *
  * The problem, measured before this was written: the reader's sidebar and
- * Obsidian's side docks were painted the same colour (#282828 in this theme, on
- * both sides of the boundary, from two unrelated variables that happened to
- * agree). Docked on the right, the reader's sidebar and the right dock formed
- * one continuous slab with no visible seam, and nothing said where the document
- * ended and the workspace began.
+ * Obsidian's side docks were painted the same colour (#282828 in the default
+ * dark theme, on both sides of the boundary, from two unrelated variables that
+ * happened to agree). Docked on the right, the reader's sidebar and the right
+ * dock formed one continuous slab with no visible seam, and nothing said where
+ * the document ended and the workspace began.
  *
- * So the sidebar moves a step DOWN, towards the pages it belongs to, while the
- * host stylesheet moves the docks a step UP. The step is small on purpose: this
- * panel is part of the reader, and it has to keep reading as part of the reader
- * rather than as a foreign module dropped into it.
+ * WHERE THE VALUES COME FROM NOW. They come from the Nexus theme, mirrored into
+ * this document by nexusBridge.ts. Nothing here decides a colour any more; this
+ * file decides which SURFACE gets which token, which is the part that has to
+ * live next to the reader's selectors.
  *
- * Two details carry the robustness:
+ * Each value is a `var(<nexus token>, <the reader's own>)`, and that fallback is
+ * the entire fail-soft story:
  *
- * - The colour is mixed from the reader's OWN tokens, so a reader that reskins
- *   itself takes this with it instead of being overridden by a fixed grey.
+ * - Nexus active: the bridge has written the token onto the reader's root and
+ *   the first branch is taken, overrides included.
+ * - Nexus not active, or not installed: the token is undefined, the fallback is
+ *   taken, and the reader keeps exactly the appearance this plugin gave it
+ *   before the theme existed — the mix of the reader's own tokens, below.
+ *
+ * There is no JavaScript branch for that. CSS's own fallback is the mechanism,
+ * which means the failing case cannot rot: it is exercised by every reader
+ * opened without the theme.
+ *
+ * Two details carry the rest of the robustness:
+ *
+ * - The fallback is mixed from the reader's OWN tokens, so a reader that
+ *   reskins itself takes this with it instead of being overridden by a fixed
+ *   grey.
  * - `--material-sidepane` is re-pointed ON the container rather than globally.
  *   Everything inside the sidebar that paints the side-pane colour — headers,
  *   rows, its own toolbar — inherits the new value without this file having to
@@ -163,16 +192,25 @@ export function sidebarStylesheet(): string {
  */
 export function surfaceStylesheet(): string {
     return [
-        `/* Injected by zotflow-reader-extensions. The reader's sidebar sits one`,
-        `   step below the workspace and one step above the page, on both sides. */`,
+        `/* Injected by zotflow-reader-extensions. Values come from the Nexus`,
+        `   theme when it is active, and from the reader's own tokens when it is`,
+        `   not. The sidebar sits one step below the workspace and one step above`,
+        `   the page, on both sides. */`,
         `body {`,
-        `  --zfrx-toggle-surface: color-mix(`,
-        `    in srgb, var(--material-background) 40%, var(--material-sidepane) 60%`,
+        `  --zfrx-toggle-surface: var(`,
+        `    ${NEXUS.readerPanelSurface},`,
+        `    color-mix(in srgb, var(--material-background) 40%, var(--material-sidepane) 60%)`,
         `  );`,
         `}`,
         `${SELECTORS.sidebarContainer} {`,
         `  --material-sidepane: var(--zfrx-toggle-surface);`,
         `  background-color: var(--zfrx-toggle-surface);`,
+        `}`,
+        `/* The plane behind the pages. BOTH split views, for the reason given in`,
+        `   sidebarStylesheet: only the id-based one carries the document. */`,
+        `${SELECTORS.splitViewClass},`,
+        `${SELECTORS.splitViewId} {`,
+        `  background-color: var(${NEXUS.documentSurface}, var(--material-background));`,
         `}`,
     ].join('\n');
 }

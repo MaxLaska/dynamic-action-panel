@@ -1525,3 +1525,176 @@ version bump; `dest` is additive and optional.
 **Derived in the panel, not sent by the companion**, so that a payload from an
 older companion build gets the same destination as a new one. The companion
 needed no change for this.
+
+## 2026-09-22 – The theme owns the visual language, not a plugin
+
+**Decision:** Every HOST surface of this project — the side docks, the ribbon,
+the document plane, the tab strips, the resizable edges — is named in **one**
+place: `theme/nexus/theme.css`, a real, selectable Obsidian theme named
+**Nexus**, living in the repository at `theme/nexus/` and installed into
+`.obsidian/themes/Nexus/`.
+
+No plugin in this repository may define a host colour. The rules that used to
+live in `companion/zotflow-reader-extensions/styles.css` moved there unchanged
+in effect, and that file is now empty.
+
+**Reason:** the experiment belonged in the companion — it was next to the reader
+work it was serving and could be judged in one evening. Keeping it there had two
+costs. Obsidian's workspace does not belong to a reader companion, so disabling
+that plugin for an afternoon took the appearance of every dock with it. And a
+colour that two files *may* define is a colour that will eventually be defined
+twice, differently.
+
+**Consequence:** the companion's `styles.css` stays as an EMPTY file rather than
+being deleted. A deployment installs files and never removes them, so dropping
+it from the build would leave the old copy installed in every vault that already
+had one, still applying the rules that have moved. When no vault carries a stale
+copy, it can go.
+
+**Scope of v0.1:** eleven tokens covering the surfaces already understood, dark
+theme only. A light theme is a different piece of work with different
+judgements and has not been made; every rule in the file is scoped to
+`body.theme-dark` and a test enforces it.
+
+## 2026-09-22 – One token table, read by the theme, the editor and the bridge
+
+**Decision:** `theme/nexus/src/tokens.ts` is the single source of truth for what
+a Nexus token is called, what it means and what it is worth by default. The
+theme's CSS, the Theme Studio's controls and the reader bridge's mirrored list
+all derive from it. `theme.css` is hand-written — a theme should be readable as
+a theme — and `tests/nexusTheme.test.ts` holds it to the table declaration by
+declaration, in both directions.
+
+**Reason:** a generator would have made the theme unreadable; two hand-kept
+copies would have drifted. A checked equivalence is the third option and costs
+one test.
+
+**Consequence:** adding a knob to the Theme Studio is a row in the table plus a
+rule in the CSS. The editor builds its controls from a control plan derived from
+the table and names no token anywhere in its UI code, which a test also checks.
+
+## 2026-09-22 – Nexus tokens are literal colours, not forwards
+
+**Decision:** every `--nexus-*` default is a literal colour value. None of them
+is `var(--color-base-30)` or similar.
+
+**Reason:** Nexus *is* the theme. There is no theme underneath it to defer to,
+and a token that quietly forwards to somebody else's variable is not a token a
+colour picker can set. The defaults were taken by measuring what each surface
+was already worth in Obsidian 1.13.7's default dark theme, so activating Nexus
+changes nothing by itself — it only moves the steering wheel somewhere
+reachable.
+
+**One deliberate exception to "changes nothing":** Obsidian derives the root tab
+strip from the *titlebar* colour and dims it while the window is unfocused.
+Naming it `--nexus-document-chrome` makes it hold one colour instead. That is a
+real change from stock Obsidian and the price of the token meaning a colour.
+
+## 2026-09-22 – A profile is an override layer, never a second theme
+
+**Decision:** the Nexus Theme Studio stores named **profiles** — sets of token
+overrides on the Nexus theme — in its own `data.json`. A profile is never baked
+into a theme directory of its own.
+
+**Reason:** N theme copies would all have to be re-baked every time a rule
+changed, to buy nothing the override layer does not already give. Baking stays
+available as a deliberate later step (see
+`docs/ocap/nexus-theme-workflow.md`, Phase 5).
+
+**`Standard` is locked.** It cannot be renamed, deleted, or given an override,
+and `normalizeSettings` rebuilds it from a constant whatever the file says.
+"Switch to Standard" has to mean "the theme as its author left it", and a
+Standard the user can edit stops meaning that after the first slider. A fresh
+install therefore starts with TWO profiles: the locked baseline and an editable
+`Custom`, so that the first slider has somewhere to write.
+
+**Reset** clears the active profile's own overrides and scratch CSS, and touches
+nothing else — not the theme's files, not another profile, not another plugin.
+
+## 2026-09-22 – Overrides are inline custom properties on `<body>`
+
+**Decision:** the Theme Studio applies token overrides with
+`body.style.setProperty()`, not through an injected stylesheet and not with
+`!important`. Scratch CSS is a single `<style>` element under a pinned id.
+
+**Reason:** an inline declaration outranks every rule in every stylesheet by
+construction, so an override wins over the theme without either of them knowing
+the other's load order — and Obsidian loads a theme, snippets and plugin CSS in
+an order this plugin does not control. It is also visible in DevTools as element
+style on `<body>`, which is exactly where somebody asking "why is this colour
+what it is" would look.
+
+**Consequence:** every apply visits EVERY Nexus variable and removes the ones the
+active profile does not declare. Switching from a profile with six overrides to
+one with two must leave four back at the theme's value; "set what the new
+profile says" alone would leave them frozen.
+
+**Known limit of v0.1:** overrides are applied to the main window's document.
+Pop-out windows are not covered.
+
+## 2026-09-22 – The reader bridge mirrors values, and holds none
+
+**Decision:** `companion/zotflow-reader-extensions` reads the host's *computed*
+`--nexus-*` values and writes them onto the reader iframe's root element. It
+stores no colour of its own, knows nothing about profiles or overrides, and has
+no "is Nexus installed" check.
+
+**Reason:** CSS custom properties do not cross a frame boundary, so a theme —
+any theme — stops at the edge of the reader's iframe and something has to carry
+the values across. Reading the *computed* value means whatever combination of
+theme, profile and override produced the colour on screen is what gets mirrored,
+with no second copy of the palette in flight.
+
+**Fail-soft is the default, not a branch.** The injected stylesheet spends each
+value as `var(<nexus token>, <the reader's own>)`. With no theme there is
+nothing to read, nothing is written, and CSS's own fallback yields exactly the
+appearance the plugin had before the theme existed. The failing case cannot rot,
+because it is exercised by every reader opened without the theme.
+
+**Live updates** travel on one ordinary DOM event on the host window,
+`nexus-theme-tokens-changed`, declared in the token table so neither side owns a
+private copy of the name. It carries no payload: the receiver reads the live
+values itself. The sender does not need the receiver to exist and vice versa.
+
+**Reach of v0.1:** the reader's own sidebar (TOGGLE PANEL) and the plane behind
+its pages. The reader's toolbar is NOT re-themed: the pages render in a *nested*
+iframe and the toolbar's own token names have not been established by
+measurement yet. That is a Phase 1 discovery, not a guess to ship.
+
+## 2026-09-22 – Style Settings is not adopted
+
+**Decision:** the Nexus theme ships no Style Settings metadata block, and the
+Nexus Theme Studio neither depends on nor integrates with that plugin.
+
+**Reason:** the Theme Studio applies overrides as INLINE properties on `<body>`,
+which by construction outrank anything Style Settings writes into a stylesheet.
+Shipping both would mean a Style Settings slider that silently does nothing for
+every token the active profile overrides — the worst kind of second source of
+truth, because it looks like it works. Style Settings also keeps its own state
+in its own `data.json`, giving two files that both claim to say what a token is
+worth.
+
+**Revisit when:** a reason appears to move overrides off inline style. Until
+then one editor is authoritative, and that is the whole benefit.
+
+## 2026-09-22 – Every movable edge speaks one language
+
+**Decision:** the three structurally different families of Obsidian resize
+handle — the side-dock handle, a vertical split's, a horizontal split's — share
+one visual grammar: a neutral hairline inside Obsidian's own 3px hit zone,
+brighter and wider on hover, brighter still while dragged, from
+`--nexus-splitter-idle` / `-hover` / `-active`.
+
+The three STATE colours are stated once, for every axis at once. Only the
+GEOMETRY is written twice, because one axis draws a vertical line and the other
+a horizontal one. A test asserts the colour rules are not axis-scoped.
+
+**Reason:** they mean the same thing to the user — "this edge moves". The
+horizontal case is the one that matters most in daily use here: a dock split
+into a panel above and a note below had no visible line at all.
+
+**The hit zone is not touched.** Obsidian sizes these handles and every Obsidian
+user has the muscle memory. The line makes the edge legible; it does not move
+it. Obsidian's accent fill on hover and drag is reset, through both
+`background-color` and `border-color`: the accent means cell colour and
+selection in this project, and an edge is not a meaning.

@@ -1,8 +1,10 @@
 # OCAP – Status
 
-Last updated: 2026-09-22 (the workspace, the reader's sidebar and the pages are
-now three distinguishable surfaces with a legible edge between them, on top of a
-section shortcut landing exactly where the
+Last updated: 2026-09-22 (there is now a THEME — `Nexus` — that owns every host
+surface, an editor for it that changes the running workspace live, and a thin
+bridge that carries its tokens into the reader's iframe; on top of the three
+distinguishable surfaces those rules used to live in as a companion CSS patch,
+on top of a section shortcut landing exactly where the
 reader's own outline lands, on top of outline sections as panel tools and the
 reader sidebar side — those three in `zotflow-reader-extensions`, which is
 not part of the panel; and on top of the
@@ -13,6 +15,56 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **Nexus: a theme, a live editor for it, and a bridge into the reader
+  (2026-09-22), implemented locally, deployed to the smoke vault only. Not
+  pushed, not in the productive vault.** Normative: the seven `DECISIONS.md`
+  entries dated 2026-09-22 from "The theme owns the visual language" onward.
+  Workflow: `docs/ocap/nexus-theme-workflow.md`.
+  - **What changed in principle.** Host colours are no longer CSS patches in a
+    plugin. `theme/nexus/` is a real, selectable Obsidian theme and the one
+    place a host surface is named. `companion/zotflow-reader-extensions/styles.css`
+    is now empty — kept, not deleted, because a deployment installs files and
+    never removes them, so an installed stale copy has to be overwritten.
+  - **The token table** is `theme/nexus/src/tokens.ts`: eleven tokens over
+    workspace, document/reader, interaction and text. The theme's CSS is
+    hand-written and held to the table value-for-value by
+    `tests/nexusTheme.test.ts`, in both directions. Adding a knob is a row plus
+    a rule; the editor's controls follow by themselves.
+  - **Defaults are the measured baseline**, not a new palette: `#333333`
+    workspace, `#282828` its secondary plane, `#1c1c1c` document, `#232323`
+    reader panel, `#dadada`/`#b3b3b3` text, the three splitter alphas as before.
+    Measured against Obsidian 1.13.7's default dark theme, so activating Nexus
+    changes nothing by itself. One deliberate exception: the root tab strip
+    stops dimming when the window loses focus, because the token has to mean a
+    colour.
+  - **Nexus Theme Studio** (`companion/nexus-theme-studio/`, id
+    `nexus-theme-studio`) is a settings tab plus a command, no ribbon button.
+    Overrides are INLINE custom properties on `<body>` — they outrank every
+    stylesheet without `!important` and without knowing Obsidian's load order,
+    and they are visible in DevTools exactly where somebody would look. Profiles
+    are named override sets in the plugin's own `data.json`; `Standard` is
+    locked and rebuilt from a constant on load. New / duplicate / rename /
+    delete / reset / JSON export / JSON import, plus Developer scratch CSS as an
+    explicitly-marked development tool.
+  - **The reader bridge** reads the host's *computed* `--nexus-*` values and
+    mirrors them onto the reader iframe's root. It holds no colour and has no
+    "is Nexus installed" check: the injected stylesheet spends each value as
+    `var(<token>, <the reader's own>)`, so no theme means the exact appearance
+    the plugin had before. Live updates ride one DOM event,
+    `nexus-theme-tokens-changed`, declared in the token table so neither side
+    owns a private copy of the name.
+  - **Splitters** now speak one language on all three handle families,
+    including the horizontal split inside a dock, which previously had no
+    visible line at all. Three state colours stated once for every axis; only
+    the geometry is per-axis. Obsidian's hit zone untouched.
+  - **Not done, deliberately:** light theme; the reader's TOOLBAR (its pages are
+    in a *nested* iframe and its own token names have not been measured);
+    pop-out windows; Style Settings (see the decision — two authorities for one
+    value, where one of them silently loses).
+  - **Verified:** typecheck, lint (0 errors, 0 warnings), 1776 tests in 56
+    files, three builds, three smoke deploys. Manual acceptance in the running
+    Obsidian is still the user's to do.
 
 - **A section now lands exactly where the outline lands (2026-09-22),
   implemented locally, smoke-tested, smoke vault only. Not pushed, not in the
@@ -55,10 +107,14 @@ user's judgement in use)
   - 39/39 outline smoke checks and 56/56 sidebar smoke checks against a live
     reader; 1493 unit tests.
 
-- **Panel surface hierarchy (2026-09-22), implemented locally, verified
-  visually and by test, deployed only to the disposable smoke vault. Not
-  pushed, not in the productive vault.** In `zotflow-reader-extensions`, not in
-  the panel.
+- **Panel surface hierarchy (2026-09-22) — SUPERSEDED the same day by the
+  Nexus theme, above. The colours and the three levels are unchanged; they
+  simply live in `theme/nexus/theme.css` now instead of in the companion's
+  `styles.css`, and the reader half reads them through the bridge rather than
+  mixing its own. The rest of this entry is kept as the record of where those
+  values came from.** Implemented locally, verified visually and by test,
+  deployed only to the disposable smoke vault. Not pushed, not in the
+  productive vault. Was in `zotflow-reader-extensions`, not in the panel.
   - **The problem was that there was no hierarchy.** Obsidian's side docks and
     the reader's own sidebar were both painted `#282828` — the same grey, from
     two unrelated variables that happened to agree. With the reader's sidebar

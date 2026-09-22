@@ -29,6 +29,8 @@ import {
     markOutlineRowsDraggable,
     type OutlineBinding,
 } from './outlineDrag';
+import { readHostTokens, syncNexusTokens, type TokenValues } from './nexusBridge';
+import { NEXUS_TOKENS_CHANGED_EVENT } from '../../../theme/nexus/src/tokens';
 
 /**
  * How long to keep looking for a reader iframe that has not loaded yet.
@@ -62,6 +64,16 @@ export default class ZotflowReaderExtensionsPlugin extends Plugin {
     /** Documents whose outline already failed to describe a row, to log once. */
     private warnedOutline = new WeakSet<Document>();
 
+    /**
+     * What the Nexus tokens were worth at the start of the current sync.
+     *
+     * Read once per sync rather than once per reader: `getComputedStyle` is not
+     * free, every open reader wants the same answer, and reading it twice in
+     * one pass could even give two different answers if the editor moved a
+     * slider in between.
+     */
+    private hostTokens: TokenValues = {};
+
     async onload(): Promise<void> {
         this.settings = normalizeSettings(await this.loadData());
 
@@ -70,6 +82,26 @@ export default class ZotflowReaderExtensionsPlugin extends Plugin {
         // brought forward whose iframe was rebuilt while it was hidden.
         this.registerEvent(this.app.workspace.on('layout-change', () => this.sync()));
         this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.sync()));
+
+        // The seam to the Theme Studio, and the whole of it. When a colour is
+        // changed there, this fires and every reader already open follows in
+        // the same frame — no reopening a PDF to see a palette change.
+        //
+        // Deliberately an ordinary DOM event on the host window rather than a
+        // shared object or a plugin lookup: the sender does not need this
+        // plugin to exist, this plugin does not need the sender to exist, and
+        // neither ever holds a reference to the other. `registerDomEvent` takes
+        // the listener off again on unload.
+        //
+        // The cast is the whole cost of using a custom event: Obsidian types
+        // `registerDomEvent` against `WindowEventMap`, which by construction
+        // cannot contain a name this project invented. The callback takes no
+        // argument, so nothing is being claimed about the event's shape.
+        this.registerDomEvent(
+            window,
+            NEXUS_TOKENS_CHANGED_EVENT as keyof WindowEventMap,
+            () => this.syncTokens()
+        );
 
         this.app.workspace.onLayoutReady(() => this.sync());
     }
@@ -108,9 +140,23 @@ export default class ZotflowReaderExtensionsPlugin extends Plugin {
      */
     private sync(): void {
         this.pruneDeadBindings();
+        this.hostTokens = readHostTokens(document.body, window);
         for (const leaf of this.app.workspace.getLeavesOfType(READER_VIEW_TYPE)) {
             this.syncLeaf(leaf, 0);
         }
+    }
+
+    /**
+     * Re-mirrors the theme tokens into every reader that is already patched.
+     *
+     * The cheap path, for when only a colour changed: no leaf lookup, no
+     * structure probe, no retry schedule — just the current values into the
+     * documents this plugin already knows about. A reader that is not bound yet
+     * gets them from `syncLeaf` the moment it is.
+     */
+    private syncTokens(): void {
+        this.hostTokens = readHostTokens(document.body, window);
+        for (const doc of this.bindings.keys()) syncNexusTokens(doc, this.hostTokens);
     }
 
     /** Drops bindings whose reader iframe has gone away with its tab. */
@@ -137,6 +183,9 @@ export default class ZotflowReaderExtensionsPlugin extends Plugin {
             // searching the workspace at drag time.
             const file = (leaf.view as { file?: { path?: unknown } }).file;
             if (file && typeof file.path === 'string') this.readerFiles.set(doc, file.path);
+            // Before the binding, so a reader that has just been rebuilt is
+            // never painted for a frame with the values it had last time.
+            syncNexusTokens(doc, this.hostTokens);
             this.ensureBound(doc);
             markOutlineRowsDraggable(doc);
             return;
