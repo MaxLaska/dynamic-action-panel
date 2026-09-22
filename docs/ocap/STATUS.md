@@ -1,9 +1,12 @@
 # OCAP – Status
 
-Last updated: 2026-09-22 (there is now a THEME — `Nexus` — that owns every host
-surface, an editor for it that changes the running workspace live, and a thin
-bridge that carries its tokens into the reader's iframe; on top of the three
-distinguishable surfaces those rules used to live in as a companion CSS patch,
+Last updated: 2026-09-23 (the Theme Studio has had its first interaction pass
+after real use: the per-token reset works, the colour picker is live while it
+moves, there is a screen pipette, the splitter alphas have a real control, and
+hovering a row shows you which surface it paints; on top of the `Nexus` THEME
+that owns every host surface, the editor for it, and the thin bridge that
+carries its tokens into the reader's iframe; on top of the three distinguishable
+surfaces those rules used to live in as a companion CSS patch,
 on top of a section shortcut landing exactly where the
 reader's own outline lands, on top of outline sections as panel tools and the
 reader sidebar side — those three in `zotflow-reader-extensions`, which is
@@ -15,6 +18,51 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **Nexus Theme Studio, interaction pass (2026-09-23), implemented locally,
+  deployed to the smoke vault only. Not pushed, not in the productive vault.**
+  Normative: the `DECISIONS.md` entries dated 2026-09-23.
+  - **Everything here came from using the editor, not reading it.** Seven
+    reports, one root cause behind two of them.
+  - **The per-token reset did nothing.** The arrow's enabled state was computed
+    once, at render, and a write deliberately does not re-render the tab (that
+    would tear the colour picker out from under the pointer mid-drag). So it was
+    rendered disabled for a token with no override and stayed that way after the
+    user changed the colour. Rows now hold their components and re-sync after
+    every write; `tokenRow.ts` exists for that.
+  - **The colour picker was not live.** Obsidian's `ColorComponent` registers
+    `change` only, and `change` on a native colour input does not arrive until
+    the picker is dismissed. The row now owns a plain `<input type="color">` and
+    listens for `input`, which streams while the colour moves — the same event
+    Obsidian's own canvas picker relies on.
+  - **A drag no longer writes `data.json` per frame.** `updateLive` applies
+    synchronously and debounces the save by 400ms; `update` still saves at once
+    for discrete actions; `onunload` flushes.
+  - **The pipette is now `window.EyeDropper`**, feature-detected, with no button
+    at all where it is missing. What the user found before was Chromium's own
+    pipette inside the native `<input type="color">` popup — an OS window that
+    covers the workspace you are trying to sample. The tinted magnifier grid is
+    Chromium's and cannot be restyled; nothing here pretends otherwise.
+  - **Splitter alphas have a real control.** `supportsAlpha` in the registry
+    marks exactly the tokens whose default is translucent, and those rows get an
+    opacity slider. `colorValue.ts` parses hex/rgb()/rgba()/transparent; anything
+    it cannot take apart — `color-mix()`, `var()` — keeps its text field and
+    loses its swatch rather than being rewritten.
+  - **The locator.** Resting the pointer on a row (200ms) paints that token
+    magenta on top of the profile, so every rule spending it lights up, reader
+    iframe included. Nothing is persisted: the preview is a runtime field the
+    save path does not read, composed by a pure function. Cleared on leave, on
+    any real write, on tab hide, before the sampler opens, and on unload.
+  - **The swatch ring was clipped by Obsidian's own stylesheet.** The colour
+    input is `calc(--swatch-width + 4px)` wide but only `--swatch-height` tall,
+    while the swatch wrapper has 2px of padding — so the ring has room left and
+    right and none top and bottom. The theme studio adds the missing 4px on its
+    own rows.
+  - **Groups fold**, by a class on the group with CSS hiding `.setting-items`,
+    keyboard-reachable, state stored at the settings root so a profile switch
+    does not reshuffle the page. Value fields went 18em → 16em, fixed.
+  - **Verified:** typecheck, lint (0 errors, 0 warnings), 1861 tests in 57
+    files, three builds, three smoke deploys.
 
 - **Nexus: a theme, a live editor for it, and a bridge into the reader
   (2026-09-22), implemented locally, deployed to the smoke vault only. Not

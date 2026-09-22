@@ -23,7 +23,7 @@ import {
     NEXUS_THEME_NAME,
     NEXUS_TOKENS_CHANGED_EVENT,
 } from '../../../theme/nexus/src/tokens';
-import { overrideDeclarations } from './overrides';
+import { overrideDeclarations, withPreview } from './overrides';
 import {
     activeProfile,
     defaultSettings,
@@ -52,8 +52,36 @@ interface InternalApp {
     setting?: { open?: () => void; openTabById?: (id: string) => void };
 }
 
+/**
+ * How long a continuous edit waits before it is written to disk.
+ *
+ * Dragging a colour picker produces an `input` event per frame, and every one
+ * of them is a real change that has to reach the screen immediately. Writing
+ * `data.json` at that rate would be a hundred file writes for one decision
+ * about one grey — so the APPLY stays synchronous and only the SAVE is
+ * deferred. Long enough to collapse a drag into one write, short enough that
+ * letting go and closing Obsidian cannot outrun it; and `onunload` flushes
+ * whatever is still pending, so nothing is lost even then.
+ */
+const SAVE_DEBOUNCE_MS = 400;
+
 export default class NexusThemeStudioPlugin extends Plugin {
     settings: NexusStudioSettings = defaultSettings();
+
+    /**
+     * The custom properties currently painted in the locator colour, if any.
+     *
+     * Runtime-only, and the ONLY piece of this plugin's state that is not in
+     * `settings`. That is the point: it is held in a field the save path cannot
+     * see, so "the locator never writes anything" is a consequence of where the
+     * state lives rather than a rule someone has to remember. `update()` — the
+     * one method that saves — does not read it, and this does not call
+     * `saveData`.
+     */
+    private previewVariables: readonly string[] = [];
+
+    /** A pending debounced save, so it can be flushed or replaced. */
+    private saveTimer = 0;
 
     async onload(): Promise<void> {
         this.settings = normalizeSettings(await this.loadData());
@@ -67,10 +95,25 @@ export default class NexusThemeStudioPlugin extends Plugin {
     }
 
     onunload(): void {
+        // A colour the user dragged a moment ago may still be waiting on the
+        // debounce. Flushing first is the difference between "the last edit is
+        // saved" and "the last edit is saved unless you were quick".
+        this.flushSave();
         // A disabled plugin must leave the theme exactly as it found it, or the
-        // user is left with a palette nothing on screen can explain.
+        // user is left with a palette nothing on screen can explain. Clearing
+        // every Nexus variable also takes any locator preview down with it,
+        // which is why there is no separate teardown for one.
+        this.previewVariables = [];
         clearTokenOverrides(document.body);
         removeScratchCss(document);
+    }
+
+    /** Writes now, if a debounced save is outstanding. */
+    private flushSave(): void {
+        if (!this.saveTimer) return;
+        window.clearTimeout(this.saveTimer);
+        this.saveTimer = 0;
+        void this.saveData(this.settings);
     }
 
     /**
@@ -88,9 +131,43 @@ export default class NexusThemeStudioPlugin extends Plugin {
      */
     applyActiveProfile(): void {
         const profile = activeProfile(this.settings);
-        applyTokenOverrides(document.body, overrideDeclarations(profile.overrides));
+        applyTokenOverrides(
+            document.body,
+            withPreview(overrideDeclarations(profile.overrides), this.previewVariables)
+        );
         applyScratchCss(document, profile.scratchEnabled ? profile.scratchCss : null);
         window.dispatchEvent(new CustomEvent(NEXUS_TOKENS_CHANGED_EVENT));
+    }
+
+    /**
+     * Paints some tokens in the locator colour, or stops painting them.
+     *
+     * This is how "which surface does this control?" gets answered in a second
+     * instead of by setting a colour to red, looking, and setting it back. It
+     * lights the TOKEN, not a list of selectors, so every rule that spends the
+     * variable responds — including the ones inside the reader's iframe, which
+     * follow through the bridge like any other change.
+     *
+     * Nothing is stored and nothing is remembered beyond the field above.
+     * Clearing is a full re-apply of the active profile, which is a pure
+     * function of that profile, so "restore exactly what was there" needs no
+     * snapshot to be correct — there is nothing to get out of step.
+     */
+    setPreview(variables: readonly string[]): void {
+        const next = [...variables];
+        if (
+            next.length === this.previewVariables.length &&
+            next.every((variable, index) => this.previewVariables[index] === variable)
+        ) {
+            return;
+        }
+        this.previewVariables = next;
+        this.applyActiveProfile();
+    }
+
+    /** Whether a locator preview is currently showing. */
+    hasPreview(): boolean {
+        return this.previewVariables.length > 0;
     }
 
     /**
@@ -101,9 +178,40 @@ export default class NexusThemeStudioPlugin extends Plugin {
      * picker that feels broken.
      */
     async update(next: NexusStudioSettings): Promise<void> {
-        this.settings = next;
-        this.applyActiveProfile();
+        this.adopt(next);
+        // A discrete action — a button, a profile switch, a reset — is worth a
+        // write of its own. Any debounced save is cancelled rather than left to
+        // fire afterwards with the same content.
+        window.clearTimeout(this.saveTimer);
+        this.saveTimer = 0;
         await this.saveData(this.settings);
+    }
+
+    /**
+     * Stores and shows a change that is part of a continuous gesture.
+     *
+     * Same apply, deferred save. This is what a colour picker and an opacity
+     * slider call: they change the value every frame, and the screen has to
+     * follow every frame, but the disk does not.
+     */
+    updateLive(next: NexusStudioSettings): void {
+        this.adopt(next);
+        window.clearTimeout(this.saveTimer);
+        this.saveTimer = window.setTimeout(() => {
+            this.saveTimer = 0;
+            void this.saveData(this.settings);
+        }, SAVE_DEBOUNCE_MS);
+    }
+
+    /** The half both write paths share: take the settings, and show them. */
+    private adopt(next: NexusStudioSettings): void {
+        this.settings = next;
+        // A stored change while a preview is up would leave the locator colour
+        // sitting on a token the user has just edited, and the edit invisible.
+        // Dropping the preview first is both the safe order and the honest one:
+        // an explicit change outranks a hover.
+        this.previewVariables = [];
+        this.applyActiveProfile();
     }
 
     /**

@@ -54,6 +54,19 @@ export interface NexusStudioSettings {
     version: number;
     activeProfileId: string;
     profiles: NexusProfile[];
+    /**
+     * Groups the user has folded shut in the editor, by group key.
+     *
+     * Deliberately at the top level and NOT inside a profile: which sections you
+     * have folded is a property of how you are working right now, not of the
+     * palette you are working on. Switching profile to compare two greys should
+     * not also reshuffle the shape of the page.
+     *
+     * It is stored at all because the alternative — forgetting on every close —
+     * is exactly the annoyance collapsing was added to remove. One array of
+     * strings is the whole cost; there is no new persistence machinery here.
+     */
+    collapsedGroups: string[];
 }
 
 function standardProfile(): NexusProfile {
@@ -71,6 +84,9 @@ export function defaultSettings(): NexusStudioSettings {
     return {
         version: SETTINGS_VERSION,
         activeProfileId: FIRST_PROFILE_ID,
+        // Everything open to begin with: a user who has never seen the editor
+        // should see what it offers, not a row of closed drawers.
+        collapsedGroups: [],
         profiles: [
             standardProfile(),
             {
@@ -159,7 +175,11 @@ export function normalizeSettings(raw: unknown): NexusStudioSettings {
         ? wanted
         : (profiles[1]?.id ?? STANDARD_PROFILE_ID);
 
-    return { version: SETTINGS_VERSION, activeProfileId, profiles };
+    const collapsedGroups = Array.isArray(record.collapsedGroups)
+        ? record.collapsedGroups.filter((group): group is string => typeof group === 'string')
+        : [];
+
+    return { version: SETTINGS_VERSION, activeProfileId, profiles, collapsedGroups };
 }
 
 /** The profile currently being edited; never null, because Standard is always there. */
@@ -200,7 +220,14 @@ function withProfiles(
     profiles: NexusProfile[],
     activeProfileId = settings.activeProfileId
 ): NexusStudioSettings {
-    return { version: SETTINGS_VERSION, activeProfileId, profiles };
+    return {
+        version: SETTINGS_VERSION,
+        activeProfileId,
+        profiles,
+        // Carried through every profile operation. A rename is not a reason to
+        // unfold the page.
+        collapsedGroups: [...settings.collapsedGroups],
+    };
 }
 
 /** Adds an empty profile and makes it active, because creating one is wanting it. */
@@ -353,4 +380,28 @@ export function resetProfile(settings: NexusStudioSettings, id: string): NexusSt
                 : profile
         )
     );
+}
+
+/** Whether a group is currently folded shut. */
+export function isGroupCollapsed(settings: NexusStudioSettings, group: string): boolean {
+    return settings.collapsedGroups.includes(group);
+}
+
+/**
+ * Folds a group shut or opens it.
+ *
+ * Collapsing hides controls and touches no value: a folded group's tokens keep
+ * their overrides, keep being applied, and come back unchanged when it opens.
+ */
+export function setGroupCollapsed(
+    settings: NexusStudioSettings,
+    group: string,
+    collapsed: boolean
+): NexusStudioSettings {
+    const without = settings.collapsedGroups.filter((entry) => entry !== group);
+    return {
+        ...settings,
+        profiles: settings.profiles,
+        collapsedGroups: collapsed ? [...without, group] : without,
+    };
 }

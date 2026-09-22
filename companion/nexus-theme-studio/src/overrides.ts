@@ -142,3 +142,47 @@ export function effectiveValue(overrides: TokenOverrides, key: string): string {
 export function isOverridden(overrides: TokenOverrides, key: string): boolean {
     return isValidTokenValue(overrides[key]);
 }
+
+/**
+ * The colour the locator paints a token with while the pointer rests on its row.
+ *
+ * Magenta because nothing in the Nexus palette is anywhere near it: every
+ * default is a grey, and a grey going magenta is unmistakable at a glance and
+ * in peripheral vision, which is what "where is this token?" actually needs.
+ * Fully opaque, so a one-pixel splitter line is as visible as a whole dock.
+ */
+export const LOCATOR_COLOR = '#ff00ff';
+
+/**
+ * The declarations to apply while a locator preview is showing.
+ *
+ * The preview is composed ON TOP of the profile's real declarations rather than
+ * replacing them, so everything the user is not asking about keeps its colour
+ * and only the token in question changes. Composed here, as a pure function, so
+ * that "the preview never touches stored state" is a property of the data flow
+ * and not a promise made in a comment: this takes overrides and returns
+ * declarations, and there is no path from here to a file.
+ *
+ * Painting the TOKEN rather than a list of selectors is the whole trick. Every
+ * rule that spends this variable lights up, wherever it is and whether or not
+ * anybody remembered it existed — including rules inside the reader's iframe,
+ * which get it through the bridge like any other value. A second list of
+ * selectors would have been a second thing to keep true.
+ */
+export function withPreview(
+    declarations: ReadonlyArray<readonly [string, string]>,
+    previewVariables: readonly string[],
+    color: string = LOCATOR_COLOR
+): Array<[string, string]> {
+    if (previewVariables.length === 0) {
+        return declarations.map(([name, value]) => [name, value]);
+    }
+    const previewed = new Set(previewVariables);
+    const result: Array<[string, string]> = [];
+    for (const [name, value] of declarations) {
+        if (previewed.has(name)) continue;
+        result.push([name, value]);
+    }
+    for (const name of previewVariables) result.push([name, color]);
+    return result;
+}

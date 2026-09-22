@@ -1698,3 +1698,135 @@ user has the muscle memory. The line makes the edge legible; it does not move
 it. Obsidian's accent fill on hover and drag is reset, through both
 `background-color` and `border-color`: the accent means cell colour and
 selection in this project, and an edge is not a meaning.
+
+## 2026-09-23 – A control is a view of the value, and is re-read after every write
+
+**Decision:** every control in a Theme Studio token row — swatch, pipette,
+opacity, text, reset — writes a CSS string and then re-reads the stored state to
+redraw itself. No control carries its own idea of what the value is.
+
+**Reason:** the first version computed each control's state once, while
+rendering, because a write deliberately does NOT re-render the tab (re-rendering
+mid-drag tears the colour picker out from under the pointer). The per-token
+reset arrow was therefore rendered disabled — correct at that instant for a
+token with no override — and stayed disabled after the user changed the colour.
+Pressing it did nothing, which is exactly what came back from first real use.
+
+**Consequence:** the tab keeps a set of live row handles and re-syncs all of
+them after a write. Eleven rows is nothing to refresh, and "one write changed
+what *overridden* means" is true for more rows than the obvious one.
+The reset handler also re-checks `isOverridden` itself: a button whose
+correctness depends on a CSS class having been applied is the bug this rewrite
+exists to remove.
+
+## 2026-09-23 – The apply is synchronous; only the save is deferred
+
+**Decision:** continuous edits (colour picker, opacity slider) go through
+`updateLive`, which applies immediately and debounces `saveData` by 400ms.
+Discrete actions (buttons, profile switches, resets) go through `update`, which
+saves at once and cancels any pending debounce. `onunload` flushes.
+
+**Reason:** live editing means an `input` event per frame. Applying each one is
+the whole feature; persisting each one would be a hundred writes of `data.json`
+for one decision about one grey.
+
+## 2026-09-23 – The locator paints the token, not a list of selectors
+
+**Decision:** resting the pointer on a token row temporarily sets THAT TOKEN's
+custom property to a diagnostic magenta, on top of the active profile's real
+declarations. Leaving the row re-applies the profile.
+
+**Reason:** it answers "which surface is this?" without anyone maintaining a
+second map from tokens to selectors. Every rule that spends the variable lights
+up, wherever it lives — including rules inside the reader's iframe, which follow
+through the existing bridge like any other change.
+
+**Nothing is persisted, and that is structural rather than promised.** The
+previewed variables live in a runtime field on the plugin; the only method that
+saves does not read it; composing the preview is a pure function in
+`overrides.ts` with no path to a file. Restoring needs no snapshot, because the
+applied state is a pure function of the active profile. It is cleared on
+pointer-leave, on any real write, when the tab is hidden, before the screen
+sampler opens, and on unload.
+
+**A 200ms delay before it paints.** Without one, sweeping the pointer down the
+settings page flashes half the workspace magenta on the way past.
+
+**Transient states need help.** Hovering "Splitter (hover)" can show nothing —
+no edge is being hovered at that moment — so the registry gained `locateAlso`,
+and those two tokens name the idle line. It is data, not a special case in code.
+
+## 2026-09-23 – Opacity is a control where the token's default has one
+
+**Decision:** `supportsAlpha` in the token registry decides whether a row gets
+an opacity slider. It is set for exactly the tokens whose default value is
+translucent — the three splitter states — and a test holds that equivalence.
+
+**Reason:** those three were a text field while the other eight were colour
+pickers, which is not a distinction the user should have to notice. Putting a
+slider on all eleven would add a control to every row to serve three.
+
+**The text stays authoritative.** `colorValue.ts` parses hex (3/4/6/8 digits),
+`rgb()`/`rgba()` in both syntaxes, and `transparent`. Anything else —
+`color-mix()`, `var()`, `oklch()`, a named colour — returns null, and that row
+keeps its text field and loses its swatch rather than being rewritten into
+something the parser happens to understand. Full opacity is written back as
+plain `#rrggbb`, so a token dragged to opaque is textually equal to its default
+rather than merely equivalent to it.
+
+## 2026-09-23 – The pipette is the EyeDropper API, and its magnifier is not ours
+
+**Decision:** the Theme Studio offers its own pipette button backed by
+`window.EyeDropper`, feature-detected and never assumed. Where the API is
+missing the button is not rendered at all.
+
+**Reason:** the pipette the user found was Chromium's own, inside the native
+popup that `<input type="color">` opens — and that popup is the problem. It is
+an OS-level window that takes focus and covers the workspace, so "sample the
+colour of the left dock" means sampling a dock behind a dialog. `EyeDropper` has
+no dialog: it turns the pointer into a sampler over the whole screen and leaves
+the workspace exactly where it was, which is where the colours worth sampling
+are.
+
+**The tinted magnifier grid is Chromium's** and is drawn by the browser, not by
+this project. It cannot be restyled, and nothing here tries. A test asserts this
+module draws no sampler UI of its own, so the claim stays true.
+
+**Cancelling is a normal outcome.** `pickScreenColor` never rejects; Escape, an
+unavailable API and a malformed result are all "no colour was chosen", and no
+value changes.
+
+## 2026-09-23 – Folding a group hides its list, never its items
+
+**Decision:** a collapsed token group gets a class on the group element and CSS
+hides `.setting-items`. It is not implemented with per-item `visible`.
+
+**Reason:** two things. The heading is where the chevron lives, and a
+`visible`-based fold risks hiding its own way back; and `visible: false` also
+removes a setting from Obsidian's settings search, which is precisely where
+somebody who folded a section will go looking for it.
+
+**One class name, never two separated by a space.** A group's `cls` reaches
+`classList.add` unsplit, and that throws on a space — measured in Obsidian
+1.13.7's `SettingGroup.addClass`, and it would have taken the whole group down
+the first time anybody folded it.
+
+**Which groups are folded is stored at the settings root, not in a profile.**
+How you are working is not what you are working on: switching profile to compare
+two greys should not also reshuffle the shape of the page.
+
+## 2026-09-23 – Obsidian clips its own colour swatch, and the theme studio pays 4px
+
+**Decision:** `.nexus-studio-token input[type=color]` is given
+`height: calc(var(--swatch-height) + 4px)`.
+
+**Reason, measured in Obsidian 1.13.7's `app.css`:** the input is
+`calc(var(--swatch-width) + 4px)` WIDE and `var(--swatch-height)` TALL, while
+`::-webkit-color-swatch-wrapper` has `padding: 2px` and the swatch itself is
+`--swatch-width` × `--swatch-height`. The horizontal `+ 4px` exists to pay for
+that padding, leaving 2px each side for the 2px hover and focus ring. The height
+has no such allowance, so the round swatch reaches the element's edges with
+nothing left over and the ring — an outer `box-shadow` — is clipped top and
+bottom. The fix is the missing counterpart of a line Obsidian already wrote, it
+covers keyboard focus and pointer hover alike because both draw the same shadow,
+and it does not change the row's height.

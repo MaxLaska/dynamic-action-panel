@@ -26,39 +26,37 @@ import {
     PluginSettingTab,
     Setting,
     TextAreaComponent,
+    type ExtraButtonComponent,
     type SettingDefinitionItem,
 } from 'obsidian';
 
-import { NEXUS_THEME_NAME, type ThemeTokenDefinition } from '../../../theme/nexus/src/tokens';
+import {
+    NEXUS_THEME_NAME,
+    nexusToken,
+    type NexusTokenGroup,
+    type ThemeTokenDefinition,
+} from '../../../theme/nexus/src/tokens';
 import { buildControlPlan } from './controlPlan';
-import { effectiveValue, isOverridden, isValidTokenValue } from './overrides';
+import { effectiveValue, isOverridden } from './overrides';
+import { renderTokenRow, type TokenRowHandle } from './tokenRow';
 import type NexusThemeStudioPlugin from './main';
 import {
     activeProfile,
     createProfile,
     deleteProfile,
     duplicateProfile,
+    isGroupCollapsed,
     isLocked,
     renameProfile,
     resetProfile,
     setActiveProfile,
+    setGroupCollapsed,
     setOverride,
     setScratch,
     type NexusProfile,
     type NexusStudioSettings,
 } from './profiles';
 import { exportProfile, parseProfileDocument, profileFileName } from './transfer';
-
-/** A hex colour the native picker can actually display, or null. */
-function pickerHex(value: string): string | null {
-    const trimmed = value.trim();
-    if (/^#[0-9a-f]{6}$/i.test(trimmed)) return trimmed;
-    // Three-digit hex expanded rather than refused: it is a colour the picker
-    // can show, just not in the form it wants.
-    const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(trimmed);
-    if (short) return `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}`;
-    return null;
-}
 
 /** A one-field prompt, for the places a profile needs a name. */
 class NameModal extends Modal {
@@ -180,11 +178,34 @@ class TransferModal extends Modal {
 }
 
 export class NexusThemeStudioSettingTab extends PluginSettingTab {
+    /**
+     * The token rows currently on screen.
+     *
+     * Held so that one write can bring every row's controls back in step
+     * without re-rendering the tab. Rows remove themselves through the cleanup
+     * function their `render` returns, so a re-render does not leave handles to
+     * detached elements behind.
+     */
+    private readonly rows = new Set<TokenRowHandle>();
+
     constructor(
         app: App,
         private readonly plugin: NexusThemeStudioPlugin
     ) {
         super(app, plugin);
+    }
+
+    /**
+     * Closing the tab takes the locator preview down with it.
+     *
+     * The preview is cleared on `pointerleave` in the ordinary case, but a tab
+     * can be closed, or Obsidian's settings dismissed with Escape, while the
+     * pointer is still on a row — and a workspace left magenta by a hover is
+     * exactly the "hanging state" this feature must not have.
+     */
+    hide(): void {
+        this.plugin.setPreview([]);
+        super.hide();
     }
 
     getSettingDefinitions(): SettingDefinitionItem[] {
@@ -361,74 +382,96 @@ export class NexusThemeStudioSettingTab extends PluginSettingTab {
         new Notice(`Imported "${created.name}".`);
     }
 
-    /** One group per token group, entirely from the control plan. */
+    /**
+     * One group per token group, entirely from the control plan.
+     *
+     * Collapsing is a CLASS on the group, not a `visible` flag on each item.
+     * The difference matters twice: a folded group keeps its heading (which is
+     * where the toggle lives, so a `visible`-based fold could hide its own way
+     * back), and its settings stay in Obsidian's settings search, which is
+     * where someone who has folded a section will go looking for it.
+     */
     private tokenGroups(): SettingDefinitionItem[] {
-        return buildControlPlan().map((group) => ({
-            type: 'group' as const,
-            heading: group.label,
-            items: group.tokens.map((token) => ({
-                name: token.label,
-                desc: token.description,
-                aliases: [token.cssVariable, token.key],
-                render: (setting: Setting) => this.renderToken(setting, token),
-            })),
-        }));
+        return buildControlPlan().map((group) => {
+            const collapsed = isGroupCollapsed(this.plugin.settings, group.group);
+            return {
+                type: 'group' as const,
+                heading: group.label,
+                // ONE class name, never two separated by a space: a group's
+                // `cls` reaches `classList.add` unsplit, which throws on a
+                // space. Measured in Obsidian 1.13.7's SettingGroup.addClass.
+                cls: collapsed ? 'nexus-studio-group-collapsed' : 'nexus-studio-group',
+                extraButtons: [
+                    (button: ExtraButtonComponent) =>
+                        this.renderCollapseToggle(button, group.group, group.label, collapsed),
+                ],
+                items: group.tokens.map((token) => ({
+                    name: token.label,
+                    desc: token.description,
+                    aliases: [token.cssVariable, token.key],
+                    render: (setting: Setting) => this.renderToken(setting, token),
+                })),
+            };
+        });
     }
 
     /**
-     * One token: a picker, the literal value, and a way back to the default.
+     * The chevron that folds a group.
      *
-     * The text field is not a convenience beside the picker — it is the
-     * authoritative control. The stored value has to stay CSS, and three of the
-     * eleven v0.1 tokens are already `rgba()`, which a native colour input
-     * cannot represent at all. The picker is the shortcut for the case where a
-     * flat hex is what you want.
+     * Obsidian already gives a group's extra button `tabIndex=0`, so it is
+     * reachable by keyboard; what it does not give is a key handler or a state
+     * to announce, which is what the rest of this adds. No animation: the list
+     * is short, and a height transition on a settings page is motion nobody
+     * asked for.
      */
-    private renderToken(setting: Setting, token: ThemeTokenDefinition): void {
-        const profile = this.current();
-        const locked = isLocked(profile);
-        const value = effectiveValue(profile.overrides, token.key);
-        const overridden = isOverridden(profile.overrides, token.key);
-
-        setting.setClass('nexus-studio-token');
-
-        const hex = pickerHex(value);
-        if (hex) {
-            setting.addColorPicker((picker) =>
-                picker.setValue(hex).onChange((next) => {
-                    if (locked) return;
-                    void this.write(token, next);
-                })
+    private renderCollapseToggle(
+        button: ExtraButtonComponent,
+        group: NexusTokenGroup,
+        label: string,
+        collapsed: boolean
+    ): void {
+        const toggle = (): void => {
+            void this.commit(
+                setGroupCollapsed(this.plugin.settings, group, !collapsed)
             );
-        }
-
-        setting.addText((text) => {
-            text.setValue(value)
-                .setPlaceholder(token.defaultValue)
-                .onChange((next) => {
-                    if (locked) return;
-                    if (next.trim().length === 0) {
-                        void this.write(token, null);
-                        return;
-                    }
-                    if (!isValidTokenValue(next)) return;
-                    void this.write(token, next);
-                });
-            text.inputEl.addClass('nexus-studio-value');
-            text.inputEl.disabled = locked;
+        };
+        button
+            .setIcon(collapsed ? 'chevron-right' : 'chevron-down')
+            .setTooltip(collapsed ? `Show ${label}` : `Hide ${label}`)
+            .onClick(toggle);
+        const el = button.extraSettingsEl;
+        el.setAttribute('role', 'button');
+        el.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        el.setAttribute('aria-label', collapsed ? `Show ${label}` : `Hide ${label}`);
+        el.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            toggle();
         });
+    }
 
-        setting.addExtraButton((button) =>
-            button
-                .setIcon('rotate-ccw')
-                .setTooltip(`Back to the theme's ${token.defaultValue}`)
-                .setDisabled(locked || !overridden)
-                .onClick(() => {
-                    void this.commit(
-                        setOverride(this.plugin.settings, profile.id, token.key, null)
-                    );
-                })
-        );
+    /**
+     * One token: a swatch, a pipette, an opacity where it means something, the
+     * literal value, and a way back to the default.
+     *
+     * The row is built by `tokenRow.ts` and keeps a handle so it can redraw
+     * itself after a write without the tab re-rendering. That is what makes the
+     * per-token reset arrow correct: it has to become enabled the moment the
+     * token gains an override, and a write deliberately does not re-render.
+     */
+    private renderToken(setting: Setting, token: ThemeTokenDefinition): () => void {
+        const handle = renderTokenRow(setting, token, {
+            currentValue: (item) => effectiveValue(this.current().overrides, item.key),
+            isOverridden: (item) => isOverridden(this.current().overrides, item.key),
+            isLocked: () => isLocked(this.current()),
+            write: (item, value) => this.write(item, value),
+            preview: (item) => this.preview(item),
+        });
+        this.rows.add(handle);
+        return () => {
+            this.rows.delete(handle);
+            handle.dispose();
+        };
     }
 
     /**
@@ -436,12 +479,42 @@ export class NexusThemeStudioSettingTab extends PluginSettingTab {
      *
      * Deliberately NOT `commit`: re-rendering on every change would take the
      * focus out of the field being typed in and tear the colour picker out from
-     * under the pointer mid-drag. The controls are already showing the new
-     * value — they are the ones that produced it.
+     * under the pointer mid-drag. Every OTHER row is re-synced instead, because
+     * one write changes what "overridden" means for exactly one row but the
+     * cost of refreshing eleven is nothing.
      */
     private async write(token: ThemeTokenDefinition, value: string | null): Promise<void> {
         const settings = this.plugin.settings;
-        await this.plugin.update(setOverride(settings, this.current().id, token.key, value));
+        // `updateLive`, not `update`: a colour picker emits a change per frame
+        // while it is dragged, and each one must reach the screen immediately
+        // while only the last one needs to reach the disk.
+        this.plugin.updateLive(setOverride(settings, this.current().id, token.key, value));
+        for (const row of this.rows) row.syncControls();
+        return Promise.resolve();
+    }
+
+    /**
+     * Starts or stops the locator preview.
+     *
+     * `null` means stop. The tokens sent to the plugin are this one plus
+     * whatever the table says to light up with it — the splitter states name
+     * the idle line, because hovering "Splitter (hover)" can otherwise show
+     * nothing at all: no edge is being hovered at that moment.
+     *
+     * Nothing here writes. `setPreview` is a different method from `update` on
+     * purpose, and only the latter saves.
+     */
+    private preview(token: ThemeTokenDefinition | null): void {
+        if (!token) {
+            this.plugin.setPreview([]);
+            return;
+        }
+        const keys = [token.key, ...(token.locateAlso ?? [])];
+        const variables = keys.flatMap((key) => {
+            const found = nexusToken(key);
+            return found ? [found.cssVariable] : [];
+        });
+        this.plugin.setPreview(variables);
     }
 
     /**

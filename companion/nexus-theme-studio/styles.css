@@ -14,16 +14,96 @@
     margin: var(--size-4-2) 0 var(--size-4-4);
 }
 
-/* The literal value is the authoritative control, so it gets room for a
- * `color-mix()` rather than the width of six hex digits. Monospace because
- * these are CSS values and a mistyped digit should be easy to see. */
-.nexus-studio-token input.nexus-studio-value {
-    font-family: var(--font-monospace);
-    width: 18em;
+/* --- the swatch, and the ring that was being cut in half ------------------
+ *
+ * Measured in Obsidian 1.13.7's own app.css, because the clipping is not ours:
+ *
+ *   input[type="color"]            { height: var(--swatch-height);            }
+ *                                  { width:  calc(var(--swatch-width) + 4px); }
+ *   ::-webkit-color-swatch-wrapper { padding: 2px;                            }
+ *   ::-webkit-color-swatch         { height: var(--swatch-height);            }
+ *                                  { width:  var(--swatch-width);             }
+ *
+ * Look at the two axes side by side. The WIDTH carries a deliberate `+ 4px` to
+ * pay for the wrapper's 2px of padding on each side, which leaves the round
+ * swatch exactly 2px of room left and right — enough for the 2px hover and
+ * focus ring (`--input-border-width-focus`) to be drawn inside the element.
+ *
+ * The HEIGHT has no such allowance. The swatch is a full `--swatch-height`
+ * tall inside a wrapper that has already taken 2px off the top and bottom, so
+ * it reaches the element's edges with nothing left over, and the ring — an
+ * outer `box-shadow`, which paints outside the swatch box — is clipped by the
+ * input. Top and bottom only, which is exactly the shape of the report.
+ *
+ * So the fix is the missing counterpart of a line Obsidian already wrote: give
+ * the input the same 4px vertically that it already has horizontally. Four
+ * pixels, on this plugin's rows only, on an element that is not what sets the
+ * row's height — the settings page does not grow.
+ *
+ * It covers keyboard focus as well as hover, because both are the same
+ * mechanism: `:focus-visible::-webkit-color-swatch` and `:hover::-webkit-color-swatch`
+ * both draw an outer box-shadow, and both were clipped by the same missing 4px.
+ */
+.nexus-studio-token input.nexus-studio-swatch {
+    height: calc(var(--swatch-height) + 4px);
+    flex: 0 0 auto;
 }
 
-/* A textarea does not belong in the narrow control column beside a label, so
- * the scratch row stacks instead. */
+/* A value this editor cannot take apart — `color-mix()`, `var()` — has no
+ * swatch to show. Saying so quietly beats showing a black circle that is not
+ * the colour. */
+.nexus-studio-token input.nexus-studio-swatch-unknown {
+    opacity: 0.35;
+}
+
+/* --- the row --------------------------------------------------------------
+ *
+ * The literal value is the authoritative control, so it gets room for a real
+ * CSS colour rather than the width of six hex digits — but not the 18em the
+ * first version gave it, where `#333333` sat in a field wide enough for a
+ * sentence. 16em is the longest value the defaults actually contain,
+ * `rgba(255, 255, 255, 0.28)`, at this monospace size, plus nothing.
+ *
+ * Fixed rather than fluid, and the same on every row: a column of fields that
+ * each sized themselves to their contents would make the page ripple every
+ * time a value changed length.
+ */
+.nexus-studio-token input.nexus-studio-value {
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    width: 16em;
+    flex: 0 0 auto;
+}
+
+/* Opacity is a secondary control; it should not take the room the value needs. */
+.nexus-studio-token input.nexus-studio-alpha {
+    width: 6em;
+    flex: 0 0 auto;
+}
+
+/* --- folded groups --------------------------------------------------------
+ *
+ * The heading is a sibling of the item list, not its parent, so hiding the list
+ * leaves the heading — and the chevron that opens it again — in place. Nothing
+ * is unmounted and no value is touched: a folded group's tokens keep their
+ * overrides and go on being applied.
+ *
+ * No height transition. The list is short, and animating a settings page is
+ * motion nobody asked for.
+ *
+ * One class name rather than two: a group's `cls` reaches `classList.add`
+ * unsplit, and that throws on a space. So the folded state is its own class,
+ * not a modifier beside a base one.
+ */
+.nexus-studio-group-collapsed .setting-items {
+    display: none;
+}
+
+/* --- the scratch editor ---------------------------------------------------
+ *
+ * A textarea does not belong in the narrow control column beside a label, so
+ * the scratch row stacks instead.
+ */
 .setting-item.nexus-studio-scratch {
     display: block;
 }

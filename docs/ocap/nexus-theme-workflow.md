@@ -1,6 +1,6 @@
 # Nexus – the design workflow
 
-Last updated: 2026-09-22.
+Last updated: 2026-09-23.
 
 This document describes how a visual change is made in this project now that
 there is a theme and an editor for it. It exists because the expensive part of
@@ -64,10 +64,33 @@ the key to `BRIDGED_KEYS` in
 
 ### Phase 4 — Tune
 
-From here on the value is changed in *Settings → Nexus Theme Studio*, with a
-colour picker and a text field, live. No inspector, no code change, no reload.
-This is where a palette is actually made: the twentieth two-percent adjustment
-costs seconds.
+From here on the value is changed in *Settings → Nexus Theme Studio*, live. No
+inspector, no code change, no reload. This is where a palette is actually made:
+the twentieth two-percent adjustment costs seconds.
+
+What each row gives you:
+
+- **The swatch** repaints the workspace while you are still moving the picker,
+  not when you dismiss it.
+- **The pipette** samples any pixel on the screen — the panel, a dock, the
+  reader, another application — and drops the colour into the token. It uses the
+  browser's own screen sampler, so the workspace stays visible while you aim.
+  The tinted magnifier is Chromium's and cannot be restyled.
+- **The opacity slider** appears on the tokens whose value is translucent. The
+  stored result is still ordinary CSS: white at 28% is
+  `rgba(255, 255, 255, 0.28)`.
+- **The text field** is the authoritative control and takes any CSS colour. A
+  value the editor cannot take apart — `color-mix()`, `var()` — keeps its text
+  and loses its swatch rather than being rewritten.
+- **The reset arrow** clears this one token's override and nothing else. It is
+  live only when this token actually has an override.
+- **Resting the pointer on a row** paints that token magenta for as long as you
+  stay there, so you can see which surfaces it controls without setting a colour
+  to red and back. It changes nothing, saves nothing, and is gone the moment you
+  move away.
+
+Fold a group with the chevron in its heading when the list gets long; folding
+hides controls and touches no value.
 
 ### Phase 5 — Bake
 

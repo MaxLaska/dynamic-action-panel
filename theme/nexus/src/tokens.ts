@@ -75,6 +75,29 @@ export interface ThemeTokenDefinition {
     defaultValue: string;
     /** One line under the control, saying what the token actually paints. */
     description: string;
+    /**
+     * Whether the editor offers an opacity control beside the colour.
+     *
+     * Set for the tokens whose DEFAULT is already translucent — the splitter
+     * states, which are white at three different alphas. Without it those three
+     * were text fields and everything else was a colour picker, which is not a
+     * distinction the user should have to notice.
+     *
+     * Absent means "an opaque colour is the normal case here". It is not a
+     * prohibition: the text field still accepts any CSS value, and a stored
+     * `rgba()` is parsed and shown correctly wherever it appears.
+     */
+    supportsAlpha?: boolean;
+    /**
+     * Other token keys to light up together with this one during the locator
+     * preview.
+     *
+     * Only needed for tokens that paint a TRANSIENT state. Hovering "Splitter
+     * (hover)" cannot show you anything, because nothing on screen is being
+     * hovered at that moment; lighting the idle line as well answers the
+     * question actually being asked, which is "where are the splitters".
+     */
+    locateAlso?: string[];
 }
 
 /**
@@ -117,7 +140,7 @@ export const NEXUS_TOKENS: readonly ThemeTokenDefinition[] = [
         controlType: 'color',
         defaultValue: '#282828',
         description:
-            'The second plane inside a dock: its tab strip and the vault profile. Set it to the workspace surface to make each dock read as one slab.',
+            'Tab strips and the vault profile inside a dock. Match it to the workspace surface to make each dock one slab.',
     },
     {
         key: 'workspaceBorder',
@@ -165,6 +188,7 @@ export const NEXUS_TOKENS: readonly ThemeTokenDefinition[] = [
         controlType: 'color',
         defaultValue: 'rgba(255, 255, 255, 0.1)',
         description: 'The hairline on every resizable workspace edge when nothing is happening.',
+        supportsAlpha: true,
     },
     {
         key: 'splitterHover',
@@ -174,6 +198,8 @@ export const NEXUS_TOKENS: readonly ThemeTokenDefinition[] = [
         controlType: 'color',
         defaultValue: 'rgba(255, 255, 255, 0.28)',
         description: 'The same edge under the pointer.',
+        supportsAlpha: true,
+        locateAlso: ['splitterIdle'],
     },
     {
         key: 'splitterActive',
@@ -183,6 +209,8 @@ export const NEXUS_TOKENS: readonly ThemeTokenDefinition[] = [
         controlType: 'color',
         defaultValue: 'rgba(255, 255, 255, 0.45)',
         description: 'The same edge while it is being dragged.',
+        supportsAlpha: true,
+        locateAlso: ['splitterIdle'],
     },
     {
         key: 'textPrimary',
@@ -191,7 +219,7 @@ export const NEXUS_TOKENS: readonly ThemeTokenDefinition[] = [
         group: 'text',
         controlType: 'color',
         defaultValue: '#dadada',
-        description: 'Ordinary text.',
+        description: 'Ordinary text, everywhere Obsidian writes it.',
     },
     {
         key: 'textMuted',
@@ -200,7 +228,7 @@ export const NEXUS_TOKENS: readonly ThemeTokenDefinition[] = [
         group: 'text',
         controlType: 'color',
         defaultValue: '#b3b3b3',
-        description: 'Secondary text: headers, counts, placeholders.',
+        description: 'Secondary text: section headers, counts, placeholders.',
     },
 ];
 
