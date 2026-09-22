@@ -46,6 +46,13 @@ export const SELECTORS = {
     splitViewId: '#split-view',
     sidebarResizer: '.sidebar-resizer',
     divider: '.divider',
+    /**
+     * The two right-group buttons whose order this plugin swaps. Both are
+     * OPTIONAL: a reader that does not show them still gets the sidebar
+     * feature, so their absence is not a reason to refuse the patch.
+     */
+    toolbarFind: '.toolbar .end .find',
+    toolbarAppearance: '.toolbar .end #appearance',
 } as const;
 
 /** Classes and ids this plugin owns. Prefixed so they cannot collide upstream. */

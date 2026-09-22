@@ -174,6 +174,9 @@ const openPdf = (path, newTab) =>
         return true;
     })()`);
 
+/** Index of a button in the visual left-to-right order of the right group. */
+const orderIndex = (order, pattern) => order.findIndex((name) => pattern.test(name));
+
 // ---------------------------------------------------------------- run
 
 console.log('\n== plugin present ==');
@@ -206,6 +209,12 @@ check('LEFT: sidebar on the left edge', s.sidebar && s.sidebar.x === 0, JSON.str
 check('LEFT: toggle in the start group', s.toggleParent === 'start', `parent=${s.toggleParent}`);
 check('LEFT: icon not mirrored', s.mirrored === false);
 check('LEFT: sidebar tabs present', (s.tabs ?? []).length === 3, JSON.stringify((s.tabs ?? []).map((t) => t.t)));
+check(
+    'LEFT: right group reads Search then Appearance',
+    orderIndex(s.endOrder, /Find in Document/i) >= 0 &&
+        orderIndex(s.endOrder, /Find in Document/i) < orderIndex(s.endOrder, /Appearance/i),
+    s.endOrder.join(' -> ')
+);
 
 console.log('\n== LEFT toggle still works ==');
 await clickToggle(0); await pause(1000);
@@ -223,6 +232,12 @@ check('RIGHT: sidebar on the right edge', s.sidebar && s.sidebar.x + s.sidebar.w
 check('RIGHT: document reflows to the left, full remaining width', s.doc.x === 0 && s.doc.w === s.viewport - s.sidebar.w, JSON.stringify(s.doc));
 check('RIGHT: toggle in the end group', s.toggleParent === 'end');
 check('RIGHT: toggle is the outermost right element', s.toggleLastInEnd === true, s.endOrder.join(' -> '));
+check(
+    'RIGHT: right group reads Search -> Appearance -> Toggle',
+    orderIndex(s.endOrder, /Find in Document/i) < orderIndex(s.endOrder, /Appearance/i) &&
+        orderIndex(s.endOrder, /Appearance/i) < orderIndex(s.endOrder, /Toggle Sidebar/i),
+    s.endOrder.join(' -> ')
+);
 check('RIGHT: icon mirrored', s.mirrored === true);
 check('RIGHT: no dead gap where the toggle was', s.firstInStart === 'Zoom Out', `first=${s.firstInStart}`);
 check('RIGHT: exactly one toggle', s.toggleCount === 1);

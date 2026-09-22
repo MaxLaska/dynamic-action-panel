@@ -100,6 +100,32 @@ function placeToggle(parts: ReaderParts, side: SidebarSide): void {
 }
 
 /**
+ * Puts Find before Appearance in the right-hand group.
+ *
+ * The reader ships them the other way round (Appearance, then Find), which puts
+ * the button reached most often — search — furthest from the edge. Swapping the
+ * two existing buttons is the whole change: nothing is replaced, nothing is
+ * rebuilt, and the sidebar toggle still lands outside both of them because it
+ * is appended after this runs.
+ *
+ * Unlike the sidebar side, this applies on BOTH sides. It is a reading-order
+ * preference, not a consequence of where the sidebar sits.
+ *
+ * Both buttons are optional. A reader that shows only one of them, or neither,
+ * is left alone rather than refused: the sidebar feature does not depend on it.
+ */
+function orderEndGroup(parts: ReaderParts, order: 'find-first' | 'reader-default'): void {
+    const find = parts.doc.querySelector(SELECTORS.toolbarFind);
+    const appearance = parts.doc.querySelector(SELECTORS.toolbarAppearance);
+    if (!find || !appearance || find.parentElement !== appearance.parentElement) return;
+    const [first, second] = order === 'find-first' ? [find, appearance] : [appearance, find];
+    // Only act when they are actually the wrong way round, so the observer this
+    // runs under does not see a mutation it caused itself.
+    if (first.nextElementSibling === second) return;
+    first.parentElement?.insertBefore(first, second);
+}
+
+/**
  * Brings one reader document to the requested side.
  *
  * Returns whether the document is now in the requested state — false means the
@@ -111,6 +137,7 @@ export function applySide(doc: Document | null | undefined, side: SidebarSide): 
     const parts = probeReader(doc);
     if (!parts) return false;
     ensureStylesheet(parts);
+    orderEndGroup(parts, 'find-first');
     placeToggle(parts, side);
     parts.body.classList.toggle(OWN.rightClass, side === 'right');
     parts.body.setAttribute(OWN.appliedAttr, side);
@@ -128,6 +155,7 @@ export function removePatch(doc: Document | null | undefined): void {
     const parts = probeReader(doc);
     if (!parts) return;
     placeToggle(parts, 'left');
+    orderEndGroup(parts, 'reader-default');
     parts.body.classList.remove(OWN.rightClass);
     parts.body.removeAttribute(OWN.appliedAttr);
     parts.doc.getElementById(OWN.styleId)?.remove();
