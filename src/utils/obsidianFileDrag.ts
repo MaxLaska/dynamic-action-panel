@@ -39,6 +39,12 @@ import {
     readDraggedLocalAnnotation,
     resolveAnnotatedFile,
 } from '@/utils/zotflowReader';
+import {
+    parseReaderOutlinePayload,
+    READER_OBJECT_MIME,
+    type OutlineSectionRef,
+} from '@/utils/readerOutlineDrop';
+import { buildOutlineButtonDraft } from '@/utils/outlineButton';
 
 /** The shape of `app.dragManager` this module relies on. */
 interface ObsidianDraggable {
@@ -224,8 +230,14 @@ export function canAcceptVaultFileDrag(
         return false;
     }
     // A ZotFlow annotation drag always brings `text/plain` too, so this only
-    // widens acceptance for a citation drag that somehow omits it.
-    return types.includes('text/plain') || types.includes(ZOTFLOW_CITATION_MIME);
+    // widens acceptance for a citation drag that somehow omits it. A reader
+    // object carries ONLY its own type, which is why it has to be named here:
+    // without this the slot would refuse the drag before the drop.
+    return (
+        types.includes('text/plain') ||
+        types.includes(ZOTFLOW_CITATION_MIME) ||
+        types.includes(READER_OBJECT_MIME)
+    );
 }
 
 // --- what a drop should create ------------------------------------------------
@@ -258,6 +270,14 @@ export function resolveSlotDropDraft(
     dataTransfer: DataTransfer | null,
     options: { scriptFolderPath?: string } = {}
 ): SlotDropDraft | null {
+    // First, and safely so: a reader object is identified by a MIME type that
+    // belongs to this project alone, so a match cannot be any other gesture.
+    const section = resolveDroppedOutlineSection(dataTransfer);
+    if (section) {
+        const draft = buildOutlineButtonDraft(section);
+        return { ...draft, noticeKey: 'slot_section_created' };
+    }
+
     const annotation = resolveDroppedAnnotation(app, dataTransfer);
     if (annotation) {
         const draft = buildAnnotationButtonDraft(annotation);
@@ -281,6 +301,27 @@ export function resolveSlotDropDraft(
             ? 'script_outside_script_folder'
             : 'button_create_success',
     };
+}
+
+// --- reader objects -----------------------------------------------------------
+
+/**
+ * The document section this drop carries, or null when it carries something
+ * else.
+ *
+ * Asked before anything else and answerable without the app: the payload is
+ * written by this project's own companion plugin under its own MIME type, so
+ * there is nothing to disambiguate and no existing gesture that could be
+ * claimed by mistake.
+ */
+export function resolveDroppedOutlineSection(
+    dataTransfer: DataTransfer | null
+): OutlineSectionRef | null {
+    if (!dataTransfer) {
+        return null;
+    }
+    const raw = readData(dataTransfer, READER_OBJECT_MIME);
+    return raw ? parseReaderOutlinePayload(raw) : null;
 }
 
 // --- ZotFlow annotations ------------------------------------------------------

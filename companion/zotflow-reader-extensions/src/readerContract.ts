@@ -53,6 +53,21 @@ export const SELECTORS = {
      */
     toolbarFind: '.toolbar .end .find',
     toolbarAppearance: '.toolbar .end #appearance',
+    /**
+     * The reader's own UI root: it contains the toolbar AND the sidebar, and
+     * NOT the document. The pages render inside a nested iframe, which is a
+     * separate document, so observing this element sees every change this
+     * plugin cares about and none of the churn of scrolling a PDF.
+     */
+    readerUi: '#reader-ui',
+    /** The outline panel of the sidebar, present only while that tab is shown. */
+    outlineView: '#outlineView',
+    /**
+     * One outline row. The row is the `div.item`, not the `li`: an `li`
+     * CONTAINS its children's rows, so making the `li` draggable would make a
+     * parent's drag start from anywhere in its subtree.
+     */
+    outlineItem: '#outlineView .item',
 } as const;
 
 /** Classes and ids this plugin owns. Prefixed so they cannot collide upstream. */
@@ -65,6 +80,8 @@ export const OWN = {
     orphanDivider: 'zfrx-orphan-divider',
     /** Records the side currently applied, for cheap idempotency checks. */
     appliedAttr: 'data-zfrx-side',
+    /** Marks an outline row already made draggable, so marking is idempotent. */
+    draggableRow: 'zfrx-draggable-row',
 } as const;
 
 /** The live reader instance the fork exposes on its own window. */
@@ -135,6 +152,31 @@ export function probeReader(doc: Document | null | undefined): ReaderParts | nul
  * page, and the only honest test of "can I call setSidebarWidth" is whether it
  * is a function right now.
  */
+/**
+ * The reader's own outline and page labels, when it has parsed them.
+ *
+ * This is the SEMANTIC source for a dragged section: `outline` is the tree the
+ * reader built from the document, each node carrying its title, its children
+ * and the destination the reader itself navigates to. `pageLabels` is indexed
+ * by page index and gives the printed page number, which need not be
+ * `pageIndex + 1`.
+ *
+ * Read through `_state` rather than any React internals: it is the same object
+ * the reader hands its own components, and it is plain data.
+ */
+export function readerOutlineState(
+    win: Window | null | undefined
+): { outline: unknown; pageLabels: unknown } | null {
+    if (!win) return null;
+    const reader = (win as unknown as Record<string, unknown>)[READER_GLOBAL];
+    if (!reader || typeof reader !== 'object') return null;
+    const state = (reader as { _state?: unknown })._state;
+    if (!state || typeof state !== 'object') return null;
+    const outline = (state as { outline?: unknown }).outline;
+    if (!Array.isArray(outline)) return null;
+    return { outline, pageLabels: (state as { pageLabels?: unknown }).pageLabels };
+}
+
 export function readerInstance(win: Window | null | undefined): ReaderInstance | null {
     if (!win) return null;
     const candidate = (win as unknown as Record<string, unknown>)[READER_GLOBAL];

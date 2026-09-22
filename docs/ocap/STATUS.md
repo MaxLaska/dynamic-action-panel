@@ -1,7 +1,8 @@
 # OCAP – Status
 
-Last updated: 2026-09-22 (reader sidebar side, as a separate companion plugin —
-`zotflow-reader-extensions`, which is not part of the panel; on top of the
+Last updated: 2026-09-22 (outline sections as panel tools, on top of the reader
+sidebar side — both in `zotflow-reader-extensions`, which is not part of the
+panel; and on top of the
 help button and context routing, and the EXPERIMENTAL corrected mouse
 grammar: left click uses, Shift/Ctrl + left selects, right click is context,
 right drag moves a tool — the same-day version with selection on the right
@@ -9,6 +10,27 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **Outline sections as tools, and Search before Appearance (2026-09-22),
+  implemented locally, smoke-tested, deployed only to the disposable smoke
+  vault. Not pushed, not in the productive vault.** Normative: `DECISIONS.md`
+  "A dropped outline entry is a section, not a page bookmark".
+  - **Drag an entry out of the reader outline onto a grid cell** and it becomes
+    a tool named after the section. Clicking it opens the document — reusing an
+    open reader, or opening one — and lands on the entry's own destination.
+  - **It stays a section.** The tool is an ordinary `file` action, and beside
+    the subpath it carries `section`: title, level, ancestors, page index,
+    printed label, and the next entry's start. No new action type, no settings
+    bump; an older build still opens the file.
+  - **Navigation reuses ZotFlow's own channel:** it parses `annotation=<json>`
+    from a subpath and passes the object to the reader's `navigate()`, which
+    takes a position as readily as an annotation id.
+  - **The semantic source is `_reader._state.outline`**, not scraped text. Rows
+    are matched by index PATH: `outline-N` and `data-id` renumber on expand.
+  - **Toolbar:** Search now sits before Appearance on both sides; with the
+    sidebar right the group reads Search → Appearance → Toggle.
+  - 39/39 outline smoke checks and 56/56 sidebar smoke checks against a live
+    reader; 1493 unit tests.
 
 - **Reader sidebar side (2026-09-22), implemented locally, smoke-tested,
   deployed only to the disposable smoke vault. Not pushed, not in the

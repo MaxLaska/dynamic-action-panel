@@ -323,6 +323,7 @@
     "script_outside_script_folder": "已创建工具——它会打开该脚本文件。“运行脚本”只能找到脚本文件夹内的脚本。",
     "annotation_not_identified": "无法确定拖动的是哪条标注。请先在阅读器中点击它，然后再拖动。",
     "slot_annotation_created": "已创建标注快捷方式——点击可重新打开该标注。",
+    "slot_section_created": "已创建章节快捷方式——点击可在该章节处打开文档。",
     "grid_handle_column_tooltip": "添加一列，或拖动调整大小（当前 {count} 列）",
     "grid_handle_row_tooltip": "添加一行，或拖动调整大小（当前 {count} 行）",
     "grid_handle_column_max_tooltip": "最多 {count} 列 — 可拖动调整大小",

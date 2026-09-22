@@ -1421,3 +1421,45 @@ vault at all.
 **Scope of v1:** exactly one capability, `sidebarSide: "left" | "right"`. It is
 not a patch framework, and a second capability is a new decision, not an
 extension of this one.
+
+## 2026-09-22 – A dropped outline entry is a section, not a page bookmark
+
+**Decision:** Dragging an entry out of the reader's outline creates an ordinary
+`file` tool — the same action a dropped annotation creates — carrying the
+reader's own navigation subpath AND a `section` description of what that subpath
+points at: title, depth, ancestor titles, page index, printed page label, and
+the page where the next entry at the same or a shallower level begins.
+
+**Reason:** the two halves answer different questions and age differently.
+Navigation is solved by the channel that already exists, so it needed nothing
+new: ZotFlow parses `annotation=<urlencoded JSON>` out of a subpath and hands
+the parsed object straight to the reader's `navigate()`, which accepts a
+position as readily as an annotation id — verified end to end against a live
+reader. The description is what makes the tool a *section* rather than "page 106
+of some PDF", and it is the part later work (extracting a section, acting on
+several chapters at once) will read. A bare subpath would have thrown it away
+at the moment of the drop, when it is the only moment it is free.
+
+**Why not a new action type:** a new type makes every tool of that type inert in
+any build that does not know it — including an older one, and including the
+panel with the companion plugin uninstalled — and buys nothing, because the
+behaviour is exactly "open this file at this subpath". `section` is additive and
+optional: navigation is identical with or without it, and no settings version
+bump is involved. The precedent is the annotation bookmark, decided the same way
+for the same reason.
+
+**Not stored, deliberately:** an end page. The outline gives a start and the
+neighbour's start; a section's end is not in the document's table of contents,
+and `nextPageIndex` is named for what it is — a neighbour's start — rather than
+presented as a boundary that was measured. A successor that shares the page, or
+has no destination, records nothing at all.
+
+**Transport:** one MIME type, `application/x-dap-reader-object`, whose payload
+names its own `kind`. A later reader object travels the same channel without a
+second type and without the panel guessing from shape. The panel rebuilds the
+payload field by field, like every other foreign input.
+
+**Correlation:** the rendered row is matched to its node by its index PATH
+through the list, never by `id="outline-N"` or `data-id` — those are positions in
+the currently rendered sequence and renumber on every expand. Verified against a
+fully expanded 211-entry outline: 211 of 211 rows resolved to the right node.

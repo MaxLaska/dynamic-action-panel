@@ -323,6 +323,7 @@
     "script_outside_script_folder": "Tool created — it opens the script file. Run script only finds scripts inside the configured script folder.",
     "annotation_not_identified": "Could not tell which annotation was dragged. Click it in the reader first, then drag it again.",
     "slot_annotation_created": "Annotation shortcut created — it reopens this annotation.",
+    "slot_section_created": "Section shortcut created — it opens the document at this section.",
     "grid_handle_column_tooltip": "Add a column, or drag to resize (currently {count})",
     "grid_handle_row_tooltip": "Add a row, or drag to resize (currently {count})",
     "grid_handle_column_max_tooltip": "Maximum of {count} columns — drag to resize",

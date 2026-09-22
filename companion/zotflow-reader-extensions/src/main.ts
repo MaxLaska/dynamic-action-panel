@@ -24,6 +24,11 @@ import {
     type SidebarSide,
 } from './sidebarSide';
 import { applySide, bindReader, removePatch, type ReaderBinding } from './sidebarPatch';
+import {
+    bindOutlineDrag,
+    markOutlineRowsDraggable,
+    type OutlineBinding,
+} from './outlineDrag';
 
 /**
  * How long to keep looking for a reader iframe that has not loaded yet.
@@ -42,11 +47,20 @@ export default class ZotflowReaderExtensionsPlugin extends Plugin {
     /** One binding per live reader document; the key is the document itself. */
     private bindings = new Map<Document, ReaderBinding>();
 
+    /** The outline drag binding of each live reader document. */
+    private outlineBindings = new Map<Document, OutlineBinding>();
+
+    /** Vault path of the document each reader shows, recorded when it is patched. */
+    private readerFiles = new Map<Document, string>();
+
     /** Pending readiness retries, so unload can cancel them. */
     private timers = new Set<number>();
 
     /** Documents already reported as structurally unfamiliar, to log once. */
     private warned = new WeakSet<Document>();
+
+    /** Documents whose outline already failed to describe a row, to log once. */
+    private warnedOutline = new WeakSet<Document>();
 
     async onload(): Promise<void> {
         this.settings = normalizeSettings(await this.loadData());
@@ -63,6 +77,8 @@ export default class ZotflowReaderExtensionsPlugin extends Plugin {
     onunload(): void {
         for (const timer of this.timers) window.clearTimeout(timer);
         this.timers.clear();
+        for (const binding of this.outlineBindings.values()) binding.disconnect();
+        this.outlineBindings.clear();
         for (const [doc, binding] of this.bindings) {
             binding.disconnect();
             // Leaving our class behind would strand the sidebar on the right
@@ -103,6 +119,9 @@ export default class ZotflowReaderExtensionsPlugin extends Plugin {
             if (!doc.defaultView) {
                 binding.disconnect();
                 this.bindings.delete(doc);
+                this.outlineBindings.get(doc)?.disconnect();
+                this.outlineBindings.delete(doc);
+                this.readerFiles.delete(doc);
             }
         }
     }
@@ -112,7 +131,14 @@ export default class ZotflowReaderExtensionsPlugin extends Plugin {
         const doc = iframe instanceof HTMLIFrameElement ? iframe.contentDocument : null;
 
         if (doc && applySide(doc, this.currentSide())) {
+            // Which document this reader shows is known out here, never inside
+            // the frame: the reader knows its pages, the workspace knows its
+            // file. Recorded per document so a drag can name the file without
+            // searching the workspace at drag time.
+            const file = (leaf.view as { file?: { path?: unknown } }).file;
+            if (file && typeof file.path === 'string') this.readerFiles.set(doc, file.path);
             this.ensureBound(doc);
+            markOutlineRowsDraggable(doc);
             return;
         }
 
@@ -140,7 +166,34 @@ export default class ZotflowReaderExtensionsPlugin extends Plugin {
                 currentSide: this.currentSide,
                 onToggleContextMenu: (event) => this.showSideMenu(doc, event),
                 onStructureLost: () => this.warnStructureLost(doc),
+                // The outline is re-rendered on every expand, collapse and tab
+                // switch, so freshly rendered rows are marked from the same
+                // observer instead of a second one — and never by polling.
+                onReaderMutated: () => markOutlineRowsDraggable(doc),
             })
+        );
+        this.outlineBindings.set(
+            doc,
+            bindOutlineDrag(doc, {
+                filePath: () => this.readerFiles.get(doc) ?? null,
+                onPayloadFailed: (reason) => this.warnOutlineDrag(doc, reason),
+            })
+        );
+    }
+
+    /**
+     * Says once, per reader document, that a section could not be described.
+     *
+     * Silent failure is the right behaviour for the user — the drag simply
+     * carries nothing and the panel ignores it — but a reader whose outline has
+     * moved out from under this plugin should say so somewhere.
+     */
+    private warnOutlineDrag(doc: Document, reason: string): void {
+        if (this.warnedOutline.has(doc)) return;
+        this.warnedOutline.add(doc);
+        console.warn(
+            `[ZotFlow Reader Extensions] An outline entry could not be described, ` +
+                `so nothing was put on the drag: ${reason}`
         );
     }
 

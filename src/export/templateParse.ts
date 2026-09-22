@@ -28,7 +28,7 @@
 // with a clear reason instead of being best-effort guessed at; older versions
 // would be migrated in `migrateTemplateDocument` below.
 
-import type { ButtonAction } from '@/types/action';
+import type { ButtonAction, DocumentSectionRef } from '@/types/action';
 import type { ButtonCondition } from '@/types/conditions';
 import type { GridCellStyle, GridCellStyles } from '@/types/settings';
 import { isGridCellColor, parseGridCellKey } from '@/utils/categoryGrid';
@@ -278,6 +278,58 @@ function readOptionalCondition(
 
 // --- Actions --------------------------------------------------------------------
 
+/** A non-negative integer of an imported payload, or undefined. */
+function optionalPageIndex(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0
+        ? value
+        : undefined;
+}
+
+/**
+ * Rebuild the section description of a `file` action, or drop it.
+ *
+ * Deliberately lenient where the rest of this file is strict: a section is
+ * DESCRIPTION, never instruction. Nothing is executed from it and nothing
+ * depends on it, so a template carrying a damaged one should import with the
+ * tool intact and the description gone — refusing the whole file would trade a
+ * working shortcut for a missing tooltip. The title and page index are the
+ * minimum that still describes something; without them there is nothing to keep.
+ */
+function readSection(value: unknown, path: string): DocumentSectionRef | undefined {
+    if (value === undefined || value === null || typeof value !== 'object') {
+        return undefined;
+    }
+    const node = value as Record<string, unknown>;
+    const rawTitle = own(node, 'title');
+    const pageIndex = optionalPageIndex(own(node, 'pageIndex'));
+    if (typeof rawTitle !== 'string' || rawTitle.trim().length === 0 || pageIndex === undefined) {
+        return undefined;
+    }
+    const title = readString(rawTitle, `${path}.title`, MAX_TEXT_LENGTH).trim();
+    const parentsValue = own(node, 'parents');
+    const parents = Array.isArray(parentsValue)
+        ? (parentsValue as unknown[])
+              .filter((entry): entry is string => typeof entry === 'string')
+              .map((entry) => readString(entry, `${path}.parents[]`, MAX_TEXT_LENGTH).trim())
+              .filter((entry) => entry.length > 0)
+        : [];
+    const rawLabel = own(node, 'pageLabel');
+    const pageLabel =
+        typeof rawLabel === 'string' && rawLabel.trim().length > 0
+            ? readString(rawLabel, `${path}.pageLabel`, MAX_TEXT_LENGTH).trim()
+            : undefined;
+    const nextPageIndex = optionalPageIndex(own(node, 'nextPageIndex'));
+
+    return {
+        title,
+        level: optionalPageIndex(own(node, 'level')) ?? 0,
+        ...(parents.length > 0 ? { parents } : {}),
+        pageIndex,
+        ...(pageLabel !== undefined ? { pageLabel } : {}),
+        ...(nextPageIndex !== undefined && nextPageIndex > pageIndex ? { nextPageIndex } : {}),
+    };
+}
+
 /**
  * Validate and rebuild one action. Only the parameters the action type knows
  * are copied; external targets (file path, script name, command id, URL) are
@@ -307,6 +359,18 @@ function readAction(value: unknown, path: string): ButtonAction {
                               ),
                           }
                         : {}),
+                    // A section describes what the subpath points at. It is
+                    // rebuilt rather than copied, like everything else crossing
+                    // this boundary, and a malformed one is dropped instead of
+                    // rejecting the template: the tool still opens and still
+                    // navigates without it.
+                    ...(() => {
+                        const section = readSection(
+                            own(parameters, 'section'),
+                            `${path}.parameters.section`
+                        );
+                        return section ? { section } : {};
+                    })(),
                 },
             };
         case 'url':

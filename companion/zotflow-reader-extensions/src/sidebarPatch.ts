@@ -195,6 +195,12 @@ export function bindReader(
         currentSide(): SidebarSide;
         onToggleContextMenu(event: MouseEvent): void;
         onStructureLost(): void;
+        /**
+         * Called once per animation frame in which the reader's UI changed, so
+         * other features can re-assert themselves on freshly rendered nodes
+         * without observers of their own.
+         */
+        onReaderMutated?(): void;
     }
 ): ReaderBinding {
     const win = doc.defaultView;
@@ -252,19 +258,34 @@ export function bindReader(
     doc.addEventListener('pointerup', onPointerUp, true);
     doc.addEventListener('contextmenu', onContextMenu, true);
 
-    const toolbar = doc.querySelector(SELECTORS.toolbar);
+    // The reader's whole UI root, so one observer covers the toolbar AND the
+    // sidebar — the outline list is re-rendered on every expand, collapse and
+    // tab switch. The document's own rendering is not seen from here at all: the
+    // pages live in a nested iframe with its own document.
+    const uiRoot =
+        doc.querySelector(SELECTORS.readerUi) ?? doc.querySelector(SELECTORS.toolbar);
+
+    // Coalesced to one run per frame. A React re-render arrives as a burst of
+    // records, and re-asserting once per burst is both enough and cheap; this
+    // is an observer, so nothing runs at all while the reader is idle.
+    let scheduled = 0;
     const observer = new win.MutationObserver(() => {
-        const side = options.currentSide();
-        // Re-assert rather than re-apply: this fires for our own moves too, and
-        // applySide would be a loop. `placeToggle` is a no-op when the toggle
-        // already sits where it belongs, which is the common case.
-        if (!applySide(doc, side)) options.onStructureLost();
+        if (scheduled) return;
+        scheduled = win.requestAnimationFrame(() => {
+            scheduled = 0;
+            // Re-assert rather than re-apply: this fires for our own moves too,
+            // and `placeToggle` is a no-op when the toggle already sits where it
+            // belongs, which is the common case.
+            if (!applySide(doc, options.currentSide())) options.onStructureLost();
+            options.onReaderMutated?.();
+        });
     });
-    if (toolbar) observer.observe(toolbar, { childList: true, subtree: true });
+    if (uiRoot) observer.observe(uiRoot, { childList: true, subtree: true });
 
     return {
         disconnect(): void {
             observer.disconnect();
+            if (scheduled) win.cancelAnimationFrame(scheduled);
             doc.removeEventListener('pointerdown', onPointerDown, true);
             doc.removeEventListener('pointermove', onPointerMove, true);
             doc.removeEventListener('pointerup', onPointerUp, true);

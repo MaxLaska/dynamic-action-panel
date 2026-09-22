@@ -2,6 +2,41 @@
 // Types for button actions.
 
 /**
+ * A section of a document, as its own table of contents describes it.
+ *
+ * This is DESCRIPTION, not instruction: the action already knows how to get
+ * there (`filePath` + `subpath`), and nothing here is read to navigate. It says
+ * WHAT the destination is, so that a tool created from a document outline stays
+ * a section rather than decaying into "page 106 of some PDF" — which is what a
+ * bare subpath would leave behind.
+ *
+ * Every field is captured once, at the moment of the drop, and never
+ * synchronised afterwards. It is a snapshot of the document's own structure,
+ * which is exactly as stable as the document is.
+ */
+export interface DocumentSectionRef {
+    /** The entry's title, as the document states it. */
+    title: string;
+    /** Depth in the outline tree; 0 is a top-level entry. */
+    level: number;
+    /** Ancestor titles, outermost first, excluding the entry itself. */
+    parents?: string[];
+    /** 0-based page index the entry points at. */
+    pageIndex: number;
+    /** Printed page label of that page, which need not be `pageIndex + 1`. */
+    pageLabel?: string;
+    /**
+     * Where the next entry at the same or a shallower level begins.
+     *
+     * A neighbour's start, read off the same outline — NOT an end, and never an
+     * estimate. A section whose successor is unknown, or which shares its page,
+     * simply omits this rather than carrying a guess that later work would
+     * mistake for a measurement.
+     */
+    nextPageIndex?: number;
+}
+
+/**
  * Parameters of the "open file" action.
  */
 export interface FileActionParams {
@@ -15,6 +50,17 @@ export interface FileActionParams {
      * Absent means "just open the file", which is the historical behaviour.
      */
     subpath?: string;
+    /**
+     * What the subpath POINTS AT, when the drop that created this tool knew.
+     *
+     * Purely additive and never required: the action opens and navigates
+     * identically with or without it, and a build that has never heard of it
+     * still opens the file at the right place. That is the whole reason this is
+     * a field on the existing action rather than an action type of its own — a
+     * new type would make every one of these tools inert in any build that does
+     * not know it, for no gain in what they do.
+     */
+    section?: DocumentSectionRef;
 }
 
 /**

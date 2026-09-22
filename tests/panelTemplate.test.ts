@@ -19,6 +19,7 @@ import {
     serializeTemplateDocument,
     templateFileName,
 } from '@/export/templateExport';
+import type { ButtonAction } from '@/types/action';
 import { parseTemplateDocument, validateTemplateDocument } from '@/export/templateParse';
 import {
     collectTemplateExternalReferences,
@@ -1034,5 +1035,113 @@ describe('serialization', () => {
         expect(parsed.ok).toBe(true);
         if (!parsed.ok) return;
         expect(parsed.document.categories).toEqual(document.categories);
+    });
+});
+
+// --- Document sections --------------------------------------------------------
+
+describe('a section survives a template roundtrip', () => {
+    const section = {
+        title: '1.3 Verhalten an der Hochschule',
+        level: 2,
+        parents: ['A Soziale Arbeit studieren', '1 Studieren'],
+        pageIndex: 105,
+        pageLabel: '106',
+        nextPageIndex: 110,
+    };
+
+    const sectionTool = () =>
+        tool('sec', {
+            name: '1.3 Verhalten an der Hochschule',
+            actions: [
+                {
+                    type: 'file' as const,
+                    parameters: {
+                        filePath: 'refs/Book.pdf',
+                        subpath: '#page=106#annotation=%7B%22position%22%3A%7B%7D%7D',
+                        section,
+                    },
+                },
+            ],
+        });
+
+    it('carries the description through export and import', () => {
+        const source = stateOf(registryOf(sectionTool()), storedGrid([p('sec', 0)], { id: 'cat' }));
+        const { state } = roundtrip(source, 'cat');
+        const action = Object.values(state.tools)[0]!.actions[0]!;
+        expect(action.type).toBe('file');
+        expect(action.type === 'file' && action.parameters.section).toEqual(section);
+    });
+
+    it('keeps the navigation subpath beside it', () => {
+        const source = stateOf(registryOf(sectionTool()), storedGrid([p('sec', 0)], { id: 'cat' }));
+        const { state } = roundtrip(source, 'cat');
+        const action = Object.values(state.tools)[0]!.actions[0]!;
+        expect(action.type === 'file' && action.parameters.subpath).toMatch(/^#page=106#/);
+    });
+
+    // A section is description, never instruction. A damaged one must cost the
+    // tooltip, not the tool: refusing the whole import would trade a working
+    // shortcut for a missing hover text.
+    it.each([
+        ['no title', { pageIndex: 3 }],
+        ['a blank title', { title: '   ', pageIndex: 3 }],
+        ['no page index', { title: 'Chapter' }],
+        ['a negative page index', { title: 'Chapter', pageIndex: -2 }],
+        ['a section that is not an object', 'nope'],
+        ['a null section', null],
+    ])('imports the tool without the description when it has %s', (_label, broken) => {
+        const document: TemplateDocument = {
+            format: OCAP_TEMPLATE_FORMAT,
+            formatVersion: 1,
+            categories: [{ id: 'c', name: 'C', placements: [{ toolId: 't', slot: 0 }] }],
+            tools: {
+                t: {
+                    id: 't',
+                    name: 'T',
+                    actions: [
+                        {
+                            type: 'file',
+                            parameters: { filePath: 'a.pdf', section: broken },
+                        } as unknown as ButtonAction,
+                    ],
+                },
+            },
+        };
+        const parsed = parseTemplateDocument(JSON.stringify(document));
+        expect(parsed.ok).toBe(true);
+        if (!parsed.ok) throw new Error('parse failed');
+        const action = parsed.document.tools['t']!.actions[0]!;
+        expect(action.type).toBe('file');
+        expect(action.type === 'file' && action.parameters.filePath).toBe('a.pdf');
+        expect(action.type === 'file' && action.parameters.section).toBeUndefined();
+    });
+
+    it('drops a boundary that does not lie after the section', () => {
+        const document: TemplateDocument = {
+            format: OCAP_TEMPLATE_FORMAT,
+            formatVersion: 1,
+            categories: [{ id: 'c', name: 'C', placements: [{ toolId: 't', slot: 0 }] }],
+            tools: {
+                t: {
+                    id: 't',
+                    name: 'T',
+                    actions: [
+                        {
+                            type: 'file',
+                            parameters: {
+                                filePath: 'a.pdf',
+                                section: { title: 'Chapter', pageIndex: 10, nextPageIndex: 4 },
+                            },
+                        } as unknown as ButtonAction,
+                    ],
+                },
+            },
+        };
+        const parsed = parseTemplateDocument(JSON.stringify(document));
+        if (!parsed.ok) throw new Error('parse failed');
+        const action = parsed.document.tools['t']!.actions[0]!;
+        expect(action.type === 'file' && action.parameters.section?.nextPageIndex).toBeUndefined();
+        expect(action.type === 'file' && action.parameters.section?.title).toBe('Chapter');
     });
 });
