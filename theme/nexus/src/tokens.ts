@@ -41,7 +41,7 @@ export const NEXUS_THEME_NAME = 'Nexus';
 export const NEXUS_TOKENS_CHANGED_EVENT = 'nexus-theme-tokens-changed';
 
 /** The sections the editor groups its controls into, in display order. */
-export const NEXUS_GROUPS = ['workspace', 'document', 'interaction', 'text'] as const;
+export const NEXUS_GROUPS = ['workspace', 'document', 'interaction', 'text', 'typography'] as const;
 
 export type NexusTokenGroup = (typeof NEXUS_GROUPS)[number];
 
@@ -50,17 +50,37 @@ export const NEXUS_GROUP_LABELS: Record<NexusTokenGroup, string> = {
     document: 'Document and reader',
     interaction: 'Interaction',
     text: 'Text',
+    typography: 'Typography',
 };
 
 /**
- * The only control kind v0.1 has.
+ * What kind of control a token gets. Exactly the kinds the table uses — this is
+ * not a forms vocabulary, and a new kind is a new decision.
  *
- * A colour, edited with a picker AND a text field — the picker for the common
- * case, the text field because the stored value has to stay CSS, and CSS
- * colours are not all six hex digits. `rgba()`, `hsl()` and `color-mix()` are
- * values this project already relies on elsewhere.
+ *   color        a picker, an opacity where `supportsAlpha`, and the raw CSS.
+ *                Colours are not all six hex digits: `rgba()`, `hsl()` and
+ *                `color-mix()` are values this project already relies on.
+ *   length       a CSS length, with a slider over `range` for the common case
+ *                and the raw CSS for everything else (`calc()`, `clamp()`).
+ *   number       a unitless number, same shape.
+ *   font-family  a CSS font-family list, typed or taken from `suggestions`.
  */
-export type NexusControlType = 'color';
+export type NexusControlType = 'color' | 'length' | 'number' | 'font-family';
+
+/** The slider a `length` or `number` token offers; the raw value may leave it. */
+export interface NexusTokenRange {
+    min: number;
+    max: number;
+    step: number;
+    /** The unit a slider value is written in. Absent for a unitless number. */
+    unit?: 'px';
+}
+
+/** One suggestion for a `font-family` token: a name for people, a value for CSS. */
+export interface NexusFontSuggestion {
+    label: string;
+    value: string;
+}
 
 export interface ThemeTokenDefinition {
     /** Stable identity in stored profiles. Never derived from the label. */
@@ -98,6 +118,10 @@ export interface ThemeTokenDefinition {
      * question actually being asked, which is "where are the splitters".
      */
     locateAlso?: string[];
+    /** The slider range, for `length` and `number` tokens. */
+    range?: NexusTokenRange;
+    /** Suggested values, for `font-family` tokens. Free CSS stays allowed. */
+    suggestions?: readonly NexusFontSuggestion[];
 }
 
 /**
@@ -230,6 +254,103 @@ export const NEXUS_TOKENS: readonly ThemeTokenDefinition[] = [
         defaultValue: '#b3b3b3',
         description: 'Secondary text: section headers, counts, placeholders.',
     },
+
+    // --- typography ------------------------------------------------------------
+    //
+    // Mapped onto the hooks Obsidian 1.13.7 itself provides for themes, read in
+    // its app.css rather than guessed:
+    //
+    //   --font-interface = override, THEME, legacy default, --font-default
+    //       Appearance → Interface font writes the override, and it wins. A
+    //       theme sets --font-interface-theme. So does Nexus, and a font chosen
+    //       under Appearance still beats it — as Obsidian intends.
+    //   --font-ui-smaller/small/medium/large = 12/13/15/20px on desktop
+    //       There is no single UI size variable; the four steps are fixed. The
+    //       token is the SMALL step (tabs, file explorer, settings — where most
+    //       interface text lives), and the other three keep their proportion to
+    //       it, so the default reproduces 12/13/15/20 exactly.
+    //   --line-height-tight = 1.3
+    //       The line height `body` sets for the interface. Notes use
+    //       --line-height-normal, which this does not touch.
+    //
+    // No UI font WEIGHT, on purpose. Obsidian has none: --font-weight is the
+    // weight of NOTE text (bold, links and callout titles are calc()ed from
+    // it), and `body` sets no weight at all. A rule forcing one would reach into
+    // notes and lose to every component that sets its own.
+    {
+        key: 'uiFontFamily',
+        cssVariable: '--nexus-ui-font-family',
+        label: 'UI font',
+        group: 'typography',
+        controlType: 'font-family',
+        // Obsidian's own default stack, referenced rather than copied: copying
+        // it would freeze today's list into every profile. A font chosen under
+        // Appearance → Interface font still takes precedence.
+        defaultValue: 'var(--font-default)',
+        description:
+            'The interface typeface. A font chosen under Appearance → Interface font takes precedence.',
+        suggestions: [
+            { label: 'Obsidian default', value: 'var(--font-default)' },
+            { label: 'System UI', value: 'system-ui, sans-serif' },
+            { label: 'Inter (ships with Obsidian)', value: '"Inter Variable", "Inter", sans-serif' },
+            { label: 'Segoe UI', value: '"Segoe UI", system-ui, sans-serif' },
+            { label: 'Serif', value: 'Georgia, "Times New Roman", serif' },
+            { label: 'Monospace', value: 'var(--font-monospace)' },
+        ],
+    },
+    {
+        key: 'uiFontSize',
+        cssVariable: '--nexus-ui-font-size',
+        label: 'UI text size',
+        group: 'typography',
+        controlType: 'length',
+        defaultValue: '13px',
+        description:
+            'Tabs, file explorer, settings and menus. Larger and smaller UI text keep their proportion to it.',
+        range: { min: 10, max: 20, step: 0.5, unit: 'px' },
+    },
+    {
+        key: 'uiLineHeight',
+        cssVariable: '--nexus-ui-line-height',
+        label: 'UI line height',
+        group: 'typography',
+        controlType: 'number',
+        defaultValue: '1.3',
+        description: 'Spacing between lines of interface text. Note text is not affected.',
+        range: { min: 1, max: 2, step: 0.05 },
+    },
+];
+
+/**
+ * Text and surface pairs whose contrast the studio reports.
+ *
+ * Only pairs that are REAL on screen — a text token actually drawn on that
+ * surface — because a contrast figure for a pair that never meets is a number
+ * that reassures about nothing:
+ *
+ *   text on the docks          file explorer, panels, dock views
+ *   text on the page           editors and previews
+ *   muted text on the docks    file explorer items (--nav-item-color)
+ *   muted text on the page     secondary text in notes and views
+ *   muted text on the tab strip  tab titles in a focused group
+ *                              (--tab-text-color-focused), on document chrome
+ *
+ * Text on the reader's panel is deliberately NOT here. The reader draws its
+ * sidebar text in its own colour, inside its iframe; `--nexus-text-primary`
+ * never reaches it. That pair exists only on paper.
+ */
+export interface NexusContrastPair {
+    text: string;
+    surface: string;
+    label: string;
+}
+
+export const NEXUS_CONTRAST_PAIRS: readonly NexusContrastPair[] = [
+    { text: 'textPrimary', surface: 'workspaceSurface', label: 'Text on the docks' },
+    { text: 'textPrimary', surface: 'documentSurface', label: 'Text on the page' },
+    { text: 'textMuted', surface: 'workspaceSurface', label: 'Muted text on the docks' },
+    { text: 'textMuted', surface: 'documentSurface', label: 'Muted text on the page' },
+    { text: 'textMuted', surface: 'documentChrome', label: 'Tab titles on the tab strip' },
 ];
 
 /** Every Nexus custom property, in table order. */

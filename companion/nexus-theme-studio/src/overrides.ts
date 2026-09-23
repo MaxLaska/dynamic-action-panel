@@ -13,7 +13,11 @@
 // grammar; it is "one CSS declaration value, and nothing that could be a second
 // declaration".
 
-import { NEXUS_TOKENS, nexusToken } from '../../../theme/nexus/src/tokens';
+import {
+    NEXUS_TOKENS,
+    nexusToken,
+    type ThemeTokenDefinition,
+} from '../../../theme/nexus/src/tokens';
 
 /**
  * The longest value accepted.
@@ -86,6 +90,61 @@ export function isValidTokenValue(value: unknown): value is string {
     return depth === 0;
 }
 
+/**
+ * CSS functions a length or number may be written as, and that this file does
+ * not try to evaluate. `calc(13px * 1.1)` is a length; so is `var(--x)`. The
+ * browser decides the rest; this only refuses what can never be one.
+ */
+const COMPUTED_VALUE = /^(calc|clamp|min|max|var)\(/i;
+
+/**
+ * The bounds a plain value must fall in to be stored.
+ *
+ * Wider than the slider on purpose — the raw field exists for values the slider
+ * does not offer — but not unbounded. A 2px interface cannot be used to set it
+ * back, and the studio's own text does not shrink with it (it has its own
+ * palette), so this is the one place a nonsensical size can be stopped.
+ */
+const LENGTH_BOUNDS: Record<string, [number, number]> = {
+    px: [6, 48],
+    em: [0.4, 3],
+    rem: [0.4, 3],
+};
+const NUMBER_BOUNDS: [number, number] = [0.8, 3];
+
+/**
+ * Whether a value may be stored for THIS token.
+ *
+ * The general rule (`isValidTokenValue`) keeps anything that could become a
+ * second declaration out. This adds what the token's kind requires, because
+ * the kinds fail differently: a colour that is not a colour is ignored by the
+ * one property that spends it, but a font size that is not a length makes every
+ * interface text size derived from it invalid at once.
+ */
+export function isValidValueFor(token: ThemeTokenDefinition, value: unknown): value is string {
+    if (!isValidTokenValue(value)) return false;
+    const text = value.trim();
+    switch (token.controlType) {
+        case 'color':
+        case 'font-family':
+            return true;
+        case 'length': {
+            if (COMPUTED_VALUE.test(text)) return true;
+            const match = /^(\d*\.?\d+)(px|em|rem)$/i.exec(text);
+            if (!match) return false;
+            const bounds = LENGTH_BOUNDS[(match[2] ?? '').toLowerCase()];
+            const amount = Number(match[1]);
+            return !!bounds && amount >= bounds[0] && amount <= bounds[1];
+        }
+        case 'number': {
+            if (COMPUTED_VALUE.test(text)) return true;
+            if (!/^\d*\.?\d+$/.test(text)) return false;
+            const amount = Number(text);
+            return amount >= NUMBER_BOUNDS[0] && amount <= NUMBER_BOUNDS[1];
+        }
+    }
+}
+
 /** A stored profile's overrides: token key to CSS value. */
 export type TokenOverrides = Record<string, string>;
 
@@ -103,8 +162,9 @@ export function sanitizeOverrides(raw: unknown): TokenOverrides {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
     const result: TokenOverrides = {};
     for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-        if (!nexusToken(key)) continue;
-        if (!isValidTokenValue(value)) continue;
+        const token = nexusToken(key);
+        if (!token) continue;
+        if (!isValidValueFor(token, value)) continue;
         result[key] = value.trim();
     }
     return result;
@@ -124,7 +184,7 @@ export function overrideDeclarations(overrides: TokenOverrides): Array<[string, 
     for (const token of NEXUS_TOKENS) {
         const value = overrides[token.key];
         if (value === undefined) continue;
-        if (!isValidTokenValue(value)) continue;
+        if (!isValidValueFor(token, value)) continue;
         pairs.push([token.cssVariable, value.trim()]);
     }
     return pairs;
@@ -135,12 +195,13 @@ export function effectiveValue(overrides: TokenOverrides, key: string): string {
     const token = nexusToken(key);
     if (!token) return '';
     const override = overrides[key];
-    return isValidTokenValue(override) ? override.trim() : token.defaultValue;
+    return isValidValueFor(token, override) ? override.trim() : token.defaultValue;
 }
 
 /** Whether a profile says anything of its own about a token. */
 export function isOverridden(overrides: TokenOverrides, key: string): boolean {
-    return isValidTokenValue(overrides[key]);
+    const token = nexusToken(key);
+    return !!token && isValidValueFor(token, overrides[key]);
 }
 
 /**
