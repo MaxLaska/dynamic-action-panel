@@ -93,8 +93,9 @@ What a colour row gives you: the swatch, a compact readout (`#333333`, and
 - **The pipette icon** next to it is a tool you switch on. While it is on,
   every click anywhere in Obsidian takes the colour under it into the picker and
   into Recent, and the picker stays visible, so you can collect colour after
-  colour without switching it on again. A small loupe beside the cursor shows
-  the colour under it, ringed by the current one. From the keyboard, the arrows
+  colour without switching it on again. While it is on, the cursor itself is a
+  pipette, and a small loupe above and to the right of it shows the colour under
+  the tip, ringed by the current one. From the keyboard, the arrows
   move a reticle one pixel (ten with Shift) and Enter or Space takes the pixel.
   Hold **Alt** to sample only while it is held. Click the pipette again, or press
   Escape, to stop; the picker stays open. It sees only this window, so no

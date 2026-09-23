@@ -19,7 +19,13 @@ import {
     insertIndexAt,
     type Box,
 } from '../companion/nexus-theme-studio/src/colorPicker';
-import { CANDIDATE_INTERVAL_MS } from '../companion/nexus-theme-studio/src/sampler';
+import {
+    CANDIDATE_INTERVAL_MS,
+    LOUPE_DX,
+    LOUPE_DY,
+    LOUPE_SIZE,
+    loupePosition,
+} from '../companion/nexus-theme-studio/src/sampler';
 import {
     describeColor,
     hslToRgba,
@@ -1236,8 +1242,9 @@ describe('the pipette is a tool that stays on', () => {
         const loupe = document.querySelector<HTMLElement>('.nexus-studio-sample-loupe')!;
         expect(loupe.hidden).toBe(false);
         expect(loupe.querySelector<HTMLElement>('.nexus-studio-sample-candidate')!.style.getPropertyValue('--nexus-studio-loupe-candidate')).toBe('#405060');
-        // Beside the hot spot, never on it.
+        // North-east of the hot spot, never on it.
         expect(parseInt(loupe.style.left, 10)).toBeGreaterThan(139);
+        expect(parseInt(loupe.style.top, 10) + LOUPE_SIZE).toBeLessThan(100);
         // Moving is looking: nothing is recorded or saved.
         expect(ui.settings.recentColors).toEqual([]);
         expect(ui.log.updateUiLater).toBe(0);
@@ -1258,6 +1265,176 @@ describe('the pipette is a tool that stays on', () => {
         const ui = mount();
         openFor(ui, WORKSPACE.key);
         expect(popover()!.querySelector('.nexus-studio-cp-sample')).toBeNull();
+    });
+});
+
+describe('the pipette cursor is on exactly while the sampler is', () => {
+    /**
+     * The pipette cursor is carried by the sampling layer and by the picker's
+     * `is-sampling-mode` (see styles.css), so "is it showing" is "are they
+     * there". The computed cursor itself is checked live by the smoke.
+     */
+    const showing = () => ({
+        layer: !!document.querySelector('.nexus-studio-pick-shield.is-persistent'),
+        picker: !!document.querySelector('.nexus-studio-popover.is-sampling-mode'),
+    });
+    const off = { layer: false, picker: false };
+    const on = { layer: true, picker: true };
+    const altDown = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt', altKey: true, bubbles: true, cancelable: true }));
+    const altUp = () => document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Alt', bubbles: true, cancelable: true }));
+
+    it('is not on in the ordinary picker', () => {
+        installCapture([0, 0, 0, 255]);
+        openFor(mount(), WORKSPACE.key);
+        expect(showing()).toEqual(off);
+    });
+
+    it('comes with the pipette, stays through sample after sample, and goes with Escape', async () => {
+        const pixel = installCapture([1, 1, 1, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        expect(showing()).toEqual(on);
+        press(shield()!);
+        await settle();
+        expect(showing()).toEqual(on);
+        pixel.set([2, 2, 2, 255]);
+        press(shield()!);
+        await settle();
+        expect(showing()).toEqual(on);
+        expect(ui.settings.recentColors).toEqual(['#020202', '#010101']);
+        key(document, 'Escape');
+        expect(showing()).toEqual(off);
+        expect(popovers()).toHaveLength(1);
+    });
+
+    it('goes when the pipette is switched off', () => {
+        installCapture([0, 0, 0, 255]);
+        openFor(mount(), WORKSPACE.key);
+        pipette().click();
+        pipette().click();
+        expect(showing()).toEqual(off);
+    });
+
+    it('comes with Alt and goes when Alt is let go', () => {
+        installCapture([0, 0, 0, 255]);
+        openFor(mount(), WORKSPACE.key);
+        altDown();
+        expect(showing()).toEqual(on);
+        altUp();
+        expect(showing()).toEqual(off);
+    });
+
+    it('stays when Alt is let go over a switched-on pipette', () => {
+        installCapture([0, 0, 0, 255]);
+        openFor(mount(), WORKSPACE.key);
+        pipette().click();
+        altDown();
+        altUp();
+        expect(showing()).toEqual(on);
+    });
+
+    it('does not hang after the window loses focus with Alt held', () => {
+        installCapture([0, 0, 0, 255]);
+        openFor(mount(), WORKSPACE.key);
+        altDown();
+        window.dispatchEvent(new Event('blur'));
+        expect(showing()).toEqual(off);
+    });
+
+    it('does not hang after the picker closes', () => {
+        installCapture([0, 0, 0, 255]);
+        openFor(mount(), WORKSPACE.key);
+        pipette().click();
+        press(inPicker('.nexus-studio-cp-done'));
+        expect(showing()).toEqual(off);
+        expect(document.querySelector('.nexus-studio-pick-shield')).toBeNull();
+    });
+
+    // Unloading the plugin closes its views; a view closing disposes its panel.
+    it('does not hang after the view goes, as it does when the plugin unloads', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        ui.panel.dispose();
+        expect(showing()).toEqual(off);
+        expect(document.querySelector('.nexus-studio-pick-shield, .nexus-studio-sample-loupe')).toBeNull();
+    });
+});
+
+describe('the loupe sits north-east of the hot spot', () => {
+    const W = 1000;
+    const H = 800;
+    const box = (x: number, y: number) => {
+        const at = loupePosition(x, y, W, H);
+        return { ...at, right: at.left + LOUPE_SIZE, bottom: at.top + LOUPE_SIZE };
+    };
+    const coversHotSpot = (x: number, y: number) => {
+        const b = box(x, y);
+        return x >= b.left && x <= b.right && y >= b.top && y <= b.bottom;
+    };
+
+    it('is to the right of and above the hot spot, clear of the pipette\'s tip', () => {
+        const b = box(500, 400);
+        expect(b.left).toBe(500 + LOUPE_DX);
+        expect(b.bottom).toBe(400 - LOUPE_DY);
+        expect(b.left).toBeGreaterThan(500);
+        expect(b.bottom).toBeLessThan(400);
+        expect(coversHotSpot(500, 400)).toBe(false);
+    });
+
+    it('follows the cursor north-east, not south-east, anywhere with room', () => {
+        for (const [x, y] of [[60, 60], [300, 700], [900, 500], [40, 790]] as const) {
+            const b = box(x, y);
+            expect(b.left).toBeGreaterThan(x);
+            expect(b.bottom).toBeLessThan(y);
+        }
+    });
+
+    it('slides down along the top edge, still to the right and clear of the tip', () => {
+        const b = box(500, 10);
+        expect(b.top).toBe(2);
+        expect(b.left).toBe(520);
+        expect(coversHotSpot(500, 10)).toBe(false);
+    });
+
+    it('slides left along the right edge, still above the tip', () => {
+        const b = box(990, 400);
+        expect(b.right).toBe(W - 2);
+        expect(b.bottom).toBe(396);
+        expect(coversHotSpot(990, 400)).toBe(false);
+    });
+
+    it('slides only as far as needed: no jump as the cursor nears the right edge', () => {
+        let previous = box(900, 400).left;
+        for (let x = 901; x <= 999; x += 1) {
+            const left = box(x, 400).left;
+            expect(Math.abs(left - previous)).toBeLessThanOrEqual(1);
+            previous = left;
+        }
+    });
+
+    it('in the top-right corner, where north-east would cover the tip, moves below it', () => {
+        const b = box(990, 10);
+        expect(coversHotSpot(990, 10)).toBe(false);
+        expect(b.right).toBeLessThanOrEqual(W - 2);
+        expect(b.top).toBeGreaterThan(10);
+    });
+
+    it('is placed there by the sampler, with its content unchanged', async () => {
+        installCapture([0x40, 0x50, 0x60, 255]);
+        openFor(mount(), WORKSPACE.key);
+        pipette().click();
+        shield()!.dispatchEvent(new MouseEvent('pointermove', { clientX: 300, clientY: 300, bubbles: true }));
+        await new Promise((resolve) => window.setTimeout(resolve, CANDIDATE_INTERVAL_MS * 2));
+        const loupe = document.querySelector<HTMLElement>('.nexus-studio-sample-loupe')!;
+        const expected = loupePosition(300, 300, window.innerWidth, window.innerHeight);
+        expect(loupe.style.left).toBe(`${expected.left}px`);
+        expect(loupe.style.top).toBe(`${expected.top}px`);
+        expect(expected.top + LOUPE_SIZE).toBeLessThan(300);
+        expect(loupe.querySelector<HTMLElement>('.nexus-studio-sample-candidate')!.style.getPropertyValue('--nexus-studio-loupe-candidate')).toBe('#405060');
+        expect(loupe.style.getPropertyValue('--nexus-studio-loupe-ring')).not.toBe('');
     });
 });
 
@@ -1574,10 +1751,30 @@ describe('Recent is strictly move-to-front', () => {
 describe('swatches look like what they are', () => {
     const css = readFileSync('companion/nexus-theme-studio/styles.css', 'utf8').replace(/\r\n/g, '\n');
 
-    it('gives Recent and Saved swatches a small pipette cursor with its hot spot at the tip', () => {
-        const rule = css.slice(css.indexOf('.nexus-studio-popover .nexus-studio-cp-swatch {'));
-        const body = rule.slice(0, rule.indexOf('}'));
-        expect(body).toMatch(/cursor: url\("data:image\/svg\+xml,[^"]+"\) 2 18, copy;/);
+    const ruleOf = (selector: string): string => {
+        const rule = css.slice(css.indexOf(`${selector} {`));
+        return rule.slice(0, rule.indexOf('}'));
+    };
+
+    // One pipette graphic, defined once in the studio palette.
+    it('defines one pipette cursor, hot spot at the tip', () => {
+        expect(css.match(/data:image\/svg\+xml/g)).toHaveLength(1);
+        expect(css).toMatch(/--nexus-studio-pipette-cursor: url\("data:image\/svg\+xml,[^"]+"\) 2 18;/);
+    });
+
+    it('gives Recent and Saved swatches that pipette cursor', () => {
+        expect(ruleOf('.nexus-studio-popover .nexus-studio-cp-swatch')).toContain('cursor: var(--nexus-studio-pipette-cursor), copy;');
+    });
+
+    // The sampler: the same pipette over the window and over the picker, the
+    // mode's own controls keep the pointer.
+    it('makes the pipette the cursor wherever the sampler can sample', () => {
+        expect(ruleOf('.nexus-studio-pick-shield.is-persistent')).toContain('cursor: var(--nexus-studio-pipette-cursor), crosshair;');
+        expect(ruleOf('.nexus-studio-popover.is-sampling-mode')).toContain('cursor: var(--nexus-studio-pipette-cursor), crosshair;');
+        expect(ruleOf('.nexus-studio-popover.is-sampling-mode *')).toContain('cursor: inherit;');
+        expect(css).toMatch(/\.nexus-studio-popover\.is-sampling-mode :is\([^)]*nexus-studio-cp-sample[^)]*\) \{\n {4}cursor: pointer;/);
+        // The one-shot layer (Copy colour, Inspect UI) keeps its crosshair.
+        expect(ruleOf('.nexus-studio-pick-shield')).toContain('cursor: crosshair;');
     });
 
     it('marks the pressed pipette and the sampling picker', () => {

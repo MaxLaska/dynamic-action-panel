@@ -613,6 +613,29 @@ const toolState = () =>
         };
     `);
 const recentList = () => cdp.evaluate(`return app.plugins.plugins['${STUDIO}'].settings.recentColors;`);
+// The cursor where the pointer is, as the browser computes it: over the window
+// (the sampling layer, when it is up) and over the picker's square.
+const cursorAt = (x, y) =>
+    cdp.evaluate(`
+        const here = document.elementFromPoint(${x}, ${y});
+        const square = document.querySelector('.nexus-studio-popover .nexus-studio-cp-area');
+        return { window: here ? getComputedStyle(here).cursor : null, picker: square ? getComputedStyle(square).cursor : null };
+    `);
+const PIPETTE = /^url\("data:image\/svg\+xml.*"\) 2 18, crosshair$/;
+const isPipette = (cursor) => PIPETTE.test(cursor.window ?? '') && PIPETTE.test(cursor.picker ?? '');
+// The loupe's box, and whether it is north-east of (x, y) and clear of it.
+const loupeAt = (x, y) =>
+    cdp.evaluate(`
+        const l = document.querySelector('.nexus-studio-sample-loupe');
+        if (!l || l.hidden) return null;
+        const r = l.getBoundingClientRect();
+        return {
+            left: r.left, top: r.top, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight,
+            northEast: r.left > ${x} && r.bottom < ${y},
+            inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+            clear: !(${x} >= r.left && ${x} <= r.right && ${y} >= r.top && ${y} <= r.bottom),
+        };
+    `);
 
 await openPicker('documentChrome');
 // A draft that is NOT the dock's colour first: taking a pixel equal to the
@@ -626,6 +649,9 @@ await cdp.evaluate(`
 await pause(150);
 const on = await toolState();
 check('the pipette switches the sampler on, pressed, and the picker stays visible', on.pressed === 'true' && on.shield && on.visible === 'visible', JSON.stringify(on));
+await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: dockPoint.x, y: dockPoint.y });
+const cursorOn = await cursorAt(dockPoint.x, dockPoint.y);
+check('the cursor is the pipette, over the window and over the picker', isPipette(cursorOn), `${(cursorOn.window ?? 'none').slice(0, 30)}…${(cursorOn.window ?? '').slice(-20)} / picker ${(cursorOn.picker ?? 'none').slice(-20)}`);
 
 await clickAt(dockPoint.x, dockPoint.y);
 await pause(400);
@@ -638,6 +664,7 @@ await clickAt(noteSpot.x, noteSpot.y);
 await pause(400);
 const second = await toolState();
 const afterSecond = await recentList();
+check('after two samples the cursor is still the pipette', isPipette(await cursorAt(noteSpot.x, noteSpot.y)));
 check('a second click takes a second colour, without switching the pipette on again', second.hex !== first.hex && afterSecond[0] === second.hex && afterSecond[1] === first.hex && second.pressed === 'true', JSON.stringify({ second: second.hex, front: afterSecond.slice(0, 3) }));
 
 await clickAt(dockPoint.x, dockPoint.y);
@@ -688,6 +715,20 @@ const loupeState = await cdp.evaluate(`
     };
 `);
 check('the loupe shows the colour under the cursor, and the picker\'s colour as its ring', loupeState.visible && loupeState.candidate === toHex(dockPoint.colour) && !!loupeState.ring, JSON.stringify(loupeState));
+const centre = await cdp.evaluate(`return { x: Math.round(innerWidth / 2), y: Math.round(innerHeight / 2) };`);
+await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: centre.x, y: centre.y });
+await pause(60);
+const loupeCentre = await loupeAt(centre.x, centre.y);
+check('the loupe sits north-east of the cursor, clear of the hot spot', !!loupeCentre && loupeCentre.northEast && loupeCentre.clear, JSON.stringify(loupeCentre));
+await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: centre.x + 40, y: centre.y - 30 });
+await pause(60);
+const loupeMoved = await loupeAt(centre.x + 40, centre.y - 30);
+check('and follows the cursor north-east', !!loupeMoved && loupeMoved.northEast && loupeMoved.left - loupeCentre.left === 40, JSON.stringify(loupeMoved));
+const corner = await cdp.evaluate(`return { x: innerWidth - 6, y: 6 };`);
+await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: corner.x, y: corner.y });
+await pause(60);
+const loupeCorner = await loupeAt(corner.x, corner.y);
+check('in the top-right corner it stays inside the window and off the hot spot', !!loupeCorner && loupeCorner.inside && loupeCorner.clear, JSON.stringify(loupeCorner));
 check(
     'captures are throttled: far fewer than pointer moves',
     typeof loupeState.captures === 'number' && loupeState.captures <= Math.ceil(moveMs / 80) + 3 && loupeState.captures < 40,
@@ -699,6 +740,7 @@ console.log(`  (measured: one 1px capture ${loupe.oneCapture}ms; 40 moves over $
 await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18, modifiers: 1 });
 await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18 });
 check('Alt does not switch off a switched-on sampler', (await toolState()).pressed === 'true');
+check('and the cursor stays the pipette after Alt is let go', isPipette(await cursorAt(noteSpot.x, noteSpot.y)));
 
 // One Escape ends one thing: first the tool…
 await escape();
@@ -715,6 +757,8 @@ check(
     /url\("data:image\/svg\+xml.*"\) 2 18, copy/.test(escToolCursor.recent ?? '') && /url\("data:image\/svg\+xml.*"\) 2 18, copy/.test(escToolCursor.saved ?? ''),
     `${(escToolCursor.recent ?? 'none').slice(0, 40)}… / ${(escToolCursor.saved ?? 'none').slice(-20)}`
 );
+const cursorOff = await cursorAt(noteSpot.x, noteSpot.y);
+check('after Escape the cursor is ordinary again', !PIPETTE.test(cursorOff.window ?? '') && !PIPETTE.test(cursorOff.picker ?? ''), JSON.stringify(cursorOff));
 check('Escape switches the sampler off and leaves the picker open, with its draft', !escTool.shield && escTool.open && escTool.pressed === 'false' && (await chromeDraft()) === second.hex, JSON.stringify(escTool));
 check('and Recent keeps what was sampled', (await recentList())[0] === second.hex);
 
@@ -722,9 +766,16 @@ check('and Recent keeps what was sampled', (await recentList())[0] === second.he
 await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18, modifiers: 1 });
 await pause(60);
 const altHeld = await toolState();
+const altCursor = await cursorAt(noteSpot.x, noteSpot.y);
+await clickAt(dockPoint.x, dockPoint.y);
+await pause(300);
+const altSampled = (await recentList())[0];
 await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18 });
 await pause(60);
 const altLet = await toolState();
+const altLetCursor = await cursorAt(noteSpot.x, noteSpot.y);
+check('Alt held: the cursor is the pipette at once, and a click samples', isPipette(altCursor) && altSampled === toHex(dockPoint.colour), JSON.stringify({ altSampled }));
+check('Alt let go: the ordinary cursor is back', !PIPETTE.test(altLetCursor.window ?? '') && !PIPETTE.test(altLetCursor.picker ?? ''), JSON.stringify(altLetCursor));
 check('Alt held switches the sampler on; letting go switches it off', altHeld.pressed === 'true' && altHeld.shield && altLet.pressed === 'false' && !altLet.shield, JSON.stringify({ altHeld, altLet }));
 check('and the window keeps the focus after Alt', (await cdp.evaluate(`return document.hasFocus();`)) === true);
 
@@ -1197,6 +1248,7 @@ await pause(500);
 await cdp.evaluate(`window.electron.remote.getCurrentWebContents().setBackgroundThrottling(false);`);
 const leftovers = await cdp.evaluate(`return document.querySelectorAll('.nexus-studio-pick-shield, .nexus-studio-sample-loupe, .nexus-studio-cp-insert, .nexus-studio-cp-ghost, .nexus-studio-popover').length;`);
 check('after the restart: no sampler, loupe, marker, ghost or picker left hanging', leftovers === 0, String(leftovers));
+check('and no pipette cursor anywhere', !PIPETTE.test(await cdp.evaluate(`return getComputedStyle(document.elementFromPoint(innerWidth / 2, innerHeight / 2)).cursor;`)));
 await openPicker('workspaceSurface');
 const afterRestart = { recent: await recentShown(), saved: await savedShown() };
 check('and the pipette starts switched off', (await cdp.evaluate(`return ${popover}.querySelector('.nexus-studio-cp-sample').getAttribute('aria-pressed');`)) === 'false');

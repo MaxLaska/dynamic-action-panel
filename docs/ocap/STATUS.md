@@ -1,6 +1,7 @@
 # OCAP – Status
 
-Last updated: 2026-09-23 (the pipette is a tool that stays on, swatches drag —
+Last updated: 2026-09-23 (while sampling the cursor is the pipette and the loupe
+sits north-east; on top of: the pipette is a tool that stays on, swatches drag —
 Recent to Saved copies, Saved reorders — and one Escape ends one thing; on
 top of: Recent follows each finished colour action while the
 picker stays open — interaction commit, session commit and Saved are three
@@ -31,6 +32,25 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **Nexus Theme Studio: pipette cursor and north-east loupe (2026-09-23).** A
+  small polish pass. It is deployed to the smoke vault only, not pushed, and
+  not in the productive vault. Nothing else was changed.
+  - **Cursor:** while the sampler is on (from the pipette or from Alt held),
+    the cursor over everything sampleable is the studio's one SVG pipette,
+    reused from the swatches. The sampler's controls keep the pointer. It
+    leaves with the layer: Escape, pipette off, Alt up, blur, close, unload.
+  - **Loupe:** north-east of the hot spot (20px right, 4px above, 34px
+    loupe). It slides inside at the edges and only goes below the tip in the
+    top-right corner. The capture throttle is unchanged.
+  - **Verified:**
+    - typecheck and lint are clean;
+    - 2213 tests pass in 62 files;
+    - two mutations caught (the layer back to a crosshair, the loupe back to
+      south-east);
+    - `smokeView.mjs` passed 140/140 on four runs, including the computed
+      cursor in each state and the loupe at the centre and in the top-right
+      corner.
 
 - **Nexus Theme Studio: the pipette as a tool, swatch drag and drop
   (2026-09-23).** Implemented locally, deployed to the smoke vault only, checked

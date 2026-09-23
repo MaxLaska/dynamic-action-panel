@@ -2713,3 +2713,35 @@ these is true:
 
 This is unit-tested and mutation-checked. Checked live: Escape closes the
 export dialog and the picker stays open.
+
+## 2026-09-23 – While sampling, the cursor is the pipette, and the loupe sits north-east
+
+**Decision:**
+
+- **One pipette cursor.** The pipette cursor is defined once, as
+  `--nexus-studio-pipette-cursor` in the studio palette. It is the same small
+  black-and-white SVG the swatches already used, with its hot spot at the tip
+  (2, 18).
+  - Swatches use it.
+  - While the sampler is on, the sampling layer
+    (`.nexus-studio-pick-shield.is-persistent`) and the picker
+    (`.is-sampling-mode`) use it, so the cursor is the pipette over everything
+    that can be sampled. This covers the pipette button and Alt held alike.
+  - The mode's own controls keep the pointer.
+  - The one-shot layer used by Copy colour and Inspect UI's fallback keeps its
+    crosshair; it is not the colour sampler.
+- **No cursor state to clean up.** The cursor belongs to the layer and the
+  class, so it goes wherever they go: pipette off, Escape, Alt let go, window
+  blur, the picker or the view closing, the plugin unloading. Checked live,
+  including after a restart.
+- **The loupe sits north-east** (`loupePosition`, pure).
+  - Its left edge is 20px right of the hot spot, just past the cursor's 18px
+    body. Its bottom edge is 4px above the tip, so it never covers the tip or
+    the pixel.
+  - At an edge it slides back inside only as far as needed: down along the top,
+    left along the right. It does not jump.
+  - Only in the top-right corner, where sliding would cover the hot spot, does
+    it go below the tip.
+  - It was south-east before. Its content, size and the capture throttle are
+    unchanged.
+

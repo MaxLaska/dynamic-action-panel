@@ -133,8 +133,8 @@ export function sampleColor(win: Window, decode: PixelDecoder = decodeFirstPixel
 // taken on `pointerdown` and the click that would follow is swallowed, so a
 // swatch sampled is not also clicked.
 //
-// THE LOUPE. A small ring beside the cursor: its centre is the colour under the
-// hot spot, its ring the picker's current colour. The centre is a real pixel,
+// THE LOUPE. A small ring north-east of the cursor (see `loupePosition`): its
+// centre is the colour under the hot spot, its ring the picker's current colour. The centre is a real pixel,
 // read with the same one-pixel capture as a sample — at most one capture in
 // flight and at most one every CANDIDATE_INTERVAL_MS, so a moving mouse costs a
 // dozen captures a second at most, never one per pointer event. It sits off the
@@ -143,8 +143,40 @@ export function sampleColor(win: Window, decode: PixelDecoder = decodeFirstPixel
 /** The least time between two live candidate captures. */
 export const CANDIDATE_INTERVAL_MS = 80;
 
-/** How far the loupe sits from the hot spot, so it is never what it measures. */
-const LOUPE_OFFSET = 18;
+/** The loupe's size, as styles.css draws it. */
+export const LOUPE_SIZE = 34;
+
+/**
+ * Where the loupe goes relative to the hot spot: NORTH-EAST. The pipette cursor
+ * runs from its tip (the hot spot) up and to the right for 18px, so the loupe
+ * starts just right of the cursor's body and ends just above the tip — close
+ * enough to belong to it, never on the tip or the pixel.
+ */
+export const LOUPE_DX = 20;
+export const LOUPE_DY = 4;
+
+/** Kept from the window's edges. */
+const LOUPE_EDGE = 2;
+
+/**
+ * The loupe's top-left for a hot spot at (x, y) in a w × h window.
+ *
+ * North-east whenever it fits. At an edge it is slid back inside, only as far
+ * as needed — along the top it slides down, along the right it slides left —
+ * so it follows the cursor without jumping. Only if sliding would put it over
+ * the hot spot itself (the top-right corner) does it move to the other side of
+ * the tip, below it.
+ */
+export function loupePosition(x: number, y: number, w: number, h: number): { left: number; top: number } {
+    const size = LOUPE_SIZE;
+    const maxLeft = Math.max(LOUPE_EDGE, w - size - LOUPE_EDGE);
+    const maxTop = Math.max(LOUPE_EDGE, h - size - LOUPE_EDGE);
+    const left = Math.min(Math.max(LOUPE_EDGE, x + LOUPE_DX), maxLeft);
+    let top = Math.min(Math.max(LOUPE_EDGE, y - LOUPE_DY - size), maxTop);
+    const covers = (t: number): boolean => x >= left && x <= left + size && y >= t && y <= t + size;
+    if (covers(top)) top = Math.min(Math.max(LOUPE_EDGE, y + LOUPE_DX), maxTop);
+    return { left, top };
+}
 
 export interface SamplingModeOptions {
     /** Presses on these stay ordinary clicks: the controls of the mode itself. */
@@ -256,11 +288,9 @@ export function startSamplingMode(win: Window, options: SamplingModeOptions): Sa
     };
 
     const placeLoupe = (x: number, y: number): void => {
-        const size = 34;
-        const left = x + LOUPE_OFFSET + size > win.innerWidth ? x - LOUPE_OFFSET - size : x + LOUPE_OFFSET;
-        const top = y + LOUPE_OFFSET + size > win.innerHeight ? y - LOUPE_OFFSET - size : y + LOUPE_OFFSET;
-        loupe.style.left = `${Math.round(left)}px`;
-        loupe.style.top = `${Math.round(top)}px`;
+        const at = loupePosition(x, y, win.innerWidth, win.innerHeight);
+        loupe.style.left = `${Math.round(at.left)}px`;
+        loupe.style.top = `${Math.round(at.top)}px`;
     };
 
     // Duck-typed, not `instanceof Element`: a pop-out window has its own Element.
