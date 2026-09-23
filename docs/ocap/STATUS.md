@@ -1,6 +1,8 @@
 # OCAP – Status
 
-Last updated: 2026-09-23 (Recent follows each finished colour action while the
+Last updated: 2026-09-23 (the pipette is a tool that stays on, swatches drag —
+Recent to Saved copies, Saved reorders — and one Escape ends one thing; on
+top of: Recent follows each finished colour action while the
 picker stays open — interaction commit, session commit and Saved are three
 levels; one format button and a pipette icon; on top of: the colour picker has
 two memories — RECENT,
@@ -29,6 +31,53 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **Nexus Theme Studio: the pipette as a tool, swatch drag and drop
+  (2026-09-23).** Implemented locally, deployed to the smoke vault only, checked
+  live in an isolated Obsidian. Not pushed, not in the productive vault.
+  Normative: the `DECISIONS.md` entries from "The pipette is a tool that stays
+  on" onward.
+  - **Kept as it was, and now regression-tested:**
+    - Recent's move-to-front, with canonical RGBA dedupe and all colour paths
+      through `pushRecent`; slot 4 clicked repeatedly rotates only the first
+      four;
+    - the single cycling format button;
+    - the pipette icon.
+  - **Pipette:**
+    - a toggle (`aria-pressed`) that switches on a sampling mode;
+    - every click samples, and the mode stays on;
+    - the picker stays visible above the layer;
+    - its own controls stay live;
+    - the picker's swatches can be sampled too;
+    - a throttled live loupe;
+    - Alt held for a temporary sampler.
+
+    One Escape ends one thing: a drag, then the sampler, then the session.
+  - **Drag and drop:**
+    - Recent → Saved copies, at the insert marker;
+    - a duplicate is only outlined;
+    - Saved → Saved moves, and the order persists and exports;
+    - Recent is never reordered;
+    - 5px threshold; the click after a drag is swallowed;
+    - wrapped rows map to one linear insertion point.
+  - **Swatch cursor:** a small black-and-white SVG pipette.
+  - **Resolved:** the intermittent Delete failure of the last two rounds.
+    - **In the smoke:** its dialog-close selector did not exist in Obsidian
+      1.13.7, so the dialog stayed open and took the key.
+    - **In the product, found while tracing it:** one Escape closed a dialog
+      AND cancelled the picker, because Obsidian closes dialogs before the
+      picker's handler runs. Such an Escape is now ignored. See `DECISIONS.md`.
+  - **Verified:**
+    - typecheck and lint are clean;
+    - 2196 tests pass in 62 files;
+    - 12 of 13 mutations caught; the one survivor is a deliberately
+      redundant guard (the sampler already blocks drags);
+    - `smokeView.mjs` passed 130/130 on four runs in a row, with real mouse
+      drags;
+    - measured: a 1px capture takes 13ms, and 40 moves produced 9 loupe
+      captures.
+  - **Not verified:** the OS-level effect of a real Alt key on Windows, because
+    CDP keys do not reach the OS.
 
 - **Nexus Theme Studio: Recent follows each colour action (2026-09-23).**
   Implemented locally, deployed to the smoke vault only, checked live in an

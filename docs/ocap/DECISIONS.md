@@ -2556,3 +2556,160 @@ takes, Escape cancels.
 **Limit:** the value line is part of the colour controls, so in Custom CSS
 mode, where they are hidden, the pipette is hidden too. *Convert to colour*
 comes first.
+
+## 2026-09-23 – The pipette is a tool that stays on (supersedes the one-shot Pick from Obsidian)
+
+**Found in use:** each colour needed a click on the pipette, the picker
+vanished while aiming, and it came back after one pick.
+
+**Decision:** the pipette is a toggle. It is `aria-pressed` and drawn inverted
+while on. It switches a sampling MODE on (`startSamplingMode` in
+`sampler.ts`), and the mode stays on:
+
+- Every click anywhere in the window takes the pixel under it. The pixel
+  becomes the draft, keeping the draft's opacity; the theme preview follows;
+  and it goes to the front of Recent through the same `markUsed` → `pushRecent`
+  path as every other colour action. A colour already in Recent moves to the
+  front and is not doubled.
+- **The picker stays visible.** It is raised above the transparent sampling
+  layer, so the current colour, Recent and Saved can be watched between
+  samples.
+- **Priority:** a press is a sample unless it lands on one of the mode's own
+  controls (`SAMPLER_CONTROLS`: pipette, format button, Done, Revert) or in a
+  dialog. The picker's own swatches, square and fields are sampled, not
+  blocked. The sample is taken on `pointerdown`, and the click that follows is
+  swallowed, so a sampled swatch is not also clicked.
+- **Keyboard:**
+  - arrows move a neutral reticle 1px, and Shift+arrows move it 10px;
+  - Enter or Space takes a sample, and the mode stays on;
+  - with the focus on the pipette button (where a mouse click leaves it),
+    arrows and Escape are still the sampler's, and Enter or Space press the
+    button.
+- **Ending it:** click the pipette again, press Escape, or close the picker or
+  the view. Saved is never touched by sampling.
+- While the mode is on, presses are samples, so swatch drag and drop cannot
+  start.
+
+**One Escape ends one thing**, in this order:
+
+1. a drag in progress;
+2. the sampler, which keeps the picker, its draft and Recent;
+3. the picker session, whose cancel reverts the token.
+
+**Alt held** switches the sampler on for as long as it is held.
+
+- It works only while a picker is open and no dialog is.
+- It never touches a sampler switched on with the pipette.
+- Alt as part of a chord (Alt+Tab, Alt+arrow) is not a tool: the other key ends
+  it.
+- Losing window focus ends it, so no Alt is left hanging.
+- `preventDefault` is applied only to that Alt, only while the picker is open.
+
+**Not verified:** whether Windows would put the menu into its Alt state on a
+real key press. CDP injects keys into the renderer, not the OS. In the smoke
+the window kept its focus after Alt, but only a manual test can confirm the
+OS side.
+
+## 2026-09-23 – The loupe reads real pixels, throttled
+
+**Decision:** while the sampler is on, a 34px loupe sits beside the hot spot,
+never on it. Its centre is the colour under the hot spot, and its ring is the
+picker's current colour. Its edges are black and white, so it stays neutral on
+any surface. There is no magnifier and no grid.
+
+The centre is read with the same one-pixel `capturePage` as a sample, but
+throttled:
+
+- at most one capture in flight;
+- at most one every 80ms (`CANDIDATE_INTERVAL_MS`);
+- a pending position is coalesced into the next capture.
+
+**Measured live** in Obsidian 1.13.7:
+
+- one 1px capture took 13ms;
+- 40 pointer moves over 656ms produced 9 captures, not 40.
+
+Hovering records nothing and saves nothing.
+
+## 2026-09-23 – Swatches show a pipette cursor
+
+**Decision:** Recent and Saved swatches carry a small SVG pipette cursor. It is
+black on white, hot spot at the tip (2, 18), with `copy` as the fallback. It
+is not Chromium's cursor and has no red. While the sampler is on, the whole
+picker shows the sampler's crosshair, except its own controls. Checked live:
+the computed cursor of both kinds of swatch is the SVG.
+
+## 2026-09-23 – Dragging swatches: Recent → Saved copies, Saved → Saved moves
+
+**Decision:**
+
+- **Recent → Saved is a COPY.** The colour stays in Recent and is inserted into
+  Saved at the marked place (`insertSaved`). A colour already saved (by
+  canonical RGBA) is not saved twice and is not moved to the drop place. The
+  existing swatch is outlined instead, and nothing is written.
+- **Saved → Saved is a MOVE** (`moveSaved`). The insertion point is counted in
+  the list before the move. Dropping a colour just before or just after itself
+  changes nothing and writes nothing.
+- **Recent is never reordered by hand.** A drop outside Saved, including one
+  inside Recent, changes nothing.
+
+**Click vs drag:** a press becomes a drag only after moving 5px
+(`DRAG_THRESHOLD`). A shorter press is a click and behaves exactly as before.
+After a real drag, the click that follows is swallowed. A swatch that a drop
+has just redrawn away cannot be clicked.
+
+**While dragging:**
+
+- a ghost follows the pointer;
+- the Saved section is outlined;
+- a 2px marker stands in the middle of the gap at the insertion point.
+
+Nothing changes until the drop. Escape, losing the pointer, or losing window
+focus cancels the drag.
+
+**Wrapped rows** (`insertIndexAt`, pure):
+
+- Swatches are grouped into visual rows by their top edge. The pointer picks a
+  row by height: above the first row counts as the first, below the last as
+  the last.
+- Within the row, the drop goes before the first swatch whose middle the
+  pointer is left of, or after the row's last swatch.
+- The end of one row and the start of the next are the same linear insertion
+  point. The marker is drawn on the row the pointer is on, so it does not jump
+  at a wrap.
+
+**Persistence and order:** Saved changes are written at once (`updateUi`). The
+order is the stored order, and the palette export writes it as is. Import
+merges by appending, and nothing sorts.
+
+## 2026-09-23 – An Escape that closed a dialog is the dialog's (correction of the "focus returns late" guess)
+
+**Found live, with the keydown instrumentation the smoke kept:** the
+intermittent Delete failure of the last two rounds sent the key to an INPUT
+while a swatch had been focused.
+
+**Cause, now traced:**
+
+1. The smoke closed the export dialog by clicking `.modal-close-button`.
+   Obsidian 1.13.7 has no such element (the button is `.modal-header-button`),
+   so the click closed nothing.
+2. The dialog stayed open, and its name field took the keys.
+
+"Focus returns late after a dialog closes" was a wrong guess. The smoke now
+closes dialogs with Escape and checks that they are gone.
+
+**A product bug under that:** Obsidian closes a dialog in its own keydown
+handler, which runs before the picker's. By the time the picker saw that
+Escape, the dialog was gone. The focused field was out of the document, and
+one Escape closed the dialog AND cancelled the picker session.
+
+**Decision:** Escape is ignored by the picker (and by the sampler) when any of
+these is true:
+
+- it targets a dialog;
+- a dialog is open;
+- its target has already been taken out of the document, which means a dialog
+  closed on it.
+
+This is unit-tested and mutation-checked. Checked live: Escape closes the
+export dialog and the picker stays open.

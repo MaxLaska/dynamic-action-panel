@@ -90,12 +90,16 @@ What a colour row gives you: the swatch, a compact readout (`#333333`, and
   stored is always `#rrggbb`, or `rgba()` below full opacity.
 - **Opacity**, where the token has one, is a bar with a checkerboard and a
   percent field.
-- **The pipette icon** next to it is Pick from Obsidian: it turns the pointer
-  into a crosshair over the Obsidian window, and the picker steps aside while you aim. Click to take the pixel under
-  the pointer. From the keyboard, the arrows move a reticle one pixel (ten with
-  Shift) and Enter or Space takes the pixel. Escape stops aiming and keeps the
-  picker. It sees only this window, so no popped-out window and no other
-  application. There is no red-gridded browser pipette anywhere any more.
+- **The pipette icon** next to it is a tool you switch on. While it is on,
+  every click anywhere in Obsidian takes the colour under it into the picker and
+  into Recent, and the picker stays visible, so you can collect colour after
+  colour without switching it on again. A small loupe beside the cursor shows
+  the colour under it, ringed by the current one. From the keyboard, the arrows
+  move a reticle one pixel (ten with Shift) and Enter or Space takes the pixel.
+  Hold **Alt** to sample only while it is held. Click the pipette again, or press
+  Escape, to stop; the picker stays open. It sees only this window, so no
+  popped-out window and no other application, and there is no red-gridded
+  browser pipette anywhere.
 - **Recent** fills itself while you work, with the picker open. Each finished
   action puts its colour on the left: a click or a drag in the square let go, a
   bar let go, a value confirmed with Enter, a Recent or Saved swatch clicked, or
@@ -105,7 +109,9 @@ What a colour row gives you: the swatch, a compact readout (`#333333`, and
 - **Saved** is what you keep on purpose. `+` saves the current colour, opacity
   included, and never twice. Clicking any swatch, Recent or Saved, loads it as a
   draft; the swatch itself does not change, so you can make a variant and commit
-  or save that too. After loading a saved colour, `⋯` can replace it with the
+  or save that too. Drag a Recent colour into Saved to keep a copy exactly where
+  the marker shows. Drag a saved colour to reorder the palette; the order is
+  kept and exported. After loading a saved colour, `⋯` can replace it with the
   current colour or delete it. `⋯` also imports, exports and clears the palette,
   and copies it as CSS variables. Right-click and the Delete key work as well.
 - **Palette files** (`.nexus-color-palette.json`) hold your saved colours.

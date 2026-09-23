@@ -594,6 +594,26 @@ const toHex = (rgb) => '#' + rgb.match(/\d+/g).slice(0, 3).map((v) => Number(v).
 const chromeDraft = () => cdp.evaluate(`return ${inline('--nexus-document-chrome')};`);
 const chromeBefore = await chromeDraft();
 
+// The pipette is a TOOL: on, it stays on; every click takes a colour; the
+// picker stays visible above the sampling layer.
+const noteSpot = await cdp.evaluate(`
+    const el = document.querySelector('.workspace-leaf.mod-active .view-content') ?? document.querySelector('.markdown-source-view');
+    const r = el.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width * 0.8), y: Math.round(r.top + r.height * 0.8) };
+`);
+const toolState = () =>
+    cdp.evaluate(`
+        const p = ${popover};
+        return {
+            open: !!p,
+            visible: p ? getComputedStyle(p).visibility : null,
+            pressed: p?.querySelector('.nexus-studio-cp-sample')?.getAttribute('aria-pressed') ?? null,
+            shield: !!document.querySelector('.nexus-studio-pick-shield.is-persistent'),
+            hex: p?.querySelector('.nexus-studio-cp-field[data-field="hex"]')?.value ?? null,
+        };
+    `);
+const recentList = () => cdp.evaluate(`return app.plugins.plugins['${STUDIO}'].settings.recentColors;`);
+
 await openPicker('documentChrome');
 // A draft that is NOT the dock's colour first: taking a pixel equal to the
 // starting value would rightly change nothing, and prove nothing.
@@ -604,46 +624,115 @@ await cdp.evaluate(`
     ${popover}.querySelector('.nexus-studio-cp-sample').click();
 `);
 await pause(150);
-const aiming = await cdp.evaluate(`return { shield: !!document.querySelector('.nexus-studio-pick-shield'), hidden: getComputedStyle(${popover}).visibility };`);
-check('Pick from Obsidian lays its crosshair layer and steps the picker aside', aiming.shield && aiming.hidden === 'hidden', JSON.stringify(aiming));
-await clickAt(dockPoint.x, dockPoint.y);
-await pause(600);
-const byMouse = await cdp.evaluate(`
-    const p = ${popover};
-    return { draft: ${inline('--nexus-document-chrome')}, open: !!p, visible: p && getComputedStyle(p).visibility, hex: p?.querySelector('.nexus-studio-cp-field[data-field="hex"]')?.value };
-`);
-check('a click on the dock takes exactly its colour, into the open picker', byMouse.draft === toHex(dockPoint.colour) && byMouse.hex === byMouse.draft, `${JSON.stringify(byMouse)} vs ${dockPoint.colour}`);
-check('the picker is back, and the layer is gone', byMouse.open && byMouse.visible === 'visible' && !(await shieldUp()), JSON.stringify(byMouse));
+const on = await toolState();
+check('the pipette switches the sampler on, pressed, and the picker stays visible', on.pressed === 'true' && on.shield && on.visible === 'visible', JSON.stringify(on));
 
-// The keyboard: aim with the arrows, take with Enter. The reticle starts at
-// the last mouse position, on the dock.
-await cdp.evaluate(`
-    const hex = ${popover}.querySelector('.nexus-studio-cp-field[data-field="hex"]');
-    hex.value = '#010203';
-    hex.dispatchEvent(new Event('input', { bubbles: true }));
-    ${popover}.querySelector('.nexus-studio-cp-sample').click();
-`);
-await pause(150);
-await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: dockPoint.x, y: dockPoint.y });
+await clickAt(dockPoint.x, dockPoint.y);
+await pause(400);
+const first = await toolState();
+check('a click on the dock takes exactly its colour, into the open picker', first.hex === toHex(dockPoint.colour) && (await chromeDraft()) === first.hex, `${JSON.stringify(first)} vs ${dockPoint.colour}`);
+check('and the sampler is still on, the picker still visible', first.pressed === 'true' && first.shield && first.visible === 'visible', JSON.stringify(first));
+check('the colour is in Recent at once', (await recentList())[0] === first.hex);
+
+await clickAt(noteSpot.x, noteSpot.y);
+await pause(400);
+const second = await toolState();
+const afterSecond = await recentList();
+check('a second click takes a second colour, without switching the pipette on again', second.hex !== first.hex && afterSecond[0] === second.hex && afterSecond[1] === first.hex && second.pressed === 'true', JSON.stringify({ second: second.hex, front: afterSecond.slice(0, 3) }));
+
+await clickAt(dockPoint.x, dockPoint.y);
+await pause(400);
+const afterThird = await recentList();
+check('sampling a colour already in Recent moves it to the front, no duplicate', afterThird[0] === first.hex && afterThird[1] === second.hex && afterThird.filter((c) => c === first.hex).length === 1, JSON.stringify(afterThird.slice(0, 3)));
+
+// The keyboard, inside the tool: aim, take, and the tool stays on.
+await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: noteSpot.x, y: noteSpot.y });
 await pressKey('ArrowRight', 'ArrowRight', 39);
 await pressKey('ArrowUp', 'ArrowUp', 38);
 const reticle = await cdp.evaluate(`const r = document.querySelector('.nexus-studio-pick-reticle'); return r ? { hidden: r.hidden, left: r.style.left, top: r.style.top } : null;`);
-check('arrows move a reticle of its own, one pixel at a time', reticle && !reticle.hidden && reticle.left === `${dockPoint.x + 1}px` && reticle.top === `${dockPoint.y - 1}px`, JSON.stringify(reticle));
+check('arrows move a reticle of its own, one pixel at a time', reticle && !reticle.hidden && reticle.left === `${noteSpot.x + 1}px` && reticle.top === `${noteSpot.y - 1}px`, JSON.stringify(reticle));
 await pressKey('Enter', 'Enter', 13);
-await pause(600);
-const byKeyboard = await cdp.evaluate(`return ${popover}?.querySelector('.nexus-studio-cp-field[data-field="hex"]')?.value;`);
-check('Enter takes the pixel under it', byKeyboard === toHex(dockPoint.colour), byKeyboard);
+await pause(400);
+check('Enter takes the pixel under it, and the tool stays on', (await toolState()).hex === second.hex && (await toolState()).pressed === 'true');
 
-await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-sample').click();`);
-await pause(150);
-await escape();
-await pause(200);
-const escAiming = await cdp.evaluate(`return { shield: !!document.querySelector('.nexus-studio-pick-shield'), open: !!${popover} };`);
-check('Escape while aiming ends the pick and keeps the picker', !escAiming.shield && escAiming.open, JSON.stringify(escAiming));
+// The loupe: the colour under the cursor, from throttled captures. Counted by
+// wrapping capturePage in this scratch instance only.
+const loupe = await cdp.evaluate(`
+    const wc = window.electron.remote.getCurrentWebContents();
+    if (!wc.__smokeCount) {
+        const original = wc.capturePage.bind(wc);
+        wc.__smokeCount = { n: 0 };
+        wc.capturePage = (...args) => { wc.__smokeCount.n += 1; return original(...args); };
+    }
+    wc.__smokeCount.n = 0;
+    // One capture and decode, timed, for the report.
+    const t0 = performance.now();
+    await wc.capturePage({ x: 10, y: 10, width: 1, height: 1 });
+    return { oneCapture: Math.round(performance.now() - t0) };
+`);
+await cdp.evaluate(`window.electron.remote.getCurrentWebContents().__smokeCount.n = 0;`);
+const t0 = Date.now();
+for (let i = 0; i < 40; i += 1) {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: dockPoint.x + (i % 10), y: dockPoint.y - 40 + i });
+    await pause(12);
+}
+const moveMs = Date.now() - t0;
+await pause(250);
+const loupeState = await cdp.evaluate(`
+    const l = document.querySelector('.nexus-studio-sample-loupe');
+    return {
+        visible: !!l && !l.hidden,
+        candidate: l?.querySelector('.nexus-studio-sample-candidate')?.style.getPropertyValue('--nexus-studio-loupe-candidate') ?? null,
+        ring: l?.style.getPropertyValue('--nexus-studio-loupe-ring') ?? null,
+        captures: window.electron.remote.getCurrentWebContents().__smokeCount?.n ?? null,
+    };
+`);
+check('the loupe shows the colour under the cursor, and the picker\'s colour as its ring', loupeState.visible && loupeState.candidate === toHex(dockPoint.colour) && !!loupeState.ring, JSON.stringify(loupeState));
+check(
+    'captures are throttled: far fewer than pointer moves',
+    typeof loupeState.captures === 'number' && loupeState.captures <= Math.ceil(moveMs / 80) + 3 && loupeState.captures < 40,
+    JSON.stringify({ moves: 40, moveMs, captures: loupeState.captures, oneCaptureMs: loupe.oneCapture })
+);
+console.log(`  (measured: one 1px capture ${loupe.oneCapture}ms; 40 moves over ${moveMs}ms → ${loupeState.captures} captures)`);
+
+// Alt leaves a switched-on sampler alone.
+await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18, modifiers: 1 });
+await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18 });
+check('Alt does not switch off a switched-on sampler', (await toolState()).pressed === 'true');
+
+// One Escape ends one thing: first the tool…
 await escape();
 await pause(100);
-const escPicker = await cdp.evaluate(`return { open: !!${popover}, draft: ${inline('--nexus-document-chrome')} };`);
-check('a second Escape closes the picker with nothing kept', !escPicker.open && escPicker.draft === chromeBefore, JSON.stringify({ escPicker, chromeBefore }));
+const escTool = await toolState();
+// A swatch is a colour to take: its own pipette cursor (while the sampler is
+// off; while it is on, everything is the sampler's crosshair).
+const escToolCursor = await cdp.evaluate(`
+    const cursor = (kind) => { const s = ${popover}.querySelector('.nexus-studio-cp-swatch[data-kind="' + kind + '"]'); return s ? getComputedStyle(s).cursor : null; };
+    return { recent: cursor('recent'), saved: cursor('saved') };
+`);
+check(
+    'Recent and Saved swatches show a pipette cursor, hot spot at the tip',
+    /url\("data:image\/svg\+xml.*"\) 2 18, copy/.test(escToolCursor.recent ?? '') && /url\("data:image\/svg\+xml.*"\) 2 18, copy/.test(escToolCursor.saved ?? ''),
+    `${(escToolCursor.recent ?? 'none').slice(0, 40)}… / ${(escToolCursor.saved ?? 'none').slice(-20)}`
+);
+check('Escape switches the sampler off and leaves the picker open, with its draft', !escTool.shield && escTool.open && escTool.pressed === 'false' && (await chromeDraft()) === second.hex, JSON.stringify(escTool));
+check('and Recent keeps what was sampled', (await recentList())[0] === second.hex);
+
+// …Alt then samples only while it is held…
+await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18, modifiers: 1 });
+await pause(60);
+const altHeld = await toolState();
+await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18 });
+await pause(60);
+const altLet = await toolState();
+check('Alt held switches the sampler on; letting go switches it off', altHeld.pressed === 'true' && altHeld.shield && altLet.pressed === 'false' && !altLet.shield, JSON.stringify({ altHeld, altLet }));
+check('and the window keeps the focus after Alt', (await cdp.evaluate(`return document.hasFocus();`)) === true);
+
+// …and only then the picker session.
+await escape();
+await pause(100);
+const escPicker = await cdp.evaluate(`return { open: !!${popover}, draft: ${inline('--nexus-document-chrome')}, shield: !!document.querySelector('.nexus-studio-pick-shield'), loupe: !!document.querySelector('.nexus-studio-sample-loupe') };`);
+check('a second Escape closes the picker with the token as it was, nothing left behind', !escPicker.open && escPicker.draft === chromeBefore && !escPicker.shield && !escPicker.loupe, JSON.stringify({ escPicker, chromeBefore }));
 
 // --- the colour library: recent and saved -------------------------------------------------
 //
@@ -778,7 +867,9 @@ await clickAt(notePoint.x, notePoint.y);
 await pause(600);
 const picked = await cdp.evaluate(`return ${popover}?.querySelector('.nexus-studio-cp-field[data-field="hex"]')?.value ?? null;`);
 const afterPick = await recentNow();
-check('a colour taken from Obsidian is in Recent at once, picker back', picked !== null && afterPick[0] === picked && picked !== BLUE, JSON.stringify({ picked, front: afterPick.slice(0, 2) }));
+check('a colour taken from Obsidian is in Recent at once, picker open', picked !== null && afterPick[0] === picked && picked !== BLUE, JSON.stringify({ picked, front: afterPick.slice(0, 2) }));
+await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-sample').click();`);
+check('the pipette again switches the sampler off', (await cdp.evaluate(`return ${popover}.querySelector('.nexus-studio-cp-sample').getAttribute('aria-pressed');`)) === 'false');
 
 // 7. Fill Recent from the fields, confirmed each time, picker still open.
 for (let i = 1; i <= 16; i += 1) {
@@ -818,6 +909,77 @@ const cycles = formats.seen.every((label, i) => i === 0 || order.indexOf(label) 
 check('one format button, cycling HEX → RGB → HSL → HEX', formats.count === 1 && cycles && formats.seen[3] === order[(order.indexOf(formats.seen[0]) + 3) % 3], JSON.stringify(formats.seen));
 check('and the colour does not move', formats.same === true);
 check('the pipette is one small icon button beside it, no wide text button', formats.pipettes === 1 && formats.pipetteText === '' && formats.pipetteBeside && formats.pipetteWidth <= 40 && !formats.wideText, JSON.stringify(formats));
+
+// 8b. Recent is strictly move-to-front: the same SLOT clicked again and again
+// rotates only the colours up to it.
+const beforeRotation = await recentNow();
+const rotations = [];
+for (let i = 0; i < 2; i += 1) {
+    await cdp.evaluate(`${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="recent"]')[3].click();`);
+    await pause(40);
+    rotations.push(await recentNow());
+}
+const [r0, r1] = [beforeRotation, rotations[0]];
+check(
+    'slot 4 clicked twice: D,A,B,C then C,D,A,B — the rest untouched',
+    JSON.stringify(rotations[0].slice(0, 4)) === JSON.stringify([r0[3], r0[0], r0[1], r0[2]]) &&
+        JSON.stringify(rotations[1].slice(0, 4)) === JSON.stringify([r1[3], r1[0], r1[1], r1[2]]) &&
+        JSON.stringify(rotations[1].slice(4)) === JSON.stringify(r0.slice(4)),
+    JSON.stringify(rotations.map((list) => list.slice(0, 5)))
+);
+
+// 8c. Recent → Saved with a real mouse: a copy, where the marker says.
+const savedBeforeDrags = (await studioData()).savedSwatches;
+const rects = () =>
+    cdp.evaluate(`
+        const rect = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 }; };
+        return {
+            recent: Array.from(${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="recent"]')).map(rect),
+            saved: Array.from(${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="saved"]')).map(rect),
+        };
+    `);
+const realDrag = async (from, to, inspect) => {
+    await mouse('mouseMoved', from.x, from.y);
+    await mouse('mousePressed', from.x, from.y);
+    for (let i = 1; i <= 8; i += 1) await mouse('mouseMoved', from.x + ((to.x - from.x) * i) / 8, from.y + ((to.y - from.y) * i) / 8);
+    const during = inspect ? await inspect() : null;
+    await mouse('mouseReleased', to.x, to.y);
+    await pause(150);
+    return during;
+};
+let layout = await rects();
+const recentPick = await cdp.evaluate(`return ${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="recent"]')[5].style.getPropertyValue('--nexus-studio-swatch');`);
+const recentBeforeDrag = await recentNow();
+const between01 = { x: (layout.saved[0].r + layout.saved[1].l) / 2, y: layout.saved[0].y };
+const duringDrag = await realDrag(layout.recent[5], between01, () =>
+    cdp.evaluate(`const m = ${popover}.querySelector('.nexus-studio-cp-insert'); return { marker: m?.dataset.index ?? null, ghost: !!document.querySelector('.nexus-studio-cp-ghost') };`)
+);
+check('while dragging, a marker shows the insertion point and a ghost follows', duringDrag.marker === '1' && duringDrag.ghost, JSON.stringify(duringDrag));
+const afterCopy = (await studioData()).savedSwatches;
+check(
+    'dropped between the first two saved colours: a copy lands there, Recent is untouched',
+    afterCopy[1] === recentPick && afterCopy.length === savedBeforeDrags.length + 1 && JSON.stringify(await recentNow()) === JSON.stringify(recentBeforeDrag),
+    JSON.stringify({ recentPick, saved: afterCopy.slice(0, 4) })
+);
+check('nothing is left of the drag: no marker, no ghost', (await cdp.evaluate(`return !document.querySelector('.nexus-studio-cp-insert, .nexus-studio-cp-ghost');`)) === true);
+
+// 8d. Saved → Saved with a real mouse: the last to the front.
+layout = await rects();
+const lastSaved = afterCopy[afterCopy.length - 1];
+await realDrag(layout.saved[layout.saved.length - 1], { x: layout.saved[0].l - 1, y: layout.saved[0].y });
+const afterMove = (await studioData()).savedSwatches;
+check('a saved colour dragged to the front moves there, and only it moves', afterMove[0] === lastSaved && JSON.stringify(afterMove.slice(1)) === JSON.stringify(afterCopy.slice(0, -1)), JSON.stringify(afterMove.slice(0, 4)));
+check('and the picker shows the new order', JSON.stringify(await savedShown()) === JSON.stringify(afterMove));
+await pause(300);
+check('the new order is in data.json', JSON.stringify((await fileData()).savedSwatches) === JSON.stringify(afterMove));
+
+// Back to the palette as this run found it (a clean-up, not a check of the product).
+await cdp.evaluate(`
+    const p = app.plugins.plugins['${STUDIO}'];
+    await p.updateUi({ ...p.settings, savedSwatches: ${JSON.stringify(savedBeforeDrags)} });
+    const picker = app.workspace.getLeavesOfType('${VIEW_TYPE}')[0].view.panel.picker;
+    picker?.refreshLibrary();
+`);
 
 // 9. Escape: the token goes back; Recent keeps everything that was tried.
 const recentBeforeEsc = JSON.stringify(await recentNow());
@@ -866,8 +1028,13 @@ check(
         JSON.stringify(exportedJson.colors.map((c) => c.value)) === JSON.stringify((await studioData()).savedSwatches),
     exported?.slice(0, 120)
 );
-await cdp.evaluate(`document.querySelector('.modal-container .modal-close-button')?.click();`);
-await pause(150);
+// Closed the way a user closes it: Escape. (Obsidian 1.13 has no
+// `.modal-close-button`; an earlier version of this script clicked that
+// selector, closed nothing, and later keys went into the dialog.) The picker
+// ignores an Escape that belongs to a dialog.
+await escape();
+for (let i = 0; i < 40 && (await cdp.evaluate(`return !!document.querySelector('.modal-container');`)); i += 1) await pause(50);
+check('the export dialog closes with Escape', (await cdp.evaluate(`return !document.querySelector('.modal-container');`)) === true);
 check('the picker stayed open behind the dialog', (await cdp.evaluate(`return !!${popover};`)) === true);
 
 const paletteFile = path.join(os.tmpdir(), `nexus-smoke-${process.pid}.nexus-color-palette.json`);
@@ -1028,8 +1195,11 @@ for (let i = 0; i < 60; i += 1) {
 }
 await pause(500);
 await cdp.evaluate(`window.electron.remote.getCurrentWebContents().setBackgroundThrottling(false);`);
+const leftovers = await cdp.evaluate(`return document.querySelectorAll('.nexus-studio-pick-shield, .nexus-studio-sample-loupe, .nexus-studio-cp-insert, .nexus-studio-cp-ghost, .nexus-studio-popover').length;`);
+check('after the restart: no sampler, loupe, marker, ghost or picker left hanging', leftovers === 0, String(leftovers));
 await openPicker('workspaceSurface');
 const afterRestart = { recent: await recentShown(), saved: await savedShown() };
+check('and the pipette starts switched off', (await cdp.evaluate(`return ${popover}.querySelector('.nexus-studio-cp-sample').getAttribute('aria-pressed');`)) === 'false');
 await escape();
 check(
     'Recent and Saved survive a restart, in order, alpha included',
