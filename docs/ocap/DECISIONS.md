@@ -1798,6 +1798,11 @@ value changes.
 
 ## 2026-09-23 – Folding a group hides its list, never its items
 
+> **SUPERSEDED the same day** by "The studio is a workspace view, not a settings
+> tab". This fold never worked on screen, and one of the reasons given below is
+> **wrong**: see "Why the settings-tab fold never folded" for the measured cause
+> and the correction.
+
 **Decision:** a collapsed token group gets a class on the group element and CSS
 hides `.setting-items`. It is not implemented with per-item `visible`.
 
@@ -1817,6 +1822,11 @@ two greys should not also reshuffle the shape of the page.
 
 ## 2026-09-23 – Obsidian clips its own colour swatch, and the theme studio pays 4px
 
+> **SUPERSEDED the same day** by the workspace view. The measurement below is
+> correct and stays as the record, but the studio no longer styles Obsidian's
+> colour input at all: the visible swatch is its own element with room round it,
+> so there is nothing left to clip.
+
 **Decision:** `.nexus-studio-token input[type=color]` is given
 `height: calc(var(--swatch-height) + 4px)`.
 
@@ -1830,3 +1840,125 @@ nothing left over and the ring — an outer `box-shadow` — is clipped top and
 bottom. The fix is the missing counterpart of a line Obsidian already wrote, it
 covers keyboard focus and pointer hover alike because both draw the same shadow,
 and it does not change the row's height.
+
+## 2026-09-23 – Why the settings-tab fold never folded (a correction)
+
+**What was measured, in Obsidian 1.13.7's own settings renderer:** a
+`SettingDefinitionGroup` is created once — heading, `cls`, `extraButtons` — and
+on every later `update()` the SAME group element is reconciled: its heading is
+reset and its items re-rendered, and nothing else. `cls` and the header buttons
+are never applied again. The studio's chevron changed `cls` between renders, so
+the class that would have folded the group never reached the element. The click
+WAS stored — the smoke vault's `data.json` held three "collapsed" groups the user
+had never once seen collapse.
+
+**The correction.** The entry "Folding a group hides its list, never its items"
+also claimed that a group's `cls` reaches `classList.add` unsplit and throws on a
+space. That was wrong: the same renderer calls
+`addClass.apply(group, cls.split(" ").filter(Boolean))`. Nothing ever threw. The
+single-class workaround it motivated was harmless and is gone with the settings
+tab.
+
+**What made it invisible:** every test of the fold read source text. None
+rendered the panel and clicked it. That is why the studio now has DOM tests
+(`tests/nexusStudioView.test.ts`, under happy-dom), and a mutation check — the
+fold line removed — fails six of them.
+
+## 2026-09-23 – The studio is a workspace view, not a settings tab
+
+**Decision:** Nexus Theme Studio is an Obsidian `ItemView` of type
+`nexus-theme-studio`, opened by one command, **Open Nexus Theme Studio** (id
+`open-theme-studio`, unchanged, so an existing hotkey keeps working). It has no
+settings tab, no ribbon button and no window or docking logic of its own.
+
+**Reason:** it stopped being plugin configuration and became a design tool, and
+a settings tab is a modal over the very workspace being designed. You could not
+see the dock you were colouring, and the pipette could not sample it. A view
+lives IN the workspace — right dock, split, tab, pop-out window — and Obsidian
+already does all of that, including remembering where the user put it.
+
+**Opening is `Workspace.ensureSideLeaf`, not hand-written.** Measured in 1.13.7:
+it takes the first existing leaf of the type wherever it is (either dock, the
+main area, a pop-out), creates one in the requested dock only if there is none,
+loads it if deferred, reveals it, and focuses it with `active`. That is exactly
+single-instance "open or reveal".
+
+**A second view is not prevented, and not a problem.** Obsidian's own split and
+"open in new window" can duplicate the tab; fighting the native UI is what this
+project decided not to do. Every studio view reads the same settings and is told
+about every change — found through `getLeavesOfType`, never held by the plugin,
+because a plugin that keeps its views keeps closed ones alive.
+
+**Studio leaves are not detached on unload.** Obsidian keeps them in the layout
+and restores them where the user left them.
+
+**The panel owns its DOM.** `studioPanel.ts` is built on standard DOM (`dom.ts`)
+and knows nothing about Plugin or ItemView — everything arrives through a host
+interface. That is what lets it be rendered and clicked in happy-dom tests, and
+it is why a fold is now a `hidden` attribute on an element the panel created,
+toggled by a `<button>` the panel created.
+
+**The theme note follows the theme.** "Nexus is not the selected theme" is
+re-checked on Obsidian's `css-change` and refilled in place, because a view that
+stays open while the user picks a theme under Appearance would otherwise keep
+saying something false. Found in live use, not in review.
+
+## 2026-09-23 – A token row is a design control first and a CSS form second
+
+**Decision:** a row shows the swatch, the name, one line of description, the
+opacity where the registry says so, a compact value readout, the pipette and the
+reset. The raw CSS value is behind the readout, which is a disclosure button:
+closed by default, opened on demand, and authoritative when used.
+
+**Reason:** the user designs by looking, not by editing `rgba()` — but the raw
+value is how `oklch()`, `var()` and `color-mix()` get in, and it must never be
+hidden when it is the thing in effect. So a value the picker cannot represent is
+still painted by the swatch (which paints the stored string itself), the readout
+says `CSS` in the accent colour, and its full text is on hover.
+
+**One tooltip for the reset, whatever the value:** "Reset to default". The value
+was noise; the meaning is the button.
+
+**Narrow first.** The panel is a CSS size container; below 300px of VIEW width
+the actions move under the label. The studio's primary home is a right dock a
+couple of hundred pixels wide, and a studio in a narrow dock of a wide window is
+still narrow.
+
+## 2026-09-23 – Settings version 2 drops the fold state version 1 stored
+
+**Decision:** the Theme Studio's `data.json` is now version 2. Reading a
+version-1 file (or one with no version) keeps every profile, override, scratch
+CSS and the active choice exactly, and discards `collapsedGroups`.
+
+**Reason:** see "Why the settings-tab fold never folded". A v1 fold records
+clicks on a control that visibly did nothing. Honouring it would open the new
+view with sections mysteriously shut — the old bug resurfacing somewhere else.
+
+**Fold state is studio UI state:** stored once at the settings root, never in a
+profile, never a token. A profile switch does not change it; a restart keeps it.
+It is saved through its own path (`updateUi`), which neither re-applies the
+theme nor re-sends every token to every reader.
+
+## 2026-09-23 – DOM tests use happy-dom, per file
+
+**Decision:** tests that need a document declare
+`// @vitest-environment happy-dom` at the top of the file. The suite as a whole
+stays in the Node environment. `happy-dom` is a dev dependency, at 20.x.
+
+**Reason:** see the correction above — a UI whose behaviour is only ever checked
+by reading its source will eventually ship a control that does nothing. This
+extends the 2026-09-16 Vitest decision rather than reversing it: it is not
+browser or E2E infrastructure, and only files that ask for a DOM get one.
+
+**Version floor:** happy-dom 17 was installed first and was flagged critical
+(VM-context escape) by `npm audit`. It was replaced before anything was
+committed. The 20.x line is not flagged.
+
+**The live half is a script, not a unit test.**
+`companion/nexus-theme-studio/scripts/smokeView.mjs` drives a real Obsidian over
+CDP — on its own `--user-data-dir` and a throwaway vault, never the user's
+instance — and checks what only a running Obsidian can: one view in the right
+dock, the fold under Obsidian's own stylesheets, the locator repainting a real
+dock, `input` repainting it live, `window.EyeDropper` opening from the view's
+window, the theme note following `css-change`, and a plugin reload with the view
+open leaving nothing behind and nothing doubled.

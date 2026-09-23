@@ -1,127 +1,381 @@
 /* styles.css — the Theme Studio's own chrome.
  *
- * Deliberately tiny, and deliberately NOT about Nexus. Nothing here declares or
- * consumes a `--nexus-*` token: this plugin edits the theme's language, it does
- * not speak it. Every value below is one of Obsidian's own semantic variables,
- * so the editor looks right in whatever theme it happens to be opened under —
- * including the moment before Nexus is selected, which is exactly when a new
- * user opens it.
+ * Deliberately NOT about Nexus. Nothing here declares or consumes a
+ * `--nexus-*` token: this plugin edits the theme's language, it does not speak
+ * it. Every value below is one of Obsidian's own semantic variables, so the
+ * editor looks right under whatever theme is selected — including the moment
+ * before Nexus is, which is exactly when a new user opens it.
+ *
+ * The studio is a workspace view, and its narrowest home is the primary one: a
+ * right dock a couple of hundred pixels wide, beside the reader. Everything is
+ * laid out for that first, and widens gracefully rather than the other way
+ * round. The panel is a size container, so rows respond to the width of the
+ * VIEW, not of the window — a studio in a narrow dock of a wide window is
+ * still narrow.
  */
+
+.nexus-studio {
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-2);
+    padding: var(--size-4-2) var(--size-4-3) var(--size-4-8);
+}
+
+/* --- top of the panel ---------------------------------------------------- */
+
+.nexus-studio-profile {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1);
+}
+
+.nexus-studio-profile-select {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.nexus-studio-warning,
+.nexus-studio-note {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    line-height: var(--line-height-tight);
+}
+
+.nexus-studio-warning {
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--text-warning);
+    border-radius: var(--radius-s);
+    padding: var(--size-4-2);
+}
+
+.nexus-studio-warning strong {
+    color: var(--text-normal);
+}
+
+/* --- groups ---------------------------------------------------------------
+ *
+ * The header is a real <button>, reset to look like a heading. Folding is the
+ * `hidden` attribute on the body. The explicit rule below exists because a
+ * later `display` rule on the same element would otherwise quietly beat the
+ * user-agent `[hidden] { display: none }` — which is precisely how a fold turns
+ * into "nothing happens" without an error anywhere.
+ */
+
+.nexus-studio-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.nexus-studio .nexus-studio-group-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1);
+    width: 100%;
+    height: auto;
+    padding: var(--size-4-1) var(--size-2-1);
+    background: none;
+    box-shadow: none;
+    border: none;
+    border-radius: var(--radius-s);
+    color: var(--text-normal);
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-semibold);
+    text-align: start;
+    cursor: var(--cursor);
+}
+
+.nexus-studio .nexus-studio-group-header:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.nexus-studio .nexus-studio-group-header:focus-visible {
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.nexus-studio-chevron {
+    display: inline-flex;
+    color: var(--text-muted);
+    --icon-size: var(--icon-xs);
+}
+
+.nexus-studio-group-meta {
+    margin-inline-start: auto;
+    font-weight: var(--font-normal);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-accent);
+}
+
+.nexus-studio-group-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.nexus-studio .nexus-studio-group-body[hidden],
+.nexus-studio .nexus-studio-row-css[hidden] {
+    display: none;
+}
+
+/* --- a token row ----------------------------------------------------------
+ *
+ *   [swatch]  Label  •                          [#333333] [pipette] [reset]
+ *             one line saying what it paints
+ *             Opacity [=========o========] 28%
+ *             [ rgba(255, 255, 255, 0.28)                              ]
+ */
+
+.nexus-studio-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+        'swatch text actions'
+        '.      alpha alpha'
+        '.      css   css';
+    align-items: center;
+    column-gap: var(--size-4-2);
+    row-gap: var(--size-4-1);
+    padding: 6px var(--size-2-3);
+    border-radius: var(--radius-s);
+}
+
+.nexus-studio-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.nexus-studio-row-text {
+    grid-area: text;
+    min-width: 0;
+}
+
+.nexus-studio-row-label {
+    font-size: var(--font-ui-small);
+    color: var(--text-normal);
+}
+
+/* A token the active profile overrides says so, quietly, beside its name. */
+.nexus-studio-row.is-overridden .nexus-studio-row-label::after {
+    content: ' •';
+    color: var(--text-accent);
+}
+
+.nexus-studio-row-desc {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    line-height: var(--line-height-tight);
+}
+
+.nexus-studio-row-actions {
+    grid-area: actions;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* --- the swatch -----------------------------------------------------------
+ *
+ * The visible circle is OUR element, painting the stored CSS string through a
+ * custom property over a checkerboard, so a translucent splitter white is
+ * visible as translucent and a `color-mix()` shows its real colour. The native
+ * colour input sits invisibly across it and is what receives the click.
+ *
+ * This is also why the hover and focus ring can no longer be clipped. The ring
+ * in the old settings tab belonged to Obsidian's styling of a native colour
+ * input, which is 4px too short for its own padding. Here the ring is a
+ * box-shadow on an element that has the row's padding all round it.
+ */
+
+.nexus-studio-swatch {
+    grid-area: swatch;
+    /* Beside the label, not centred on label-plus-description: in a narrow
+     * dock the description runs to three lines and a centred circle floats
+     * away from the name it belongs to. */
+    align-self: start;
+    position: relative;
+    display: block;
+    flex: 0 0 auto;
+    width: var(--swatch-width);
+    height: var(--swatch-height);
+    border-radius: 50%;
+    background:
+        linear-gradient(var(--nexus-studio-swatch), var(--nexus-studio-swatch)),
+        repeating-conic-gradient(var(--background-modifier-border) 0% 25%, transparent 0% 50%) 50% / 8px 8px;
+    box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+}
+
+.nexus-studio-swatch:hover,
+.nexus-studio-swatch:has(.nexus-studio-picker:focus-visible) {
+    box-shadow:
+        inset 0 0 0 1px var(--background-modifier-border),
+        0 0 0 2px var(--background-modifier-border-focus);
+}
+
+/* A value the picker cannot represent: still painted, but visibly not a
+ * picker-editable colour. */
+.nexus-studio-swatch.is-complex {
+    outline: 1px dashed var(--text-faint);
+    outline-offset: 2px;
+}
+
+/* Beats Obsidian's global `input[type="color"]` sizing. */
+.nexus-studio .nexus-studio-swatch input.nexus-studio-picker {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    cursor: var(--cursor);
+}
+
+.nexus-studio .nexus-studio-swatch input.nexus-studio-picker:disabled {
+    cursor: default;
+}
+
+/* --- the value chip -------------------------------------------------------
+ *
+ * A compact readout, and the disclosure for the raw CSS editor. One fixed
+ * width on every row, so a column of values does not ripple when one of them
+ * changes length.
+ */
+
+.nexus-studio .nexus-studio-value {
+    min-width: 8ch;
+    height: auto;
+    padding: 2px var(--size-4-1);
+    background: none;
+    box-shadow: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-s);
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    cursor: var(--cursor);
+}
+
+.nexus-studio .nexus-studio-value:hover,
+.nexus-studio .nexus-studio-value[aria-expanded='true'] {
+    border-color: var(--background-modifier-border);
+    color: var(--text-normal);
+}
+
+.nexus-studio .nexus-studio-value:focus-visible {
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+/* An advanced value is active. Said in words, never hidden behind a swatch
+ * that cannot show it. */
+.nexus-studio .nexus-studio-value.is-complex {
+    color: var(--text-accent);
+    font-style: italic;
+}
+
+.nexus-studio .nexus-studio-reset:disabled,
+.nexus-studio .nexus-studio-pipette:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+/* --- opacity --------------------------------------------------------------- */
+
+.nexus-studio-row-alpha {
+    grid-area: alpha;
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    min-width: 0;
+}
+
+.nexus-studio-row-alpha-label {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.nexus-studio .nexus-studio-alpha {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.nexus-studio-alpha-readout {
+    min-width: 4ch;
+    text-align: end;
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+/* --- the raw CSS value ----------------------------------------------------- */
+
+.nexus-studio-row-css {
+    grid-area: css;
+    min-width: 0;
+}
+
+.nexus-studio .nexus-studio-css-input {
+    width: 100%;
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+}
+
+.nexus-studio .nexus-studio-css-input[aria-invalid='true'] {
+    border-color: var(--text-error);
+}
+
+/* --- narrow docks ---------------------------------------------------------
+ *
+ * Below this width the actions no longer share a line with the label: they
+ * would squeeze the label to a column of single words. They move under it,
+ * right-aligned, and everything else keeps its place.
+ */
+@container (max-width: 300px) {
+    .nexus-studio-row {
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-areas:
+            'swatch text'
+            '.      actions'
+            '.      alpha'
+            '.      css';
+    }
+
+    .nexus-studio-row-actions {
+        justify-self: end;
+    }
+}
+
+/* --- developer scratch CSS ------------------------------------------------- */
+
+.nexus-studio-scratch-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    font-size: var(--font-ui-small);
+    padding: var(--size-4-1) var(--size-2-3);
+}
+
+.nexus-studio textarea.nexus-studio-scratch {
+    width: 100%;
+    min-height: 10em;
+    resize: vertical;
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+}
+
+.nexus-studio-scratch-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--size-4-2);
+    padding-top: var(--size-4-1);
+}
+
+/* --- dialogs ------------------------------------------------------------- */
 
 .nexus-studio-hint {
     color: var(--text-muted);
     font-size: var(--font-ui-smaller);
     margin: var(--size-4-2) 0 var(--size-4-4);
-}
-
-/* --- the swatch, and the ring that was being cut in half ------------------
- *
- * Measured in Obsidian 1.13.7's own app.css, because the clipping is not ours:
- *
- *   input[type="color"]            { height: var(--swatch-height);            }
- *                                  { width:  calc(var(--swatch-width) + 4px); }
- *   ::-webkit-color-swatch-wrapper { padding: 2px;                            }
- *   ::-webkit-color-swatch         { height: var(--swatch-height);            }
- *                                  { width:  var(--swatch-width);             }
- *
- * Look at the two axes side by side. The WIDTH carries a deliberate `+ 4px` to
- * pay for the wrapper's 2px of padding on each side, which leaves the round
- * swatch exactly 2px of room left and right — enough for the 2px hover and
- * focus ring (`--input-border-width-focus`) to be drawn inside the element.
- *
- * The HEIGHT has no such allowance. The swatch is a full `--swatch-height`
- * tall inside a wrapper that has already taken 2px off the top and bottom, so
- * it reaches the element's edges with nothing left over, and the ring — an
- * outer `box-shadow`, which paints outside the swatch box — is clipped by the
- * input. Top and bottom only, which is exactly the shape of the report.
- *
- * So the fix is the missing counterpart of a line Obsidian already wrote: give
- * the input the same 4px vertically that it already has horizontally. Four
- * pixels, on this plugin's rows only, on an element that is not what sets the
- * row's height — the settings page does not grow.
- *
- * It covers keyboard focus as well as hover, because both are the same
- * mechanism: `:focus-visible::-webkit-color-swatch` and `:hover::-webkit-color-swatch`
- * both draw an outer box-shadow, and both were clipped by the same missing 4px.
- */
-.nexus-studio-token input.nexus-studio-swatch {
-    height: calc(var(--swatch-height) + 4px);
-    flex: 0 0 auto;
-}
-
-/* A value this editor cannot take apart — `color-mix()`, `var()` — has no
- * swatch to show. Saying so quietly beats showing a black circle that is not
- * the colour. */
-.nexus-studio-token input.nexus-studio-swatch-unknown {
-    opacity: 0.35;
-}
-
-/* --- the row --------------------------------------------------------------
- *
- * The literal value is the authoritative control, so it gets room for a real
- * CSS colour rather than the width of six hex digits — but not the 18em the
- * first version gave it, where `#333333` sat in a field wide enough for a
- * sentence. 16em is the longest value the defaults actually contain,
- * `rgba(255, 255, 255, 0.28)`, at this monospace size, plus nothing.
- *
- * Fixed rather than fluid, and the same on every row: a column of fields that
- * each sized themselves to their contents would make the page ripple every
- * time a value changed length.
- */
-.nexus-studio-token input.nexus-studio-value {
-    font-family: var(--font-monospace);
-    font-size: var(--font-ui-smaller);
-    width: 16em;
-    flex: 0 0 auto;
-}
-
-/* Opacity is a secondary control; it should not take the room the value needs. */
-.nexus-studio-token input.nexus-studio-alpha {
-    width: 6em;
-    flex: 0 0 auto;
-}
-
-/* --- folded groups --------------------------------------------------------
- *
- * The heading is a sibling of the item list, not its parent, so hiding the list
- * leaves the heading — and the chevron that opens it again — in place. Nothing
- * is unmounted and no value is touched: a folded group's tokens keep their
- * overrides and go on being applied.
- *
- * No height transition. The list is short, and animating a settings page is
- * motion nobody asked for.
- *
- * One class name rather than two: a group's `cls` reaches `classList.add`
- * unsplit, and that throws on a space. So the folded state is its own class,
- * not a modifier beside a base one.
- */
-.nexus-studio-group-collapsed .setting-items {
-    display: none;
-}
-
-/* --- the scratch editor ---------------------------------------------------
- *
- * A textarea does not belong in the narrow control column beside a label, so
- * the scratch row stacks instead.
- */
-.setting-item.nexus-studio-scratch {
-    display: block;
-}
-
-.setting-item.nexus-studio-scratch .setting-item-control {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: var(--size-4-2);
-    margin-top: var(--size-4-2);
-    padding-top: 0;
-}
-
-.setting-item.nexus-studio-scratch textarea {
-    flex: 1 0 100%;
-    min-height: 10em;
-    resize: vertical;
-    font-family: var(--font-monospace);
 }
 
 textarea.nexus-studio-transfer {

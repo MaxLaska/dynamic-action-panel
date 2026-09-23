@@ -596,15 +596,15 @@ describe('the editor can render the whole table', () => {
     // Nothing in the tab may name a token: the whole point is that adding one
     // is a row in the table plus a rule in the theme, never a UI edit.
     it('names no token in the UI code', () => {
-        const source = readFileSync(
-            'companion/nexus-theme-studio/src/settingsTab.ts',
-            'utf8'
-        );
-        for (const token of NEXUS_TOKENS) {
-            expect(source).not.toContain(token.cssVariable);
-            expect(source).not.toContain(`'${token.key}'`);
+        for (const file of ['studioPanel.ts', 'tokenRow.ts', 'view.ts']) {
+            const source = readFileSync(`companion/nexus-theme-studio/src/${file}`, 'utf8');
+            for (const token of NEXUS_TOKENS) {
+                expect(source).not.toContain(token.cssVariable);
+                expect(source).not.toContain(`'${token.key}'`);
+            }
         }
-        expect(source).toContain('buildControlPlan');
+        const panel = readFileSync('companion/nexus-theme-studio/src/studioPanel.ts', 'utf8');
+        expect(panel).toContain('buildControlPlan');
     });
 });
 

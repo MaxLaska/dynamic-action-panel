@@ -1,13 +1,13 @@
 # OCAP – Status
 
-Last updated: 2026-09-23 (the Theme Studio has had its first interaction pass
-after real use: the per-token reset works, the colour picker is live while it
-moves, there is a screen pipette, the splitter alphas have a real control, and
-hovering a row shows you which surface it paints; on top of the `Nexus` THEME
-that owns every host surface, the editor for it, and the thin bridge that
-carries its tokens into the reader's iframe; on top of the three distinguishable
-surfaces those rules used to live in as a companion CSS patch,
-on top of a section shortcut landing exactly where the
+Last updated: 2026-09-23 (the Theme Studio is now a WORKSPACE VIEW, opened by
+one command and docked beside the surfaces it designs, with folding groups that
+actually fold, a compact design row with the raw CSS behind a disclosure, and a
+live check in a real Obsidian; on top of the first interaction pass after real
+use, on top of the `Nexus` THEME that owns every host surface, the editor for
+it, and the thin bridge that carries its tokens into the reader's iframe; on top
+of the three distinguishable surfaces those rules used to live in as a companion
+CSS patch, on top of a section shortcut landing exactly where the
 reader's own outline lands, on top of outline sections as panel tools and the
 reader sidebar side — those three in `zotflow-reader-extensions`, which is
 not part of the panel; and on top of the
@@ -18,6 +18,39 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **Nexus Theme Studio as a workspace view (2026-09-23), implemented locally,
+  deployed to the smoke vault only, checked live in an isolated Obsidian. Not
+  pushed, not in the productive vault.** Normative: the `DECISIONS.md` entries
+  from "Why the settings-tab fold never folded" onward.
+  - **Why:** it had become a design tool, and a settings tab is a modal over the
+    workspace being designed. Now an `ItemView` (`nexus-theme-studio`), opened by
+    **Open Nexus Theme Studio**, single-instance through `ensureSideLeaf`, placed
+    in the right dock, and moved, split or popped out with Obsidian's own UI. No
+    settings tab, no ribbon button, no window logic.
+  - **The fold never worked, and the reason is now measured:** Obsidian's
+    declarative settings renderer applies a group's `cls` only when the group is
+    created and reconciles it afterwards. The click was stored (three groups in
+    the smoke `data.json`) and never shown. Settings version 2 drops that stored
+    fold; profiles and overrides are read unchanged. An earlier claim that `cls`
+    "throws on a space" was wrong and is corrected in `DECISIONS.md`.
+  - **The row** is swatch, name, description, opacity where the registry says,
+    a compact value readout, pipette, reset. The raw CSS is behind the readout;
+    a complex value shows `CSS` and is never rewritten. Reset says "Reset to
+    default". Narrow-first: below 300px of view width the actions go under the
+    label.
+  - **Found in live use and fixed:** the "Nexus is not selected" note stayed up
+    after Nexus was selected; it now follows `css-change` in place.
+  - **Verified:** typecheck, lint (0/0), 1926 tests in 58 files — including
+    DOM tests under happy-dom, mutation-checked on the fold — and
+    `companion/nexus-theme-studio/scripts/smokeView.mjs`, 39/39 against
+    Obsidian 1.13.7 on its own profile and a throwaway vault seeded with the smoke
+    vault's real v1 `data.json`.
+  - **The pipette, honestly:** `window.EyeDropper` exists, opens from the studio
+    window and cancels cleanly (checked live). Sampling a pixel from another pane
+    needs a physical click, which automation does not provide — that is manual
+    acceptance step I. Nothing technical stands between the sampler and another
+    pane of the same window now that no modal covers it.
 
 - **Nexus Theme Studio, interaction pass (2026-09-23), implemented locally,
   deployed to the smoke vault only. Not pushed, not in the productive vault.**
@@ -58,9 +91,9 @@ user's judgement in use)
     while the swatch wrapper has 2px of padding — so the ring has room left and
     right and none top and bottom. The theme studio adds the missing 4px on its
     own rows.
-  - **Groups fold**, by a class on the group with CSS hiding `.setting-items`,
-    keyboard-reachable, state stored at the settings root so a profile switch
-    does not reshuffle the page. Value fields went 18em → 16em, fixed.
+  - **Groups fold** — CORRECTION: they did not. The class never reached the
+    element (see the view entry above). The fold state was stored but never
+    shown. Value fields went 18em → 16em, fixed.
   - **Verified:** typecheck, lint (0 errors, 0 warnings), 1861 tests in 57
     files, three builds, three smoke deploys.
 

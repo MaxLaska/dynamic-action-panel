@@ -13,7 +13,7 @@ discovered **once**.
 | Piece | Role |
 | --- | --- |
 | **Nexus theme** (`theme/nexus/`) | The visual language. Every host surface is named here, exactly once. |
-| **Nexus Theme Studio** (`companion/nexus-theme-studio/`) | Controlled live editing of that language. Named profiles of token overrides, applied to the running workspace. |
+| **Nexus Theme Studio** (`companion/nexus-theme-studio/`) | Controlled live editing of that language, as a workspace view beside the surfaces it changes. Named profiles of token overrides, applied to the running workspace. |
 | **Chromium DevTools** | A tool for *discovering* an unknown corner of Obsidian. Not a place to keep anything. |
 | **ZotFlow Reader Extensions** (`companion/zotflow-reader-extensions/`) | A thin bridge that carries Nexus tokens into the reader's iframe, which a theme cannot reach. |
 
@@ -33,9 +33,8 @@ Two ways, and they are for different things.
 
 - **The value already has a token.** Change it in the Theme Studio and look.
   Nothing else is needed.
-- **The value has no token yet.** Put the rule in
-  *Settings → Nexus Theme Studio → Advanced → Developer scratch CSS* and press
-  Apply. It takes effect immediately and survives a reload, so the idea can be
+- **The value has no token yet.** Put the rule in the studio's
+  *Developer scratch CSS* section and press Apply. It takes effect immediately and survives a reload, so the idea can be
   judged over a day's work rather than in the twenty seconds before the next
   DevTools refresh wipes it.
 
@@ -64,14 +63,18 @@ the key to `BRIDGED_KEYS` in
 
 ### Phase 4 — Tune
 
-From here on the value is changed in *Settings → Nexus Theme Studio*, live. No
-inspector, no code change, no reload. This is where a palette is actually made:
+From here on the value is changed in the studio, live. Open it with the
+command **Open Nexus Theme Studio** (Ctrl/Cmd+P); it docks on the right, and can
+be dragged into a split, a tab or its own window like any other view. Running the
+command again brings back the one that is open. No inspector, no code change, no
+reload. This is where a palette is actually made:
 the twentieth two-percent adjustment costs seconds.
 
 What each row gives you:
 
 - **The swatch** repaints the workspace while you are still moving the picker,
-  not when you dismiss it.
+  not when you dismiss it. It paints the stored value itself, so translucency
+  and `color-mix()` show as they are.
 - **The pipette** samples any pixel on the screen — the panel, a dock, the
   reader, another application — and drops the colour into the token. It uses the
   browser's own screen sampler, so the workspace stays visible while you aim.
@@ -79,18 +82,20 @@ What each row gives you:
 - **The opacity slider** appears on the tokens whose value is translucent. The
   stored result is still ordinary CSS: white at 28% is
   `rgba(255, 255, 255, 0.28)`.
-- **The text field** is the authoritative control and takes any CSS colour. A
-  value the editor cannot take apart — `color-mix()`, `var()` — keeps its text
-  and loses its swatch rather than being rewritten.
-- **The reset arrow** clears this one token's override and nothing else. It is
-  live only when this token actually has an override.
+- **The value readout** (`#333333`) opens the raw CSS field. That field is
+  the authoritative control and takes any CSS colour. A value the picker cannot
+  take apart — `color-mix()`, `var()` — reads `CSS` and is never rewritten.
+- **The reset arrow** ("Reset to default") clears this one token's override and
+  nothing else. It is live only when this token actually has an override.
 - **Resting the pointer on a row** paints that token magenta for as long as you
   stay there, so you can see which surfaces it controls without setting a colour
   to red and back. It changes nothing, saves nothing, and is gone the moment you
   move away.
 
-Fold a group with the chevron in its heading when the list gets long; folding
-hides controls and touches no value.
+Fold a group by clicking its heading (or Enter/Space on it) when the list gets
+long; folding hides controls, touches no value, and is remembered across a
+restart. The profile menu (⋯) holds new, duplicate, rename, delete, import and
+export; the arrow beside the profile resets the whole profile.
 
 ### Phase 5 — Bake
 
@@ -120,6 +125,7 @@ extension's, a note, or the theme's files.
 npm run deploy:theme-smoke     # install the theme into the smoke vault
 npm run build:studio           # build the Theme Studio
 npm run deploy:studio-smoke    # install it into the smoke vault
+node companion/nexus-theme-studio/scripts/smokeView.mjs   # live check, see its header
 npm run build:companion        # build the reader extensions
 npm run deploy:companion-smoke # install them into the smoke vault
 ```

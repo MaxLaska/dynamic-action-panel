@@ -258,7 +258,6 @@ describe('the locator paints a token and then stops', () => {
 
 describe('the locator cannot reach the stored profile', () => {
     const main = readFileSync('companion/nexus-theme-studio/src/main.ts', 'utf8');
-    const tab = readFileSync('companion/nexus-theme-studio/src/settingsTab.ts', 'utf8');
 
     // Structural, not a promise in a comment: the preview lives in a runtime
     // field, and the only method that saves does not read it.
@@ -269,10 +268,13 @@ describe('the locator cannot reach the stored profile', () => {
     });
 
     it('never saves from the preview path', () => {
+        // Anchored on the signature: `setPreview([])` is also CALLED in
+        // `onload`, and the first occurrence is not the method.
         const setPreview = main.slice(
-            main.indexOf('setPreview('),
-            main.indexOf('hasPreview()')
+            main.indexOf('setPreview(variables: readonly string[]): void'),
+            main.indexOf('hasPreview(): boolean')
         );
+        expect(setPreview.length).toBeGreaterThan(0);
         expect(setPreview).not.toContain('saveData');
         expect(setPreview).not.toContain('this.settings =');
     });
@@ -291,19 +293,40 @@ describe('the locator cannot reach the stored profile', () => {
         }
     });
 
-    // The pointer can leave a row by the tab closing rather than by moving.
-    it('clears the preview when the tab is closed', () => {
-        expect(tab).toContain('hide(): void');
-        const hide = tab.slice(tab.indexOf('hide(): void'));
-        expect(hide.slice(0, hide.indexOf('}'))).toContain('setPreview([])');
+    // The pointer can leave a row by the view closing rather than by moving.
+    // The behaviour is pinned in tests/nexusStudioView.test.ts; this pins that
+    // the view's own close path is where it happens.
+    it('clears the preview when the view is closed', () => {
+        const view = readFileSync('companion/nexus-theme-studio/src/view.ts', 'utf8');
+        const close = view.slice(view.indexOf('protected async onClose('));
+        const body = close.slice(0, close.indexOf('\n    }'));
+        expect(body).toContain('this.panel?.dispose()');
+        expect(body).toContain('setPreview([])');
     });
 
     it('clears the preview before sampling the screen', () => {
         const row = readFileSync('companion/nexus-theme-studio/src/tokenRow.ts', 'utf8');
-        const pipette = row.slice(row.indexOf('eyedropperAvailable(win)'));
-        expect(pipette.indexOf('host.preview(null)')).toBeLessThan(
-            pipette.indexOf('pickScreenColor')
+        const pipette = row.slice(row.indexOf('const onPipette'));
+        const body = pipette.slice(0, pipette.indexOf('\n    };'));
+        expect(body.indexOf('host.preview(null)')).toBeGreaterThan(-1);
+        expect(body.indexOf('host.preview(null)')).toBeLessThan(body.indexOf('pickScreenColor'));
+    });
+
+    // Views close in an order the plugin does not control. One that closes
+    // after `onunload` must not put the overrides back on a workspace whose
+    // plugin is gone.
+    it('refuses to re-apply anything once the plugin has unloaded', () => {
+        const unload = main.slice(main.indexOf('onunload(): void'));
+        const unloadBody = unload.slice(0, unload.indexOf('\n    }'));
+        // First thing, before anything that could trigger a view to close.
+        expect(unloadBody.indexOf('this.unloaded = true')).toBeGreaterThan(-1);
+        expect(unloadBody.indexOf('this.unloaded = true')).toBeLessThan(
+            unloadBody.indexOf('clearTokenOverrides')
         );
+        for (const method of ['applyActiveProfile(): void', 'setPreview(variables']) {
+            const body = main.slice(main.indexOf(method));
+            expect(body.slice(0, body.indexOf('\n    }'))).toContain('if (this.unloaded) return;');
+        }
     });
 });
 
@@ -357,17 +380,17 @@ describe('a per-token reset touches one token', () => {
     // and a write deliberately does not re-render. So it stayed disabled after
     // the token gained an override, and the click did nothing.
     it('re-syncs every row after a write instead of trusting the render', () => {
-        const tab = readFileSync('companion/nexus-theme-studio/src/settingsTab.ts', 'utf8');
-        const write = tab.slice(tab.indexOf('private async write('));
-        expect(write.slice(0, write.indexOf('\n    }'))).toContain('syncControls()');
+        const panel = readFileSync('companion/nexus-theme-studio/src/studioPanel.ts', 'utf8');
+        const write = panel.slice(panel.indexOf('private write('));
+        expect(write.slice(0, write.indexOf('\n    }'))).toContain('this.sync()');
     });
 
     // Belt and braces: the behaviour must not depend on a CSS class having been
     // applied, because that is what failed the first time.
     it('checks for an override in the click handler as well as in the state', () => {
         const row = readFileSync('companion/nexus-theme-studio/src/tokenRow.ts', 'utf8');
-        const reset = row.slice(row.indexOf("setIcon('rotate-ccw')"));
-        expect(reset.slice(0, reset.indexOf('});'))).toContain('!host.isOverridden(token)');
+        const reset = row.slice(row.indexOf('const onReset'));
+        expect(reset.slice(0, reset.indexOf('\n    };'))).toContain('!host.isOverridden(token)');
     });
 });
 
@@ -378,8 +401,8 @@ describe('the colour picker is live', () => {
     // native colour input does not arrive until the picker is dismissed. That
     // is the whole of the report; owning the element is the fix.
     it('listens for input, not only for change', () => {
-        expect(row).toContain("swatch.addEventListener('input'");
-        expect(row).toContain("swatch.addEventListener('change'");
+        expect(row).toContain("picker.addEventListener('input'");
+        expect(row).toContain("picker.addEventListener('change'");
     });
 
     it('does not use the component that only hears change', () => {
@@ -389,8 +412,11 @@ describe('the colour picker is live', () => {
         expect(code).not.toContain('addColorPicker');
     });
 
-    it('asks the opacity slider for instant events too', () => {
-        expect(row).toContain('setInstant(true)');
+    // A native range input streams `input` while it is dragged — the live
+    // behaviour Obsidian's SliderComponent needed `setInstant(true)` for.
+    it('listens to the opacity slider while it moves', () => {
+        expect(row).toContain("alpha?.addEventListener('input'");
+        expect(row).toContain("type: 'range'");
     });
 
     // Moving the picker on `rgba(255,255,255,0.28)` must keep the 0.28 rather
@@ -523,67 +549,79 @@ describe('a group can be folded without losing anything', () => {
         expect(isGroupCollapsed(edited, 'workspace')).toBe(true);
     });
 
-    // Hiding the item list rather than the items keeps the heading — and the
-    // chevron that opens it again — on screen.
-    it('hides the list and not the heading', () => {
+    // The fold is the `hidden` attribute on the group body. A later `display`
+    // rule on that element would silently beat the user-agent `[hidden]` rule,
+    // which is exactly how a fold becomes "nothing happens" with no error —
+    // so the stylesheet restates it, with enough weight to win.
+    it('keeps a folded body hidden whatever else styles it', () => {
         const css = readFileSync('companion/nexus-theme-studio/styles.css', 'utf8');
-        expect(css).toContain('.nexus-studio-group-collapsed .setting-items');
-        expect(css).toContain('display: none');
+        expect(css).toContain('.nexus-studio .nexus-studio-group-body[hidden]');
+        const rule = css.slice(css.indexOf('.nexus-studio .nexus-studio-group-body[hidden]'));
+        expect(rule.slice(0, rule.indexOf('}'))).toContain('display: none');
     });
 
-    // A group's `cls` reaches `classList.add` unsplit, and that throws on a
-    // space — which would have taken the whole group down the first time
-    // anybody folded it.
-    it('gives the group one class name, never two', () => {
-        const tab = readFileSync('companion/nexus-theme-studio/src/settingsTab.ts', 'utf8');
-        const groups = tab.slice(tab.indexOf('private tokenGroups('));
-        const header = groups.slice(0, groups.indexOf('items:'));
-        const cls = header.slice(header.indexOf('cls:'), header.indexOf('extraButtons'));
-        expect(cls).toContain('nexus-studio-group');
-        for (const literal of cls.match(/'[^']*'/g) ?? []) {
-            expect(literal.slice(1, -1)).not.toContain(' ');
-        }
-    });
-
-    it('gives the chevron a keyboard path and a state to announce', () => {
-        const tab = readFileSync('companion/nexus-theme-studio/src/settingsTab.ts', 'utf8');
-        const toggle = tab.slice(tab.indexOf('private renderCollapseToggle('));
-        expect(toggle).toContain('aria-expanded');
-        expect(toggle).toContain("addEventListener('keydown'");
-        expect(toggle).toContain("event.key !== 'Enter'");
+    // The click, the keys and the announced state are pinned against a real
+    // DOM in tests/nexusStudioView.test.ts. This pins the shape they rely on.
+    it('makes the header a real button with a state to announce', () => {
+        const panel = readFileSync('companion/nexus-theme-studio/src/studioPanel.ts', 'utf8');
+        const group = panel.slice(panel.indexOf('private renderGroup('));
+        const body = group.slice(0, group.indexOf('\n    }'));
+        expect(body).toContain("cls: 'nexus-studio-group-header'");
+        expect(body).toContain("'aria-expanded'");
+        expect(body).toContain("addEventListener('keydown'");
+        expect(body).toContain('event.preventDefault()');
     });
 });
 
 describe('the swatch has room for its own focus ring', () => {
     const css = readFileSync('companion/nexus-theme-studio/styles.css', 'utf8');
 
-    // Obsidian's own rule gives the input `calc(var(--swatch-width) + 4px)` of
-    // width to pay for the swatch wrapper's 2px of padding on each side, and
-    // gives the height no such allowance — so the ring, an outer box-shadow,
-    // is clipped top and bottom. This is the missing counterpart.
-    it('adds vertically the four pixels Obsidian already adds horizontally', () => {
-        expect(css).toContain('height: calc(var(--swatch-height) + 4px)');
+    /** One rule's body, by its exact selector. */
+    const ruleOf = (selector: string): string => {
+        const block = css.slice(css.indexOf(`${selector} {`));
+        return block.slice(0, block.indexOf('}'));
+    };
+
+    // The clipped ring belonged to Obsidian's styling of a native colour input,
+    // which is 4px too short for its own wrapper padding. The visible circle is
+    // now our own element and the ring a box-shadow on it, drawn for pointer
+    // hover and for keyboard focus of the input inside.
+    it('draws the ring on our own element, for hover and for keyboard focus', () => {
+        expect(css).toContain('.nexus-studio-swatch:hover');
+        expect(css).toContain('.nexus-studio-swatch:has(.nexus-studio-picker:focus-visible)');
     });
 
-    it('does not grow the row by resizing the swatch itself', () => {
-        const block = css.slice(css.indexOf('.nexus-studio-token input.nexus-studio-swatch {'));
-        const rule = block.slice(0, block.indexOf('}'));
-        expect(rule).not.toContain('--swatch-width');
-        expect(rule).not.toContain('padding');
+    // Nothing between the swatch and the edge of the panel may clip it.
+    it('clips nothing around the swatch', () => {
+        for (const selector of ['.nexus-studio-row {', '.nexus-studio-group {', '.nexus-studio {']) {
+            const block = css.slice(css.indexOf(selector));
+            expect(block.slice(0, block.indexOf('}'))).not.toContain('overflow');
+        }
     });
 
-    it('keeps the value field one fixed, compact width on every row', () => {
-        const block = css.slice(css.indexOf('.nexus-studio-token input.nexus-studio-value {'));
-        const rule = block.slice(0, block.indexOf('}'));
-        expect(rule).toContain('width: 16em');
-        expect(rule).not.toContain('min-width');
-        expect(rule).not.toContain('max-width');
+    // Obsidian styles every `input[type="color"]` with its own width and
+    // height. The invisible picker has to cover the whole circle, so our rule
+    // must outweigh that one.
+    it('stretches the invisible picker across the whole circle', () => {
+        const rule = ruleOf('.nexus-studio .nexus-studio-swatch input.nexus-studio-picker');
+        expect(rule).toContain('inset: 0');
+        expect(rule).toContain('width: 100%');
+        expect(rule).toContain('height: 100%');
+        expect(rule).toContain('opacity: 0');
+    });
+
+    // The raw CSS field is no longer a permanent 16em column. The compact
+    // readout that replaced it keeps one width on every row.
+    it('keeps the value readout compact and the same on every row', () => {
+        const rule = ruleOf('.nexus-studio .nexus-studio-value');
+        expect(rule).toContain('min-width: 8ch');
+        expect(css).not.toContain('width: 16em');
     });
 });
 
 describe('the rows are still built from the registry', () => {
-    it('names no token in the row code or the tab', () => {
-        for (const file of ['settingsTab.ts', 'tokenRow.ts']) {
+    it('names no token in the row code, the panel or the view', () => {
+        for (const file of ['studioPanel.ts', 'tokenRow.ts', 'view.ts']) {
             const source = readFileSync(`companion/nexus-theme-studio/src/${file}`, 'utf8');
             for (const token of NEXUS_TOKENS) {
                 expect(source).not.toContain(token.cssVariable);
@@ -595,14 +633,14 @@ describe('the rows are still built from the registry', () => {
     it('decides the opacity control from the table, not from a list', () => {
         const row = readFileSync('companion/nexus-theme-studio/src/tokenRow.ts', 'utf8');
         expect(row).toContain('token.supportsAlpha');
-        const tab = readFileSync('companion/nexus-theme-studio/src/settingsTab.ts', 'utf8');
-        expect(tab).toContain('token.locateAlso');
+        const panel = readFileSync('companion/nexus-theme-studio/src/studioPanel.ts', 'utf8');
+        expect(panel).toContain('token.locateAlso');
     });
 });
 
 describe('a drag repaints every frame but is written once', () => {
     const main = readFileSync('companion/nexus-theme-studio/src/main.ts', 'utf8');
-    const tab = readFileSync('companion/nexus-theme-studio/src/settingsTab.ts', 'utf8');
+    const panel = readFileSync('companion/nexus-theme-studio/src/studioPanel.ts', 'utf8');
 
     // A colour picker emits an `input` per frame. Applying each one is the
     // point; saving each one would be a hundred writes of `data.json` for one
@@ -623,8 +661,18 @@ describe('a drag repaints every frame but is written once', () => {
     });
 
     it('uses the deferred path for the token controls', () => {
-        const write = tab.slice(tab.indexOf('private async write('));
+        const write = panel.slice(panel.indexOf('private write('));
         expect(write.slice(0, write.indexOf('\n    }'))).toContain('updateLive(');
+    });
+
+    // Folding a section is not a colour change. It must not re-send every
+    // token to every reader, and it must not wait for a debounce either.
+    it('saves UI state without touching the theme', () => {
+        const ui = main.slice(main.indexOf('async updateUi(next'));
+        const body = ui.slice(0, ui.indexOf('\n    }'));
+        expect(body).toContain('await this.saveData');
+        expect(body).not.toContain('adopt(');
+        expect(body).not.toContain('applyActiveProfile');
     });
 
     // The difference between "the last edit is saved" and "the last edit is

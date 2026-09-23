@@ -1,24 +1,31 @@
 // tokenRow.ts
 // One token's controls, and the one rule that keeps them honest.
 //
-// THE RULE: the controls are a VIEW of the stored value. The value is not a
-// consequence of the controls. Every path — picker, opacity, pipette, text,
-// reset — writes a CSS string and then re-reads the state to redraw itself.
+// THE RULE: the controls are a VIEW of the stored value. Every path — picker,
+// opacity, pipette, raw CSS, reset — writes a CSS string and then re-reads the
+// state to redraw itself. The first version computed each control's state once,
+// at render, and a write deliberately does not re-render; the reset arrow was
+// therefore rendered disabled and stayed disabled after the value changed.
+// Holding the elements and re-syncing them is the habit, not a patch.
 //
-// That is not ceremony. The first version of this row computed each control's
-// state once, while rendering, and never again, because a write deliberately
-// does not re-render the tab (re-rendering mid-drag tears the colour picker out
-// from under the pointer). So the per-token reset arrow was rendered disabled —
-// correct, at that instant, for a token with no override — and stayed disabled
-// after the user changed the colour, which is exactly the "reset does nothing"
-// that came back from real use. Holding the components and re-syncing them is
-// the fix, and it has to be the habit rather than a patch on one button.
+// THE SHAPE, since the studio became a workspace view. The row is a DESIGN
+// control first and a CSS form second:
 //
-// Everything Obsidian-specific lives here; the decisions about what a value may
-// be and what it parses to live in overrides.ts and colorValue.ts, which have
-// no DOM in them at all.
+//   [swatch]  Label                         [#333333] [pipette] [reset]
+//             one line saying what it paints
+//             Opacity [=========o========] 28%        (translucent tokens)
+//             CSS value [ rgba(255, 255, 255, 0.28) ] (only when opened)
+//
+// The raw value is still there and still authoritative — it is how `rgba()`,
+// `oklch()`, `var()` and `color-mix()` get in — but it is behind the value
+// chip, not a 16em field deciding the width of every row. A value the swatch
+// cannot represent is never hidden: the chip reads `CSS` and the swatch still
+// paints the real colour, because it paints the stored string itself.
+//
+// Built on plain DOM (see dom.ts) so that it behaves the same in Obsidian and
+// in the happy-dom tests that pin it.
 
-import type { ExtraButtonComponent, Setting, SliderComponent, TextComponent } from 'obsidian';
+import { setIcon, setTooltip } from 'obsidian';
 
 import type { ThemeTokenDefinition } from '../../../theme/nexus/src/tokens';
 import {
@@ -27,10 +34,11 @@ import {
     parseColorValue,
     percentToAlpha,
 } from './colorValue';
+import { button, docOf, el } from './dom';
 import { eyedropperAvailable, pickScreenColor } from './eyedropper';
 import { isValidTokenValue } from './overrides';
 
-/** What the row needs from the tab, so this file needs no plugin reference. */
+/** What the row needs from its panel, so this file needs no plugin reference. */
 export interface TokenRowHost {
     /** The value this token currently resolves to, override or theme default. */
     currentValue(token: ThemeTokenDefinition): string;
@@ -39,177 +47,224 @@ export interface TokenRowHost {
     /** Whether the active profile may be edited at all. */
     isLocked(): boolean;
     /** Stores a value, or clears the override when null. Applies immediately. */
-    write(token: ThemeTokenDefinition, value: string | null): Promise<void>;
+    write(token: ThemeTokenDefinition, value: string | null): void;
     /** Starts or stops the locator preview for this token. */
     preview(token: ThemeTokenDefinition | null): void;
+    /** The window this row lives in, for timers and the screen sampler. */
+    win: Window;
 }
 
 /** A row that can be told to redraw itself from the current state. */
 export interface TokenRowHandle {
-    /** Re-reads everything, including the text field. */
-    syncAll(): void;
-    /** Re-reads everything except the text field, so typing is not interrupted. */
-    syncControls(): void;
-    /** Detaches what this row attached. */
+    readonly el: HTMLElement;
+    /** Re-reads everything. Never overwrites the element that has focus. */
+    sync(): void;
+    /** Detaches what this row attached and cancels anything pending. */
     dispose(): void;
 }
 
 /**
  * How long the pointer must rest on a row before the locator paints.
  *
- * Without a delay, sweeping the mouse down the settings page flashes half the
+ * Without a delay, sweeping the pointer down the panel flashes half the
  * workspace magenta on the way past. With one, resting on a row still feels
- * immediate. Measured by using it: 200ms is below the threshold where a
- * deliberate hover feels like waiting.
+ * immediate.
  */
 export const LOCATOR_DELAY_MS = 200;
 
-export function renderTokenRow(
-    setting: Setting,
-    token: ThemeTokenDefinition,
-    host: TokenRowHost,
-    win: Window = window
-): TokenRowHandle {
-    setting.setClass('nexus-studio-token');
+/** The one tooltip the per-token reset has, whatever the value is. */
+export const RESET_TOOLTIP = 'Reset to default';
 
-    let swatch: HTMLInputElement | null = null;
-    let alpha: SliderComponent | null = null;
-    let text: TextComponent | null = null;
-    let reset: ExtraButtonComponent | null = null;
-    let pipette: ExtraButtonComponent | null = null;
+/** What the value chip says when the stored value has no swatch form. */
+export const COMPLEX_VALUE_LABEL = 'CSS';
+
+/** Unique element ids across every row in every open studio view. */
+let rowSerial = 0;
+
+export function renderTokenRow(
+    parent: HTMLElement,
+    token: ThemeTokenDefinition,
+    host: TokenRowHost
+): TokenRowHandle {
+    const win = host.win;
+    const serial = (rowSerial += 1);
+    const cssId = `nexus-studio-css-${serial}`;
     let hoverTimer = 0;
 
-    /** The value as a swatch colour and an opacity, when it has one. */
+    const row = el(parent, 'div', {
+        cls: 'nexus-studio-row',
+        attr: { 'data-token': token.key },
+    });
+
+    // --- the swatch --------------------------------------------------------
+    //
+    // A label wrapping an invisible native colour input. The label is what you
+    // see — it paints the STORED STRING through a custom property, so it shows
+    // `color-mix()` and translucency truthfully, over a checkerboard — and the
+    // input stretched across it is what you click. Owning the input is also
+    // what makes it live: Obsidian's ColorComponent listens for `change` only,
+    // which does not arrive until the native picker is dismissed.
+    const swatch = el(row, 'label', { cls: 'nexus-studio-swatch' });
+    const picker = el(swatch, 'input', {
+        cls: 'nexus-studio-picker',
+        attr: { type: 'color', 'aria-label': `${token.label} colour` },
+    });
+
+    const text = el(row, 'div', { cls: 'nexus-studio-row-text' });
+    el(text, 'div', { cls: 'nexus-studio-row-label', text: token.label });
+    el(text, 'div', { cls: 'nexus-studio-row-desc', text: token.description });
+
+    const actions = el(row, 'div', { cls: 'nexus-studio-row-actions' });
+
+    // The value chip: a compact readout of the current value, and the
+    // disclosure for the raw CSS editor. One control for both, because "what is
+    // this value" and "let me type it" are the same question at two depths.
+    const chip = button(actions, {
+        cls: 'nexus-studio-value',
+        attr: { 'aria-expanded': 'false', 'aria-controls': cssId },
+    });
+
+    let pipette: HTMLButtonElement | null = null;
+    if (eyedropperAvailable(win)) {
+        pipette = button(actions, {
+            cls: ['clickable-icon', 'nexus-studio-pipette'],
+            attr: { 'aria-label': 'Pick a colour from the screen' },
+        });
+        setIcon(pipette, 'pipette');
+        setTooltip(pipette, 'Pick a colour from the screen');
+    }
+
+    const reset = button(actions, {
+        cls: ['clickable-icon', 'nexus-studio-reset'],
+        attr: { 'aria-label': RESET_TOOLTIP },
+    });
+    setIcon(reset, 'rotate-ccw');
+    setTooltip(reset, RESET_TOOLTIP);
+
+    // --- the opacity -------------------------------------------------------
+    //
+    // Only where the token's own default is translucent (`supportsAlpha` in
+    // the registry). A slider on all eleven rows would serve three.
+    let alpha: HTMLInputElement | null = null;
+    let alphaReadout: HTMLElement | null = null;
+    if (token.supportsAlpha) {
+        const line = el(row, 'div', { cls: 'nexus-studio-row-alpha' });
+        el(line, 'span', { cls: 'nexus-studio-row-alpha-label', text: 'Opacity' });
+        alpha = el(line, 'input', {
+            cls: 'nexus-studio-alpha',
+            attr: {
+                type: 'range',
+                min: '0',
+                max: '100',
+                step: '1',
+                'aria-label': `${token.label} opacity`,
+            },
+        });
+        alphaReadout = el(line, 'span', { cls: 'nexus-studio-alpha-readout' });
+    }
+
+    // --- the raw CSS value -------------------------------------------------
+    const cssLine = el(row, 'div', { cls: 'nexus-studio-row-css', attr: { id: cssId } });
+    cssLine.hidden = true;
+    const cssInput = el(cssLine, 'input', {
+        cls: 'nexus-studio-css-input',
+        attr: {
+            type: 'text',
+            spellcheck: 'false',
+            placeholder: token.defaultValue,
+            'aria-label': `${token.label} CSS value`,
+        },
+    });
+
+    // --- writing -----------------------------------------------------------
     const parsed = (): { hex: string; alpha: number } | null =>
         parseColorValue(host.currentValue(token));
 
+    const commit = (value: string | null): void => {
+        host.write(token, value);
+        sync();
+    };
+
     /**
-     * Writes a colour and an opacity as one CSS value.
-     *
-     * The opacity comes from the current value rather than from the slider's
-     * own idea of it, so moving the picker on `rgba(255,255,255,0.28)` keeps
-     * the 0.28 instead of silently making the splitter opaque.
+     * A colour and an opacity as one CSS value. The opacity comes from the
+     * current value unless given, so moving the picker on
+     * `rgba(255,255,255,0.28)` keeps the 0.28 instead of silently making the
+     * splitter opaque.
      */
     const writeColor = (hex: string, nextAlpha?: number): void => {
+        if (host.isLocked()) return;
+        commit(formatColorValue(hex, nextAlpha ?? parsed()?.alpha ?? 1));
+    };
+
+    // `input` streams while the colour moves; `change` covers the keyboard
+    // path and any platform where the picker only commits. Writing the same
+    // value twice is idempotent.
+    const onPicker = (): void => writeColor(picker.value);
+    picker.addEventListener('input', onPicker);
+    picker.addEventListener('change', onPicker);
+
+    const onAlpha = (): void => {
         const current = parsed();
-        const useAlpha = nextAlpha ?? current?.alpha ?? 1;
-        void host.write(token, formatColorValue(hex, useAlpha)).then(() => rowSyncAll());
+        if (!alpha || !current) return;
+        writeColor(current.hex, percentToAlpha(Number(alpha.value)));
     };
+    alpha?.addEventListener('input', onAlpha);
 
-    // --- the swatch ------------------------------------------------------
-    //
-    // A plain `<input type="color">` created here rather than Obsidian's
-    // `addColorPicker`. The component is a thin wrapper that listens for
-    // `change` ONLY, and `change` on a native colour input does not arrive
-    // until the picker is dismissed — which is the whole of the "live editing
-    // is not live" report. The element fires `input` continuously while the
-    // colour moves (Obsidian's own canvas picker relies on exactly that), so
-    // owning the element is what buys live feedback.
-    swatch = setting.controlEl.createEl('input', {
-        type: 'color',
-        cls: 'nexus-studio-swatch',
-    });
-    swatch.setAttribute('aria-label', `${token.label} colour`);
-
-    const onSwatchInput = (): void => {
-        if (host.isLocked() || !swatch) return;
-        // `input`, not `change`: this is the event that arrives while the
-        // pointer is still moving inside the picker.
-        writeColor(swatch.value);
+    const onChip = (): void => {
+        const opening = cssLine.hidden;
+        cssLine.hidden = !opening;
+        chip.setAttribute('aria-expanded', opening ? 'true' : 'false');
+        row.toggleAttribute('data-css-open', opening);
+        if (opening) {
+            cssInput.value = host.currentValue(token);
+            cssInput.focus();
+        }
+        // Closing writes nothing. Whatever was valid was written as it was
+        // typed; whatever was not is simply dropped with the field.
     };
-    swatch.addEventListener('input', onSwatchInput);
-    // `change` as well, for the keyboard path and for any platform where the
-    // native picker commits without streaming. Writing the same value twice
-    // costs nothing — the second write is identical and idempotent.
-    swatch.addEventListener('change', onSwatchInput);
+    chip.addEventListener('click', onChip);
 
-    // --- the pipette -----------------------------------------------------
-    //
-    // Offered only where the platform can sample the screen. Where it cannot,
-    // the button is simply not there: a disabled control that never becomes
-    // enabled is a worse answer than no control.
-    if (eyedropperAvailable(win)) {
-        setting.addExtraButton((button) => {
-            pipette = button;
-            button
-                .setIcon('pipette')
-                .setTooltip('Pick a colour from anywhere on the screen')
-                .onClick(() => {
-                    if (host.isLocked()) return;
-                    // The preview has to go first, or the user would sample the
-                    // locator's magenta off their own workspace.
-                    host.preview(null);
-                    void pickScreenColor(win).then((picked) => {
-                        if (picked === null) return;
-                        writeColor(picked);
-                    });
-                });
+    const onCssInput = (): void => {
+        if (host.isLocked()) return;
+        const next = cssInput.value;
+        if (next.trim().length === 0) {
+            cssInput.removeAttribute('aria-invalid');
+            commit(null);
+            return;
+        }
+        // An invalid value is neither written nor reverted: the user is
+        // probably still typing it.
+        if (!isValidTokenValue(next)) {
+            cssInput.setAttribute('aria-invalid', 'true');
+            return;
+        }
+        cssInput.removeAttribute('aria-invalid');
+        commit(next);
+    };
+    cssInput.addEventListener('input', onCssInput);
+
+    const onReset = (): void => {
+        // Checked here as well as reflected in `disabled`. The state is the
+        // affordance; this is the behaviour.
+        if (host.isLocked() || !host.isOverridden(token)) return;
+        commit(null);
+        if (!cssLine.hidden) cssInput.value = host.currentValue(token);
+    };
+    reset.addEventListener('click', onReset);
+
+    const onPipette = (): void => {
+        if (host.isLocked()) return;
+        // The preview has to go first, or the sampler would pick up the
+        // locator's magenta off the very surface being sampled.
+        win.clearTimeout(hoverTimer);
+        host.preview(null);
+        void pickScreenColor(win).then((picked) => {
+            if (picked !== null) writeColor(picked);
         });
-    }
+    };
+    pipette?.addEventListener('click', onPipette);
 
-    // --- the opacity -----------------------------------------------------
-    //
-    // Only where the token's own default is translucent. Putting a slider on
-    // every colour would add a control to eleven rows to serve three.
-    if (token.supportsAlpha) {
-        setting.addSlider((slider) => {
-            alpha = slider;
-            slider
-                .setLimits(0, 100, 1)
-                // Live, for the same reason the swatch is: an opacity you can
-                // only judge after letting go is an opacity you set twice.
-                // Obsidian 1.13 shows the percentage beside the slider itself,
-                // so there is no tooltip to ask for.
-                .setInstant(true)
-                .onChange((percent) => {
-                    if (host.isLocked()) return;
-                    const current = parsed();
-                    if (!current) return;
-                    writeColor(current.hex, percentToAlpha(percent));
-                });
-            slider.sliderEl.addClass('nexus-studio-alpha');
-            slider.sliderEl.setAttribute('aria-label', `${token.label} opacity`);
-        });
-    }
-
-    // --- the literal value -----------------------------------------------
-    //
-    // Authoritative. Everything above is a convenience over what this says.
-    setting.addText((component) => {
-        text = component;
-        component
-            .setPlaceholder(token.defaultValue)
-            .onChange((next) => {
-                if (host.isLocked()) return;
-                if (next.trim().length === 0) {
-                    void host.write(token, null).then(() => rowSyncControls());
-                    return;
-                }
-                // An invalid value is not written and not reverted: the user is
-                // probably still typing it.
-                if (!isValidTokenValue(next)) return;
-                void host.write(token, next).then(() => rowSyncControls());
-            });
-        component.inputEl.addClass('nexus-studio-value');
-    });
-
-    // --- back to the default ---------------------------------------------
-    setting.addExtraButton((button) => {
-        reset = button;
-        button
-            .setIcon('rotate-ccw')
-            .setTooltip(`Back to the theme's ${token.defaultValue}`)
-            .onClick(() => {
-                // Checked here as well as reflected in the disabled state. The
-                // state is the affordance; this is the behaviour, and a button
-                // whose correctness depends on a class having been applied is
-                // the bug this row was rewritten to remove.
-                if (host.isLocked() || !host.isOverridden(token)) return;
-                void host.write(token, null).then(() => rowSyncAll());
-            });
-    });
-
-    // --- the locator ------------------------------------------------------
+    // --- the locator -------------------------------------------------------
     const startPreview = (): void => {
         win.clearTimeout(hoverTimer);
         hoverTimer = win.setTimeout(() => host.preview(token), LOCATOR_DELAY_MS);
@@ -219,46 +274,65 @@ export function renderTokenRow(
         hoverTimer = 0;
         host.preview(null);
     };
-    setting.settingEl.addEventListener('pointerenter', startPreview);
-    setting.settingEl.addEventListener('pointerleave', stopPreview);
+    row.addEventListener('pointerenter', startPreview);
+    row.addEventListener('pointerleave', stopPreview);
 
-    function rowSyncControls(): void {
+    // --- reading -----------------------------------------------------------
+    function sync(): void {
         const locked = host.isLocked();
         const value = host.currentValue(token);
         const colour = parseColorValue(value);
+        const focused = docOf(row).activeElement;
 
-        if (swatch) {
-            // A value with no swatch representation — `color-mix()`, `var()` —
-            // keeps its row and loses its swatch, rather than being rewritten
-            // into something this file happens to understand.
-            swatch.disabled = locked || colour === null;
-            swatch.toggleClass('nexus-studio-swatch-unknown', colour === null);
-            if (colour && swatch.value !== colour.hex) swatch.value = colour.hex;
+        swatch.style.setProperty('--nexus-studio-swatch', value);
+        swatch.classList.toggle('is-complex', colour === null);
+        picker.disabled = locked || colour === null;
+        if (colour && picker.value !== colour.hex) picker.value = colour.hex;
+
+        chip.textContent = colour ? colour.hex : COMPLEX_VALUE_LABEL;
+        chip.classList.toggle('is-complex', colour === null);
+        // The full value on hover, always — for a complex value it is the only
+        // place short of the editor where the actual CSS can be read.
+        chip.setAttribute('title', value);
+        chip.setAttribute(
+            'aria-label',
+            colour ? `${token.label}: ${value}. Edit CSS value` : `${token.label}: custom CSS value ${value}. Edit CSS value`
+        );
+
+        if (alpha && alphaReadout) {
+            alpha.disabled = locked || colour === null;
+            const percent = colour ? alphaToPercent(colour.alpha) : 100;
+            if (focused !== alpha && alpha.value !== String(percent)) alpha.value = String(percent);
+            alphaReadout.textContent = colour ? `${percent}%` : '—';
         }
-        alpha?.setDisabled(locked || colour === null);
-        if (colour) alpha?.setValue(alphaToPercent(colour.alpha));
-        pipette?.setDisabled(locked);
-        reset?.setDisabled(locked || !host.isOverridden(token));
-        text?.setDisabled(locked);
+
+        cssInput.disabled = locked;
+        // Never overwrite the field somebody is typing into.
+        if (focused !== cssInput && cssInput.value !== value) cssInput.value = value;
+
+        const overridden = host.isOverridden(token);
+        reset.disabled = locked || !overridden;
+        row.classList.toggle('is-overridden', overridden);
+        if (pipette) pipette.disabled = locked;
     }
 
-    function rowSyncAll(): void {
-        const value = host.currentValue(token);
-        if (text && text.getValue() !== value) text.setValue(value);
-        rowSyncControls();
-    }
-
-    rowSyncAll();
+    sync();
 
     return {
-        syncAll: rowSyncAll,
-        syncControls: rowSyncControls,
+        el: row,
+        sync,
         dispose(): void {
             win.clearTimeout(hoverTimer);
-            setting.settingEl.removeEventListener('pointerenter', startPreview);
-            setting.settingEl.removeEventListener('pointerleave', stopPreview);
-            swatch?.removeEventListener('input', onSwatchInput);
-            swatch?.removeEventListener('change', onSwatchInput);
+            hoverTimer = 0;
+            picker.removeEventListener('input', onPicker);
+            picker.removeEventListener('change', onPicker);
+            alpha?.removeEventListener('input', onAlpha);
+            chip.removeEventListener('click', onChip);
+            cssInput.removeEventListener('input', onCssInput);
+            reset.removeEventListener('click', onReset);
+            pipette?.removeEventListener('click', onPipette);
+            row.removeEventListener('pointerenter', startPreview);
+            row.removeEventListener('pointerleave', stopPreview);
         },
     };
 }

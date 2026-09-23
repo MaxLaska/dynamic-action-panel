@@ -14,8 +14,38 @@
 
 import { sanitizeOverrides, type TokenOverrides } from './overrides';
 
-/** The persisted shape's version, for any future migration. */
-export const SETTINGS_VERSION = 1;
+/**
+ * The persisted shape's version.
+ *
+ * 1 — the settings-tab release.
+ * 2 — the workspace-view release. Nothing about profiles changed; see
+ *     `readCollapsedGroups` for the one field whose stored value is NOT
+ *     carried across.
+ */
+export const SETTINGS_VERSION = 2;
+
+/**
+ * The fold state a file may carry, read according to the version that wrote it.
+ *
+ * A version-1 file's `collapsedGroups` is dropped, deliberately. Version 1 is
+ * the settings-tab studio, and its fold chevron was broken in a specific way:
+ * the click WAS stored, but Obsidian's declarative settings renderer never
+ * applied the class that would have folded anything on screen. So a v1 value
+ * records clicks on a control that visibly did nothing — often several, while
+ * trying to make it work. It is not a state the user has ever seen, and opening
+ * the new view with three sections mysteriously shut would be the old bug
+ * resurfacing in a different place.
+ *
+ * Only the fold is dropped. Profiles, overrides, scratch CSS and the active
+ * choice are read exactly as before.
+ */
+function readCollapsedGroups(record: Record<string, unknown>): string[] {
+    const version = typeof record.version === 'number' ? record.version : 1;
+    if (version < 2) return [];
+    return Array.isArray(record.collapsedGroups)
+        ? record.collapsedGroups.filter((group): group is string => typeof group === 'string')
+        : [];
+}
 
 /**
  * The built-in baseline profile.
@@ -175,11 +205,12 @@ export function normalizeSettings(raw: unknown): NexusStudioSettings {
         ? wanted
         : (profiles[1]?.id ?? STANDARD_PROFILE_ID);
 
-    const collapsedGroups = Array.isArray(record.collapsedGroups)
-        ? record.collapsedGroups.filter((group): group is string => typeof group === 'string')
-        : [];
-
-    return { version: SETTINGS_VERSION, activeProfileId, profiles, collapsedGroups };
+    return {
+        version: SETTINGS_VERSION,
+        activeProfileId,
+        profiles,
+        collapsedGroups: readCollapsedGroups(record),
+    };
 }
 
 /** The profile currently being edited; never null, because Standard is always there. */

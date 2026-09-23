@@ -10,12 +10,15 @@
 // docs/ocap/nexus-theme-workflow.md. In short: DevTools is for DISCOVERING an
 // unknown corner of Obsidian, once; a token plus a rule plus a row in the table
 // PROMOTES that discovery; and from then on the value is changed here, in
-// seconds, without an inspector and without a code change. This file is the
-// fourth step of that loop and deliberately not the first three.
+// seconds, without an inspector and without a code change.
 //
-// Live editing is what makes it worth building. There is no save-and-restart:
-// the overrides are inline custom properties on `<body>`, so moving a colour
-// picker repaints the running Obsidian. See runtime.ts for why inline.
+// The editor is a WORKSPACE VIEW (view.ts), opened by one command. It has no
+// settings tab: everything it does is design work, and design work happens
+// beside the surfaces being designed, not in a dialog over them.
+//
+// Live editing is what makes it worth building. The overrides are inline custom
+// properties on `<body>`, so moving a colour picker repaints the running
+// Obsidian. See runtime.ts for why inline.
 
 import { Plugin } from 'obsidian';
 
@@ -23,6 +26,7 @@ import {
     NEXUS_THEME_NAME,
     NEXUS_TOKENS_CHANGED_EVENT,
 } from '../../../theme/nexus/src/tokens';
+import { openStudio } from './open';
 import { overrideDeclarations, withPreview } from './overrides';
 import {
     activeProfile,
@@ -36,20 +40,15 @@ import {
     clearTokenOverrides,
     removeScratchCss,
 } from './runtime';
-import { NexusThemeStudioSettingTab } from './settingsTab';
+import { NEXUS_STUDIO_VIEW_TYPE, NexusStudioView, type StudioServices } from './view';
 
 /**
- * The slices of Obsidian's app object this plugin reads that are not in the
- * published types.
- *
- * Both are read defensively and both have a "then do nothing" branch, because
- * an internal that moves must cost a disabled convenience and never a broken
- * plugin. `customCss.theme` is only used to tell the user their theme is not
- * selected; `setting` is only used by the command that opens this tab.
+ * The slice of Obsidian's app object this plugin reads that is not in the
+ * published types. Read defensively, with a "then do nothing" branch: it only
+ * decides whether to tell the user their theme is not selected.
  */
 interface InternalApp {
     customCss?: { theme?: unknown };
-    setting?: { open?: () => void; openTabById?: (id: string) => void };
 }
 
 /**
@@ -59,13 +58,11 @@ interface InternalApp {
  * of them is a real change that has to reach the screen immediately. Writing
  * `data.json` at that rate would be a hundred file writes for one decision
  * about one grey — so the APPLY stays synchronous and only the SAVE is
- * deferred. Long enough to collapse a drag into one write, short enough that
- * letting go and closing Obsidian cannot outrun it; and `onunload` flushes
- * whatever is still pending, so nothing is lost even then.
+ * deferred. `onunload` flushes whatever is still pending.
  */
 const SAVE_DEBOUNCE_MS = 400;
 
-export default class NexusThemeStudioPlugin extends Plugin {
+export default class NexusThemeStudioPlugin extends Plugin implements StudioServices {
     settings: NexusStudioSettings = defaultSettings();
 
     /**
@@ -74,35 +71,73 @@ export default class NexusThemeStudioPlugin extends Plugin {
      * Runtime-only, and the ONLY piece of this plugin's state that is not in
      * `settings`. That is the point: it is held in a field the save path cannot
      * see, so "the locator never writes anything" is a consequence of where the
-     * state lives rather than a rule someone has to remember. `update()` — the
-     * one method that saves — does not read it, and this does not call
-     * `saveData`.
+     * state lives rather than a rule someone has to remember.
      */
     private previewVariables: readonly string[] = [];
 
     /** A pending debounced save, so it can be flushed or replaced. */
     private saveTimer = 0;
 
+    /**
+     * Set as the very first thing `onunload` does.
+     *
+     * Views are closed by Obsidian as part of the same teardown, in an order
+     * this plugin does not control, and a closing view clears the locator —
+     * which re-applies the profile. Without this flag a view closing AFTER
+     * `onunload` had cleared the overrides would put them straight back on a
+     * workspace whose plugin is gone.
+     */
+    private unloaded = false;
+
     async onload(): Promise<void> {
         this.settings = normalizeSettings(await this.loadData());
         this.applyActiveProfile();
-        this.addSettingTab(new NexusThemeStudioSettingTab(this.app, this));
+
+        // After the settings are loaded, so a view Obsidian restores from the
+        // saved layout renders the user's profile and not the defaults.
+        // `registerView` also unregisters the type on unload by itself.
+        this.registerView(NEXUS_STUDIO_VIEW_TYPE, (leaf) => new NexusStudioView(leaf, this));
+
         this.addCommand({
+            // The id is unchanged from the settings-tab version, so a hotkey
+            // somebody already bound keeps working.
             id: 'open-theme-studio',
-            name: 'Open theme studio',
-            callback: () => this.openSettings(),
+            name: 'Open Nexus Theme Studio',
+            callback: () => {
+                void openStudio(this.app.workspace);
+            },
         });
+
+        // The locator is ended by the row that started it, on pointerleave.
+        // These cover every way the pointer can stop being on that row without
+        // leaving it: the focus moving to another pane, the layout changing
+        // under it (a tab closed, a view dragged or detached), or the whole
+        // window losing focus — alt-tab, or the screen sampler taking over.
+        this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.setPreview([])));
+        this.registerEvent(this.app.workspace.on('layout-change', () => this.setPreview([])));
+        this.registerDomEvent(window, 'blur', () => this.setPreview([]));
+
+        // Choosing a theme under Appearance while the studio is open changes
+        // whether its "Nexus is not selected" note is true. Obsidian announces
+        // a loaded theme with `css-change`; found in live use, where the note
+        // stayed up after Nexus had been selected.
+        this.registerEvent(
+            this.app.workspace.on('css-change', () =>
+                this.forEachStudioView((view) => view.syncThemeState())
+            )
+        );
     }
 
     onunload(): void {
-        // A colour the user dragged a moment ago may still be waiting on the
-        // debounce. Flushing first is the difference between "the last edit is
-        // saved" and "the last edit is saved unless you were quick".
+        this.unloaded = true;
+        // A colour dragged a moment ago may still be waiting on the debounce.
         this.flushSave();
-        // A disabled plugin must leave the theme exactly as it found it, or the
-        // user is left with a palette nothing on screen can explain. Clearing
-        // every Nexus variable also takes any locator preview down with it,
-        // which is why there is no separate teardown for one.
+        // A disabled plugin must leave the theme exactly as it found it.
+        // Clearing every Nexus variable also takes any locator preview down.
+        //
+        // Studio leaves are NOT detached. Obsidian keeps them in the layout, so
+        // the view comes back exactly where the user put it when the plugin is
+        // enabled again — detaching would reset it to the default dock.
         this.previewVariables = [];
         clearTokenOverrides(document.body);
         removeScratchCss(document);
@@ -117,19 +152,14 @@ export default class NexusThemeStudioPlugin extends Plugin {
     }
 
     /**
-     * Makes the running Obsidian show the active profile.
+     * Makes the running Obsidian show the active profile, plus any preview.
      *
-     * Called on load, after every edit, and after every profile switch. It is a
-     * full apply rather than a delta — see `applyTokenOverrides` — so there is
-     * no accumulated state to get wrong.
-     *
-     * The event at the end is the seam to the reader: `zotflow-reader-extensions`
-     * listens for it and mirrors the current values into every open reader
-     * iframe, which a stylesheet cannot reach. It is one event with no payload
-     * on purpose. The receiver reads the live computed values itself, so there
-     * is no second copy of the palette in flight and nothing to keep in sync.
+     * A full apply rather than a delta, so there is no accumulated state to get
+     * wrong. The event at the end is the seam to the reader: the reader
+     * extensions mirror the current values into every open reader iframe.
      */
     applyActiveProfile(): void {
+        if (this.unloaded) return;
         const profile = activeProfile(this.settings);
         applyTokenOverrides(
             document.body,
@@ -142,18 +172,12 @@ export default class NexusThemeStudioPlugin extends Plugin {
     /**
      * Paints some tokens in the locator colour, or stops painting them.
      *
-     * This is how "which surface does this control?" gets answered in a second
-     * instead of by setting a colour to red, looking, and setting it back. It
-     * lights the TOKEN, not a list of selectors, so every rule that spends the
-     * variable responds — including the ones inside the reader's iframe, which
-     * follow through the bridge like any other change.
-     *
-     * Nothing is stored and nothing is remembered beyond the field above.
-     * Clearing is a full re-apply of the active profile, which is a pure
-     * function of that profile, so "restore exactly what was there" needs no
-     * snapshot to be correct — there is nothing to get out of step.
+     * Nothing is stored. Clearing is a full re-apply of the active profile,
+     * which is a pure function of that profile, so "restore exactly what was
+     * there" needs no snapshot.
      */
     setPreview(variables: readonly string[]): void {
+        if (this.unloaded) return;
         const next = [...variables];
         if (
             next.length === this.previewVariables.length &&
@@ -171,31 +195,25 @@ export default class NexusThemeStudioPlugin extends Plugin {
     }
 
     /**
-     * Stores a new settings object and shows it.
-     *
-     * Applied BEFORE it is saved: the apply is synchronous and the save is not,
-     * and a colour picker that repaints only after a disk write is a colour
-     * picker that feels broken.
+     * A discrete change — a profile switch, a reset, an import: shown, saved at
+     * once, and every studio view rebuilt from it.
      */
     async update(next: NexusStudioSettings): Promise<void> {
         this.adopt(next);
-        // A discrete action — a button, a profile switch, a reset — is worth a
-        // write of its own. Any debounced save is cancelled rather than left to
-        // fire afterwards with the same content.
         window.clearTimeout(this.saveTimer);
         this.saveTimer = 0;
+        this.forEachStudioView((view) => view.refresh());
         await this.saveData(this.settings);
     }
 
     /**
-     * Stores and shows a change that is part of a continuous gesture.
-     *
-     * Same apply, deferred save. This is what a colour picker and an opacity
-     * slider call: they change the value every frame, and the screen has to
-     * follow every frame, but the disk does not.
+     * A change that is part of a continuous gesture — a picker, a slider:
+     * shown at once, saved on a debounce, and every studio view re-synced in
+     * place so a second view does not fall behind the one being dragged in.
      */
     updateLive(next: NexusStudioSettings): void {
         this.adopt(next);
+        this.forEachStudioView((view) => view.sync());
         window.clearTimeout(this.saveTimer);
         this.saveTimer = window.setTimeout(() => {
             this.saveTimer = 0;
@@ -203,34 +221,48 @@ export default class NexusThemeStudioPlugin extends Plugin {
         }, SAVE_DEBOUNCE_MS);
     }
 
-    /** The half both write paths share: take the settings, and show them. */
+    /**
+     * A change to the studio's OWN UI state — which groups are folded. Saved,
+     * but nothing is re-applied to the theme: folding a section is not a
+     * colour change, and must not re-send every token to every reader.
+     */
+    async updateUi(next: NexusStudioSettings): Promise<void> {
+        this.settings = next;
+        this.forEachStudioView((view) => view.syncCollapse());
+        window.clearTimeout(this.saveTimer);
+        this.saveTimer = 0;
+        await this.saveData(this.settings);
+    }
+
+    /** The half both colour write paths share: take the settings, and show them. */
     private adopt(next: NexusStudioSettings): void {
         this.settings = next;
-        // A stored change while a preview is up would leave the locator colour
-        // sitting on a token the user has just edited, and the edit invisible.
-        // Dropping the preview first is both the safe order and the honest one:
-        // an explicit change outranks a hover.
+        // An explicit change outranks a hover: a preview left up would sit on
+        // the token just edited and hide the edit.
         this.previewVariables = [];
         this.applyActiveProfile();
     }
 
     /**
-     * Whether Nexus is the selected theme — or null when Obsidian will not say.
+     * Every open studio view, found through the workspace.
      *
-     * Three states rather than two, because "I could not find out" must not be
-     * reported as "your theme is not active". The tab shows a hint only for a
-     * definite false.
+     * Deliberately not a list the plugin keeps. A plugin that holds its views
+     * keeps closed ones alive; the workspace already knows which exist.
+     */
+    private forEachStudioView(visit: (view: NexusStudioView) => void): void {
+        for (const leaf of this.app.workspace.getLeavesOfType(NEXUS_STUDIO_VIEW_TYPE)) {
+            if (leaf.view instanceof NexusStudioView) visit(leaf.view);
+        }
+    }
+
+    /**
+     * Whether Nexus is the selected theme — or null when Obsidian will not say.
+     * Three states, because "I could not find out" must not be reported as
+     * "your theme is not active".
      */
     themeIsActive(): boolean | null {
         const theme = (this.app as unknown as InternalApp).customCss?.theme;
         if (typeof theme !== 'string') return null;
         return theme === NEXUS_THEME_NAME;
-    }
-
-    /** Opens this plugin's own settings tab, for the command. */
-    openSettings(): void {
-        const setting = (this.app as unknown as InternalApp).setting;
-        setting?.open?.();
-        setting?.openTabById?.(this.manifest.id);
     }
 }
