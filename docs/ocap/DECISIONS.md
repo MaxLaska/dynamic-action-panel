@@ -2170,3 +2170,169 @@ reason unrelated to the studio.
 Throttling in the same state stretched a 200ms timer to 488ms and stopped
 animation frames. That is why the sampler waits for frames only up to a 150ms
 ceiling.
+
+## 2026-09-23 – A colour is edited in one place: the Nexus colour picker
+
+**Decision:** a colour token row is a swatch, a compact readout (`#333333`, and
+`28%` where the token has an opacity) and a reset. The swatch opens the Nexus
+colour picker, a small popover of the studio's own. Everything else about a
+colour lives only there: the saturation/brightness square, the hue bar, the
+opacity, HEX/RGB/HSL values, Pick from Obsidian, the palette, and the raw CSS
+value. The row's pipette, its opacity slider, its raw CSS disclosure and the
+hidden native `<input type="color">` are gone.
+
+**Why the native picker could not stay, as facts rather than taste:**
+
+- `<input type="color">` opens Chromium's colour popup. The popup is browser
+  UI drawn outside the page: no CSS reaches it, no DOM can be added to it, and
+  it has no API. It cannot hold an opacity, a palette, or a different pipette.
+- Its built-in pipette is Chromium's EyeDropper, which in Electron draws the
+  red magnifier grid (see "The red eyedropper grid is Electron's").
+- So the popup could be replaced, not extended. The studio no longer creates a
+  native colour input anywhere; a test holds that.
+
+**Why one place:** four ways into the same value (swatch popup, pipette,
+opacity slider, raw field) made the user choose a method before choosing a
+colour. The picker is one tool; the row only says what the value is.
+
+**Placement:** on the document body, `position: fixed`, beside the swatch.
+Below the swatch when there is room, above it when there is more room there,
+and shifted left rather than cut off at the window edge, because the studio's
+usual home is the right dock. A swatch with no box (a folded group) centres it.
+It carries `.nexus-studio-isolated` and paints only from `--nexus-studio-*`,
+so the colours being edited never style the picker. Checked live with the text
+token at near-black.
+
+**One picker at a time.** Opening another swatch commits the open one first,
+as a click outside would. The same swatch closes it.
+
+## 2026-09-23 – A picker is a session: drafts are shown, not saved
+
+**Decision:** while the picker is open, every change is a DRAFT. A draft is
+applied to the workspace immediately (and to the reader, through the same
+tokens-changed path as any value) but is not part of the profile. Closing the
+picker decides what happens to it:
+
+| Gesture | Outcome |
+| --- | --- |
+| Done, Enter in a field or the square, a click outside, another swatch | COMMIT: one ordinary override write on the live path (applied, saved on the usual 400ms debounce). A draft equal to the starting value writes nothing. |
+| Escape, Revert | CANCEL: the draft is dropped. The value from before the picker opened is back exactly, because the profile was never changed. |
+| A rebuild (profile switch, import, reset profile), the view closing, the plugin unloading | CANCEL. A draft is not carried into a state it was not made for. |
+
+**How:** the plugin holds drafts in a runtime-only map (`sessionValues`), next
+to the locator's `previewVariables` and for the same reason: the save path
+cannot see it. `withSession` lays the drafts over the profile's declarations,
+and `withPreview` lays the locator over both. The row, the contrast figures and
+every open studio view read the draft while it exists.
+
+**Why not debounced saving while open:** with it, Escape could only restore
+the look, not the stored value; the file would already hold the experiment.
+With drafts, "experiment freely, Escape goes home" is exact, and nothing about
+the debounce changes: a commit is the same write a slider makes.
+
+**The locator** is off while a picker is open (a hover would paint over the
+draft), and opening the picker takes a running locator down first.
+
+**Not the same semantics for everything:** slider rows and the font field keep
+writing directly on the live path. Only the picker is a session.
+
+## 2026-09-23 – One colour model: RGBA; HEX, RGB and HSL are views of it
+
+**Decision:** `colorValue.ts` has one model, RGBA (channels 0–255, alpha 0–1).
+HEX, RGB and HSL are display and input forms. The STORED form is always what
+`formatColorValue` writes: `#rrggbb` when opaque, `rgba()` otherwise.
+Switching the display format writes nothing, so it cannot change a value.
+`hsl()`/`hsla()` are now parsed as well.
+
+HSV exists only for the square and the hue bar. The picker keeps its own hue
+while the colour is grey or black, where RGB has no hue to give, so dragging
+through black does not throw the hue bar back to red.
+
+The chosen display format is a UI preference (`pickerFormat`) and is saved as
+UI state.
+
+**Custom CSS stays authoritative.** A value the model cannot read
+(`color-mix()`, `var()`, `oklch()`) opens the picker as **Custom CSS**: the raw
+field is in front, and the visual controls are hidden. Closing it does not
+change the value. Convert to colour turns it into a plain colour only when
+asked, using the colour the browser resolves it to, and says so when it
+cannot. A plain colour typed into the CSS field becomes a colour again.
+
+## 2026-09-23 – The palette is global to the studio
+
+**Decision:** saved swatches (`savedSwatches`) live at the settings root, like
+the fold state. They are not stored per token, per group or per profile. A
+swatch keeps its opacity and is shown over a checkerboard.
+
+Operations:
+
+- `+` saves the current colour.
+- Clicking a swatch loads it into the picker as a draft. The swatch itself is
+  never changed by that, so "base colour, variant, save the variant" works.
+- The swatch menu (right-click) offers Replace with current colour and Delete.
+- The Delete key removes a focused swatch.
+
+Duplicates are refused. The palette holds at most 48 swatches. A translucent
+swatch loaded on a token without an opacity arrives opaque.
+
+**Why global:** the palette is the user's working colours, carried from token
+to token and from profile to profile. Comparing two profiles with the same
+greys at hand is the point. A profile is what the theme looks like; the
+palette is what the user works with.
+
+**Counter-argument considered:** a profile export does not carry the palette.
+That is accepted. An export is a theme variant for someone else, not the
+user's workbench. There is no reordering (drag and drop) in this version.
+
+## 2026-09-23 – No native EyeDropper anywhere; Copy colour is a developer utility
+
+**Decision:** the native `window.EyeDropper` is no longer a fallback. The
+sampler (`sampler.ts`) is capture-only. Where `webContents.capturePage` cannot
+be reached, there is no Pick from Obsidian, and never the red grid.
+`eyedropper.ts` is deleted. This supersedes the fallback half of "The red
+eyedropper grid is Electron's", and the "EyeDropper API" entry.
+
+**Pick from Obsidian lives in the picker.** While aiming, the picker hides
+(`visibility: hidden`) so whatever is under it can be sampled too. The taken
+pixel lands in the open picker as a draft, keeping the draft's opacity. The
+picker comes back with the focus on the button. While aiming, Escape belongs
+to the sampler: it ends the pick and leaves the picker, with its draft, open.
+The click that takes the pixel does not count as a click outside.
+
+**Copy colour** (formerly Take colour) stays in Discovery beside Inspect UI.
+It is a developer utility: it copies the hex of any point, including surfaces
+that have no token, which is a discovery question. Its label and tooltip say
+it is not how a token is edited.
+
+## 2026-09-23 – The sampler can be aimed with the keyboard
+
+**Decision:** while aiming:
+
+- the arrow keys move a reticle one CSS pixel, and Shift+arrow moves it ten;
+- Enter or Space takes the pixel under the reticle;
+- Escape cancels.
+
+A page cannot move the operating system's cursor, so the reticle is drawn by
+the sampler. It is a black-and-white cross, neutral on any surface. It starts
+at the last pointer position, and moving the mouse hands aiming back to the
+mouse. Like the hint, the reticle is removed before the pixel is captured.
+Enter and Space are taken and default-prevented, so the button behind the
+layer is not pressed.
+
+**Honest note:** the user reported arrow-key aiming and Space already working.
+Before this change the sampler handled no key except Escape, so whatever moved
+the cursor then was not this code. It may have been an operating-system
+feature such as Mouse Keys; that was not checked. What is described here is
+what the code does now, and it is tested (unit tests, and live: the reticle
+moved one pixel per arrow and Enter took the dock's colour).
+
+## 2026-09-23 – Studio settings version 3
+
+**Decision:** `SETTINGS_VERSION` is 3. It adds `savedSwatches` (default `[]`)
+and `pickerFormat` (default `hex`). A version-2 file reads unchanged, with an
+empty palette. A damaged palette is read fail-soft: non-colours and duplicates
+are dropped, and the list is capped. Profile operations carry both fields
+through.
+
+Nothing transient is stored: not the open picker, its position, a draft, or
+the sampling cursor.

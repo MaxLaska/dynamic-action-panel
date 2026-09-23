@@ -28,9 +28,10 @@ Read the rule that actually wins, and note two things: the **selector** and the
 **variable** the rule spends, if any. (`Ctrl+Shift+I` still opens DevTools
 without a picker.)
 
-**Take colour**, next to it, reads one pixel of the Obsidian window and copies
-its hex value to the clipboard. Use it to answer "which colour is that?"
-without any token.
+**Copy colour**, next to it, is a developer utility. It reads one pixel of the
+Obsidian window and copies its hex value to the clipboard. Use it to answer
+"which colour is that?" for a surface that has no token. Editing a token's
+colour is done in the colour picker, not here.
 
 This is the only phase that needs an inspector, and it happens once per surface.
 
@@ -77,29 +78,45 @@ command again brings back the one that is open. No inspector, no code change, no
 reload. This is where a palette is actually made:
 the twentieth two-percent adjustment costs seconds.
 
-What each row gives you:
+What a colour row gives you: the swatch, a compact readout (`#333333`, and
+`28%` where the token has an opacity), and the reset. Everything else is in the
+**colour picker**, which the swatch opens:
 
-- **The swatch** repaints the workspace while you are still moving the picker,
-  not when you dismiss it. It paints the stored value itself, so translucency
-  and `color-mix()` show as they are.
-- **The pipette** turns the pointer into a crosshair over the Obsidian window.
-  One click takes that pixel's exact colour into the token; Escape or a right
-  click takes nothing. It sees only this window: a popped-out window or another
-  application cannot be sampled. Only where the window cannot be captured does
-  it fall back to the browser's screen sampler, whose red-tinted magnifier is
-  Electron's and cannot be restyled.
-- **The opacity slider** appears on the tokens whose value is translucent. The
-  stored result is still ordinary CSS: white at 28% is
-  `rgba(255, 255, 255, 0.28)`.
-- **The value readout** (`#333333`) opens the raw CSS field. That field is
-  the authoritative control and takes any CSS colour. A value the picker cannot
-  take apart — `color-mix()`, `var()` — reads `CSS` and is never rewritten.
+- **The square and the hue bar** repaint the workspace while they move. So do
+  the opacity bar and every field, and so does choosing a swatch. The reader
+  follows too.
+- **HEX · RGB · HSL** switch how the value is shown and typed. Switching changes
+  nothing; what is stored is always `#rrggbb`, or `rgba()` below full opacity.
+- **Opacity**, where the token has one, is a bar with a checkerboard and a
+  percent field.
+- **Pick from Obsidian** turns the pointer into a crosshair over the Obsidian
+  window; the picker steps aside while you aim. Click to take the pixel under
+  the pointer. From the keyboard, the arrows move a reticle one pixel (ten with
+  Shift) and Enter or Space takes the pixel. Escape stops aiming and keeps the
+  picker. It sees only this window, so no popped-out window and no other
+  application. There is no red-gridded browser pipette anywhere any more.
+- **Swatches** are your working colours, shared by every token and every
+  profile. `+` saves the current colour, opacity included. Clicking a swatch
+  loads it; the swatch itself does not change, so you can make a variant and
+  save that as well. Right-click a swatch to replace or delete it; Delete
+  removes a focused one.
+- **CSS value** is the raw text, for what the picker cannot show:
+  `color-mix()`, `var()`, `oklch()`. Such a value opens as **Custom CSS** and is
+  never rewritten, unless you press *Convert to colour*.
+
+**Everything in the picker is a draft until you close it.** Done, Enter or a
+click outside keeps it. **Escape or Revert puts back exactly what was there
+before you opened the picker**, so experiment freely. Nothing is written to
+disk while the picker is open.
+
+The rest of the row:
+
 - **The reset arrow** ("Reset to default") clears this one token's override and
   nothing else. It is live only when this token actually has an override.
 - **Resting the pointer on a row** paints that token magenta for as long as you
   stay there, so you can see which surfaces it controls without setting a colour
   to red and back. It changes nothing, saves nothing, and is gone the moment you
-  move away.
+  move away. It is off while a picker is open.
 
 **Typography** has three rows: the interface font family (a list of font
 stacks, or any stack typed in), the UI font size (a slider; the smaller and

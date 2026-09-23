@@ -4,9 +4,10 @@
 // Unit tests (tests/nexusStudioView.test.ts) render the panel into happy-dom.
 // This checks what only a running Obsidian can answer: that the command opens
 // ONE view in the right dock, that Obsidian's own stylesheets do not undo the
-// fold, that the locator really repaints a dock, that the picker's `input`
-// really repaints it live, and that `window.EyeDropper` exists in this Electron
-// and can be opened from the view's window.
+// fold, that the locator really repaints a dock, that the Nexus colour
+// picker's drafts repaint it live and Escape restores it exactly, that Pick from
+// Obsidian takes a real pixel by mouse and by keyboard, and that the picker
+// stays readable and inside the window.
 //
 // Run against an Obsidian started on its OWN profile, never the user's:
 //
@@ -25,8 +26,8 @@
 //
 //   node companion/nexus-theme-studio/scripts/smokeView.mjs [screenshot.png]
 //
-// Note: the EyeDropper check opens the native screen sampler for about a second
-// and then cancels it. The pointer is a pipette for that second.
+// It never opens Chromium's native colour popup or its EyeDropper: the studio
+// has no way into either any more, and this checks that there is none.
 
 import fs from 'node:fs';
 
@@ -255,12 +256,15 @@ const rowShape = await cdp.evaluate(`
     const r = ${row('workspaceSurface')};
     return {
         reset: r.querySelector('.nexus-studio-reset').getAttribute('aria-label'),
-        cssHidden: getComputedStyle(r.querySelector('.nexus-studio-row-css')).display === 'none',
+        swatch: r.querySelector('.nexus-studio-swatch')?.tagName,
+        extras: r.querySelectorAll('input, .nexus-studio-pipette, .nexus-studio-row-css').length,
+        nativeAnywhere: document.querySelectorAll('input[type="color"]').length,
         chip: r.querySelector('.nexus-studio-value').textContent,
     };
 `);
 check('the reset says "Reset to default"', rowShape.reset === 'Reset to default', rowShape.reset);
-check('the raw CSS field is closed by default', rowShape.cssHidden === true);
+check('a colour row is a swatch button and a readout, nothing else', rowShape.swatch === 'BUTTON' && rowShape.extras === 0, JSON.stringify(rowShape));
+check('no native colour input exists anywhere in Obsidian', rowShape.nativeAnywhere === 0);
 check('the value readout is compact', /^#[0-9a-f]{6}$/.test(rowShape.chip), rowShape.chip);
 
 // --- the locator --------------------------------------------------------------------
@@ -280,68 +284,120 @@ check('resting on Workspace surface paints the real dock magenta', during.dock =
 check('leaving restores it exactly', after.token === before.token && after.dock === before.dock, JSON.stringify({ before, after }));
 check('and nothing was written to data.json', dataAfter === dataBefore);
 
-// --- live editing -------------------------------------------------------------------
+// --- the Nexus colour picker ----------------------------------------------------------
 //
 // The profile may already override this token. Reset goes to the THEME default,
-// not to that override, so the run records the stored value first and types it
-// back in afterwards — through the raw CSS field, the way a user would.
-console.log('\nlive editing');
-const live = await cdp.evaluate(`
-    const r = ${row('workspaceSurface')};
-    const inline = () => document.body.style.getPropertyValue('--nexus-workspace-surface');
-    const original = inline();
+// not to that override, so the run records the stored value first and puts it
+// back afterwards, through the picker's CSS field, the way a user would.
+console.log('\nthe colour picker');
+const popover = `document.querySelector('.nexus-studio-popover')`;
+const openPicker = (key) =>
+    cdp.evaluate(`${row(key)}.querySelector('.nexus-studio-swatch').click(); await new Promise((r) => setTimeout(r, 60));`);
+const pressKey = async (key, code = key, keyCode = 0) => {
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: keyCode });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: keyCode });
+};
+const escape = () => pressKey('Escape', 'Escape', 27);
+const inline = (variable) => `document.body.style.getPropertyValue('${variable}')`;
+const readData = () => cdp.evaluate(`return await app.vault.adapter.read('.obsidian/plugins/${STUDIO}/data.json');`);
 
-    const picker = r.querySelector('.nexus-studio-picker');
-    picker.value = '#405060';
-    picker.dispatchEvent(new Event('input', { bubbles: true }));
-    const dock = ${dockColour};
-
-    const reset = r.querySelector('.nexus-studio-reset');
-    const resetEnabled = !reset.disabled;
-    reset.click();
-    const afterReset = { inline: inline(), resetDisabled: reset.disabled, chip: r.querySelector('.nexus-studio-value').textContent };
-
-    if (original) {
-        r.querySelector('.nexus-studio-value').click();
-        const field = r.querySelector('.nexus-studio-css-input');
-        field.value = original;
-        field.dispatchEvent(new Event('input', { bubbles: true }));
-        r.querySelector('.nexus-studio-value').click();
-    }
-    return { dock, resetEnabled, afterReset, original, restored: inline() };
+const original = await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`);
+const dataAtOpen = await readData();
+await openPicker('workspaceSurface');
+const opened = await cdp.evaluate(`
+    const p = ${popover};
+    if (!p) return null;
+    const box = p.getBoundingClientRect();
+    return {
+        count: document.querySelectorAll('.nexus-studio-popover').length,
+        inside: box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight,
+        box: [Math.round(box.left), Math.round(box.top), Math.round(box.right), Math.round(box.bottom), innerWidth, innerHeight],
+        native: p.querySelectorAll('input[type="color"]').length,
+        focus: document.activeElement?.className,
+    };
 `);
-check('an `input` from the picker repaints the dock immediately', live.dock === 'rgb(64, 80, 96)', live.dock);
-check('the reset becomes available at once', live.resetEnabled === true);
-check(
-    'reset removes the override, so the theme default applies again',
-    live.afterReset.inline === '' && live.afterReset.resetDisabled === true,
-    JSON.stringify(live.afterReset)
-);
+check('the swatch opens one Nexus picker', opened?.count === 1, JSON.stringify(opened));
+check('placed inside the window, beside a right-dock swatch', opened?.inside === true, JSON.stringify(opened?.box));
+check('with nothing native in it, and the square focused', opened?.native === 0 && /nexus-studio-cp-area/.test(opened?.focus ?? ''), JSON.stringify(opened));
+
+const draft = await cdp.evaluate(`
+    const hue = ${popover}.querySelector('.nexus-studio-cp-hue');
+    const hex = ${popover}.querySelector('.nexus-studio-cp-field[data-field="hex"]');
+    hex.value = '#405060';
+    hex.dispatchEvent(new Event('input', { bubbles: true }));
+    const dock = ${dockColour};
+    hue.value = '0';
+    hue.dispatchEvent(new Event('input', { bubbles: true }));
+    return { dock, dockAfterHue: ${dockColour} };
+`);
+await pause(700);
+check('a draft repaints the dock at once', draft.dock === 'rgb(64, 80, 96)', draft.dock);
+check('and follows the hue bar while it moves', draft.dockAfterHue !== draft.dock, draft.dockAfterHue);
+check('a draft is not saved, even after the save debounce', (await readData()) === dataAtOpen);
+await escape();
+await pause(100);
+const afterEsc = await cdp.evaluate(`return { popover: !!${popover}, inline: ${inline('--nexus-workspace-surface')}, dock: ${dockColour} };`);
+check('Escape closes the picker and restores the value exactly', !afterEsc.popover && afterEsc.inline === original && afterEsc.dock === before.dock, JSON.stringify(afterEsc));
+check('and writes nothing', (await readData()) === dataAtOpen);
+
+await openPicker('workspaceSurface');
+const committed = await cdp.evaluate(`
+    const hex = ${popover}.querySelector('.nexus-studio-cp-field[data-field="hex"]');
+    hex.value = '#405060';
+    hex.dispatchEvent(new Event('input', { bubbles: true }));
+    ${popover}.querySelector('.nexus-studio-cp-format[data-format="hsl"]').click();
+    const afterFormat = ${inline('--nexus-workspace-surface')};
+    const readout = ${popover}.querySelector('.nexus-studio-cp-readout').textContent;
+    ${popover}.querySelector('.nexus-studio-cp-format[data-format="hex"]').click();
+    ${popover}.querySelector('.nexus-studio-cp-done').click();
+    const r = ${row('workspaceSurface')};
+    return { afterFormat, readout, inline: ${inline('--nexus-workspace-surface')}, resetEnabled: !r.querySelector('.nexus-studio-reset').disabled, popover: !!${popover} };
+`);
+await pause(700);
+check('switching the format changes the display, not the value', committed.afterFormat === '#405060' && /^hsl\(/.test(committed.readout), JSON.stringify(committed));
+check('Done keeps the colour and closes', committed.inline === '#405060' && !committed.popover, JSON.stringify(committed));
+check('and saves it, once the debounce has passed', JSON.parse(await readData()).profiles.some((profile) => profile.overrides?.workspaceSurface === '#405060'));
+check('the reset becomes available at once', committed.resetEnabled === true);
+
+const afterReset = await cdp.evaluate(`
+    const r = ${row('workspaceSurface')};
+    r.querySelector('.nexus-studio-reset').click();
+    return { inline: ${inline('--nexus-workspace-surface')}, resetDisabled: r.querySelector('.nexus-studio-reset').disabled };
+`);
+check('reset removes the override, so the theme default applies again', afterReset.inline === '' && afterReset.resetDisabled === true, JSON.stringify(afterReset));
+
+// Alpha, in the picker, on a translucent token.
+await openPicker('splitterHover');
+const alpha = await cdp.evaluate(`
+    const bar = ${popover}.querySelector('.nexus-studio-cp-alpha');
+    const number = ${popover}.querySelector('.nexus-studio-cp-alpha-number');
+    const at = { bar: bar?.value, number: number?.value };
+    bar.value = '60';
+    bar.dispatchEvent(new Event('input', { bubbles: true }));
+    return { at, draft: ${inline('--nexus-splitter-hover')}, readout: ${row('splitterHover')}.querySelector('.nexus-studio-alpha-readout').textContent };
+`);
+await escape();
+await pause(100);
+check('opacity lives in the picker, at the stored value', alpha.at.bar === '28' && alpha.at.number === '28', JSON.stringify(alpha.at));
+check('and moves the draft live, with the row saying how much', alpha.draft === 'rgba(255, 255, 255, 0.6)' && alpha.readout === '60%', JSON.stringify(alpha));
+
+// Custom CSS is kept as written.
+if (original) {
+    // Put the user's own value back first, through the picker's CSS field.
+    await openPicker('workspaceSurface');
+    await cdp.evaluate(`
+        const p = ${popover};
+        p.querySelector('.nexus-studio-cp-advanced-toggle').click();
+        const f = p.querySelector('.nexus-studio-cp-css');
+        f.value = ${JSON.stringify(original)};
+        f.dispatchEvent(new Event('input', { bubbles: true }));
+        p.querySelector('.nexus-studio-cp-done').click();
+    `);
+}
 check(
     'the value the profile had before the run is back',
-    live.restored === live.original,
-    JSON.stringify({ original: live.original, restored: live.restored })
-);
-
-// --- the screen sampler ---------------------------------------------------------------
-console.log('\nthe screen sampler');
-const eyedropper = await cdp.evaluate(`
-    const available = typeof window.EyeDropper === 'function';
-    const pipette = !!${row('workspaceSurface')}.querySelector('.nexus-studio-pipette');
-    if (!available) return { available, pipette };
-    const controller = new AbortController();
-    const outcome = new EyeDropper()
-        .open({ signal: controller.signal })
-        .then((r) => ({ picked: r.sRGBHex }), (e) => ({ error: e.name }));
-    setTimeout(() => controller.abort(), 1000);
-    return { available, pipette, ...(await outcome) };
-`);
-check('window.EyeDropper exists in this Obsidian', eyedropper.available === true);
-check('so the pipette is offered', eyedropper.pipette === true);
-check(
-    'the sampler opens from the studio window and cancels cleanly',
-    eyedropper.error === 'AbortError',
-    JSON.stringify(eyedropper)
+    (await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`)) === original,
+    original
 );
 
 // --- the theme changing under an open studio -------------------------------------------
@@ -370,9 +426,21 @@ check(
 // for its own UI. Push text and docks to near-black; Obsidian must follow, the
 // studio must not.
 console.log('\nthe studio as a control plane');
+// Colours through the picker's CSS field, then Done; other kinds through the
+// row's own raw CSS field. The same paths a user has.
 const setToken = (key, value) =>
     cdp.evaluate(`
         const r = ${row(key)};
+        if (r.classList.contains('is-color')) {
+            r.querySelector('.nexus-studio-swatch').click();
+            const p = document.querySelector('.nexus-studio-popover');
+            if (p.querySelector('.nexus-studio-cp-advanced').hidden) p.querySelector('.nexus-studio-cp-advanced-toggle').click();
+            const f = p.querySelector('.nexus-studio-cp-css');
+            f.value = ${JSON.stringify(value)};
+            f.dispatchEvent(new Event('input', { bubbles: true }));
+            p.querySelector('.nexus-studio-cp-done').click();
+            return;
+        }
         r.querySelector('.nexus-studio-value').click();
         const f = r.querySelector('.nexus-studio-css-input');
         f.value = ${JSON.stringify(value)};
@@ -427,6 +495,24 @@ await pause(350);
 const locatedText = await studioLooks();
 await cdp.evaluate(`${row('textPrimary')}.dispatchEvent(new PointerEvent('pointerleave'));`);
 check('locating the text token leaves the studio\'s text alone', locatedText.text === calm.text, locatedText.text);
+
+// The picker is on the control plane too: open it while text and docks are dark.
+await openPicker('workspaceSurface');
+const pickerLooks = await cdp.evaluate(`
+    const p = ${popover};
+    return {
+        text: getComputedStyle(p.querySelector('.nexus-studio-cp-title')).color,
+        field: getComputedStyle(p.querySelector('.nexus-studio-cp-field')).color,
+        surface: getComputedStyle(p).backgroundColor,
+    };
+`);
+await escape();
+await pause(100);
+check(
+    'the picker stays readable while the text token is near-black',
+    pickerLooks.text === calm.text && pickerLooks.field !== 'rgb(17, 17, 17)' && pickerLooks.surface !== 'rgb(20, 20, 20)',
+    JSON.stringify(pickerLooks)
+);
 
 await clearToken('textPrimary');
 await clearToken('textMuted');
@@ -484,7 +570,7 @@ const mixed = await figure('textPrimary:workspaceSurface');
 check('a color-mix() is resolved by the browser and measured', /^\d+\.\d:1/.test(mixed.text), mixed.text);
 await clearToken('textPrimary');
 
-// --- the sampler, end to end with a real mouse event ------------------------------------
+// --- Pick from Obsidian, end to end with a real mouse and keyboard ---------------------
 console.log('\ntaking a colour');
 const dockPoint = await cdp.evaluate(`
     const dock = document.querySelector('.workspace-split.mod-left-split .workspace-leaf');
@@ -496,27 +582,83 @@ const clickAt = async (x, y) => {
     await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
 };
-await cdp.evaluate(`${row('documentChrome')}.querySelector('.nexus-studio-pipette').click();`);
+const shieldUp = () => cdp.evaluate(`return !!document.querySelector('.nexus-studio-pick-shield');`);
+const toHex = (rgb) => '#' + rgb.match(/\d+/g).slice(0, 3).map((v) => Number(v).toString(16).padStart(2, '0')).join('');
+const chromeDraft = () => cdp.evaluate(`return ${inline('--nexus-document-chrome')};`);
+const chromeBefore = await chromeDraft();
+
+await openPicker('documentChrome');
+// A draft that is NOT the dock's colour first: taking a pixel equal to the
+// starting value would rightly change nothing, and prove nothing.
+await cdp.evaluate(`
+    const hex = ${popover}.querySelector('.nexus-studio-cp-field[data-field="hex"]');
+    hex.value = '#010203';
+    hex.dispatchEvent(new Event('input', { bubbles: true }));
+    ${popover}.querySelector('.nexus-studio-cp-sample').click();
+`);
 await pause(150);
-const shieldUp = await cdp.evaluate(`return !!document.querySelector('.nexus-studio-pick-shield');`);
-check('the pipette lays its crosshair layer', shieldUp === true);
+const aiming = await cdp.evaluate(`return { shield: !!document.querySelector('.nexus-studio-pick-shield'), hidden: getComputedStyle(${popover}).visibility };`);
+check('Pick from Obsidian lays its crosshair layer and steps the picker aside', aiming.shield && aiming.hidden === 'hidden', JSON.stringify(aiming));
 await clickAt(dockPoint.x, dockPoint.y);
 await pause(600);
-const sampled = await cdp.evaluate(`return document.body.style.getPropertyValue('--nexus-document-chrome');`);
-const toHex = (rgb) => '#' + rgb.match(/\d+/g).slice(0, 3).map((v) => Number(v).toString(16).padStart(2, '0')).join('');
-check('a click on the dock takes exactly its colour', sampled === toHex(dockPoint.colour), `${sampled} vs ${dockPoint.colour}`);
-check('and the layer is gone', (await cdp.evaluate(`return !!document.querySelector('.nexus-studio-pick-shield');`)) === false);
-await clearToken('documentChrome');
+const byMouse = await cdp.evaluate(`
+    const p = ${popover};
+    return { draft: ${inline('--nexus-document-chrome')}, open: !!p, visible: p && getComputedStyle(p).visibility, hex: p?.querySelector('.nexus-studio-cp-field[data-field="hex"]')?.value };
+`);
+check('a click on the dock takes exactly its colour, into the open picker', byMouse.draft === toHex(dockPoint.colour) && byMouse.hex === byMouse.draft, `${JSON.stringify(byMouse)} vs ${dockPoint.colour}`);
+check('the picker is back, and the layer is gone', byMouse.open && byMouse.visible === 'visible' && !(await shieldUp()), JSON.stringify(byMouse));
 
-await cdp.evaluate(`${row('documentChrome')}.querySelector('.nexus-studio-pipette').click();`);
+// The keyboard: aim with the arrows, take with Enter. The reticle starts at
+// the last mouse position, on the dock.
+await cdp.evaluate(`
+    const hex = ${popover}.querySelector('.nexus-studio-cp-field[data-field="hex"]');
+    hex.value = '#010203';
+    hex.dispatchEvent(new Event('input', { bubbles: true }));
+    ${popover}.querySelector('.nexus-studio-cp-sample').click();
+`);
 await pause(150);
-await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: dockPoint.x, y: dockPoint.y });
+await pressKey('ArrowRight', 'ArrowRight', 39);
+await pressKey('ArrowUp', 'ArrowUp', 38);
+const reticle = await cdp.evaluate(`const r = document.querySelector('.nexus-studio-pick-reticle'); return r ? { hidden: r.hidden, left: r.style.left, top: r.style.top } : null;`);
+check('arrows move a reticle of its own, one pixel at a time', reticle && !reticle.hidden && reticle.left === `${dockPoint.x + 1}px` && reticle.top === `${dockPoint.y - 1}px`, JSON.stringify(reticle));
+await pressKey('Enter', 'Enter', 13);
+await pause(600);
+const byKeyboard = await cdp.evaluate(`return ${popover}?.querySelector('.nexus-studio-cp-field[data-field="hex"]')?.value;`);
+check('Enter takes the pixel under it', byKeyboard === toHex(dockPoint.colour), byKeyboard);
+
+await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-sample').click();`);
+await pause(150);
+await escape();
 await pause(200);
-const afterEscape = await cdp.evaluate(`return {
-    inline: document.body.style.getPropertyValue('--nexus-document-chrome'),
-    shield: !!document.querySelector('.nexus-studio-pick-shield'),
-};`);
-check('Escape takes nothing and leaves nothing behind', afterEscape.inline === '' && !afterEscape.shield, JSON.stringify(afterEscape));
+const escAiming = await cdp.evaluate(`return { shield: !!document.querySelector('.nexus-studio-pick-shield'), open: !!${popover} };`);
+check('Escape while aiming ends the pick and keeps the picker', !escAiming.shield && escAiming.open, JSON.stringify(escAiming));
+await escape();
+await pause(100);
+const escPicker = await cdp.evaluate(`return { open: !!${popover}, draft: ${inline('--nexus-document-chrome')} };`);
+check('a second Escape closes the picker with nothing kept', !escPicker.open && escPicker.draft === chromeBefore, JSON.stringify({ escPicker, chromeBefore }));
+
+// --- the palette ---------------------------------------------------------------------------
+console.log('\nthe palette');
+const swatchesBefore = JSON.parse(await readData()).savedSwatches ?? [];
+await openPicker('splitterHover');
+await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-add').click();`);
+await pause(300);
+const saved = JSON.parse(await readData()).savedSwatches ?? [];
+check('+ saves the current colour, opacity included, to data.json at once', saved.includes('rgba(255, 255, 255, 0.28)'), JSON.stringify(saved));
+const added = saved.length - swatchesBefore.length;
+// Delete what this run added, with the keyboard, so the palette is left as found.
+if (added === 1) {
+    await cdp.evaluate(`
+        const all = ${popover}.querySelectorAll('.nexus-studio-cp-swatch');
+        all[all.length - 1].focus();
+    `);
+    await pressKey('Delete', 'Delete', 46);
+    await pause(300);
+}
+await escape();
+await pause(100);
+check('Delete on a focused swatch removes it again', JSON.stringify(JSON.parse(await readData()).savedSwatches ?? []) === JSON.stringify(swatchesBefore));
 
 // --- Inspect UI, end to end ------------------------------------------------------------
 console.log('\nInspect UI');
@@ -556,9 +698,14 @@ check(
 // was, rendered once, with nothing doubled.
 console.log('\nthe plugin reloading while the studio is open');
 const inlineNexus = `Array.from(document.body.style).filter((name) => name.startsWith('--nexus-')).length`;
+// A picker is left open with a draft on screen: disabling must take both away.
+await openPicker('documentSurface');
 await cdp.evaluate(`
-    ${row('documentSurface')}.dispatchEvent(new PointerEvent('pointerenter'));
-    await new Promise((r) => setTimeout(r, 300));
+    const hex = document.querySelector('.nexus-studio-popover .nexus-studio-cp-field[data-field="hex"]');
+    hex.value = '#ff0000';
+    hex.dispatchEvent(new Event('input', { bubbles: true }));
+`);
+await cdp.evaluate(`
     await app.plugins.disablePlugin('${STUDIO}');
 `);
 await pause(500);
@@ -567,9 +714,12 @@ const whileOff = await cdp.evaluate(`
         inline: ${inlineNexus},
         scratch: document.querySelectorAll('#nexus-theme-studio-scratch').length,
         leaves: app.workspace.getLeavesOfType('${VIEW_TYPE}').length,
+        popovers: document.querySelectorAll('.nexus-studio-popover').length,
+        shields: document.querySelectorAll('.nexus-studio-pick-shield').length,
     };
 `);
-check('disabling leaves no Nexus override and no preview behind', whileOff.inline === 0, JSON.stringify(whileOff));
+check('disabling leaves no Nexus override, no draft and no preview behind', whileOff.inline === 0, JSON.stringify(whileOff));
+check('and no picker or pick layer', whileOff.popovers === 0 && whileOff.shields === 0, JSON.stringify(whileOff));
 check('and no scratch stylesheet', whileOff.scratch === 0);
 
 await cdp.evaluate(`await app.plugins.enablePlugin('${STUDIO}');`);
@@ -583,26 +733,32 @@ const whileOn = await cdp.evaluate(`
         panels: view?.contentEl?.querySelectorAll('.nexus-studio-profile').length ?? 0,
         rows: view?.contentEl?.querySelectorAll('.nexus-studio-row').length ?? 0,
         scratch: document.querySelectorAll('#nexus-theme-studio-scratch').length,
+        // A row the pointer rests on after the reload may light up — that is
+        // the locator working. A colour with no hovered row behind it is a
+        // leftover. (The scratch window is on screen; a real cursor over the
+        // studio is possible, and was seen.)
         magenta: Array.from(document.body.style)
             .filter((name) => name.startsWith('--nexus-'))
-            .some((name) => document.body.style.getPropertyValue(name).trim() === '#ff00ff'),
+            .filter((name) => document.body.style.getPropertyValue(name).trim() === '#ff00ff')
+            .filter((name) => !document.querySelector('.nexus-studio-row:hover'))
+            .length > 0,
+        draft: document.body.style.getPropertyValue('--nexus-document-surface'),
     };
 `);
 check('re-enabling restores the one studio where it was', whileOn.leaves === 1 && whileOn.inRightDock, JSON.stringify(whileOn));
 check('rendered once, not twice', whileOn.panels === 1 && whileOn.rows === expectedRows, JSON.stringify(whileOn));
 check('with at most one scratch stylesheet', whileOn.scratch <= 1);
 check('and no locator colour left over from before the reload', whileOn.magenta === false);
+check('and not the draft that was open when it was disabled', whileOn.draft !== '#ff0000', whileOn.draft);
 
 // --- a picture, for the human reviewing this ------------------------------------------
 const shot = process.argv[2];
 if (shot) {
-    await cdp.evaluate(`
-        const r = ${row('splitterHover')};
-        r.querySelector('.nexus-studio-value').click();
-    `);
+    await openPicker('splitterHover');
     await pause(200);
     const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
     fs.writeFileSync(shot, Buffer.from(data, 'base64'));
+    await escape();
     console.log(`\n  screenshot: ${shot}`);
 }
 

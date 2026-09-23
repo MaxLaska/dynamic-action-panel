@@ -1,6 +1,9 @@
 # OCAP – Status
 
-Last updated: 2026-09-23 (the Theme Studio is a CONTROL PLANE that stays
+Last updated: 2026-09-23 (colour is edited in ONE Nexus colour picker —
+drafts until closed, Escape restores, a global palette, Pick from Obsidian by
+mouse or keyboard, no native popup or red-grid pipette left; on top of the
+Theme Studio as a CONTROL PLANE that stays
 readable whatever it sets, with UI typography, a contrast assist that never
 writes, and a Discovery area — Inspect UI and a window colour sampler; on top
 of the Theme Studio as a WORKSPACE VIEW, opened by
@@ -21,6 +24,42 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **Nexus Theme Studio: one colour workflow (2026-09-23).** Implemented
+  locally, deployed to the smoke vault only, checked live in an isolated
+  Obsidian. Not pushed, not in the productive vault. Normative: the
+  `DECISIONS.md` entries from "A colour is edited in one place" onward.
+  - **Consolidated:** a colour row is a swatch, a readout and a reset. The
+    swatch opens the Nexus colour picker (`colorPicker.ts`), which holds:
+    - the square, the hue bar and opacity;
+    - HEX, RGB and HSL (display only);
+    - Pick from Obsidian;
+    - a global palette;
+    - the raw CSS value.
+
+    Removed: the native `<input type="color">` (Chromium's popup and its
+    red-grid pipette), the row pipette, the row opacity slider, the row raw CSS
+    line, and the native EyeDropper fallback (`eyedropper.ts` deleted).
+  - **Session semantics:** changes in the picker are runtime-only drafts
+    (`withSession`). Done, Enter or a click outside commits one write. Escape or
+    Revert restores the exact previous value, and nothing is written while the
+    picker is open.
+  - **Model:** one RGBA model in `colorValue.ts`, which now also parses `hsl()`.
+    Custom CSS values stay authoritative and are converted only on request.
+  - **Keyboard sampling:** arrows (Shift ×10), Enter or Space, and Escape, with
+    a neutral reticle. This did not exist in code before; see `DECISIONS.md`.
+  - **Persistence:** settings v3 adds `savedSwatches` and `pickerFormat`. A v2
+    file reads unchanged, and damaged palettes are read fail-soft.
+  - **Discovery:** Take colour is now Copy colour, a developer utility.
+  - **Verified:**
+    - typecheck and lint are clean;
+    - 2074 tests pass in 61 files, including the new
+      `tests/nexusColorPicker.test.ts` (68 tests) and a shared
+      `tests/support/nexusStudioHarness.ts`;
+    - mutations were caught: Escape committing, the sampling guard, drafts
+      saved, a rebuild keeping the picker, Space not taken, and the locator
+      guard;
+    - `smokeView.mjs` passed 79/79 twice.
 
 - **Nexus Theme Studio: control plane, typography, contrast, Discovery
   (2026-09-23).** Implemented locally, deployed to the smoke vault only, and
