@@ -205,6 +205,36 @@ export function isOverridden(overrides: TokenOverrides, key: string): boolean {
 }
 
 /**
+ * The declarations with an open picker's value laid over them.
+ *
+ * A picker session is a DRAFT: what the user is trying right now, shown on the
+ * whole workspace but not yet part of the profile. It is composed here, over
+ * the profile's declarations and under the locator, as a pure function — the
+ * same construction as `withPreview`, and for the same reason: a draft has no
+ * path to a file. Committing it is an ordinary override write; cancelling it
+ * is dropping it, and the profile underneath was never touched.
+ *
+ * `session` maps token keys to values. An invalid value is ignored, like an
+ * invalid override.
+ */
+export function withSession(
+    declarations: ReadonlyArray<readonly [string, string]>,
+    session: ReadonlyMap<string, string>
+): Array<[string, string]> {
+    const drafts = new Map<string, string>();
+    for (const [key, value] of session) {
+        const token = nexusToken(key);
+        if (token && isValidValueFor(token, value)) drafts.set(token.cssVariable, value.trim());
+    }
+    const result: Array<[string, string]> = [];
+    for (const [name, value] of declarations) {
+        if (!drafts.has(name)) result.push([name, value]);
+    }
+    for (const [name, value] of drafts) result.push([name, value]);
+    return result;
+}
+
+/**
  * The colour the locator paints a token with while the pointer rests on its row.
  *
  * Magenta because nothing in the Nexus palette is anywhere near it: every

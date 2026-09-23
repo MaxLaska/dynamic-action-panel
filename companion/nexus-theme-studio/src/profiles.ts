@@ -12,6 +12,7 @@
 // its argument, because the plugin persists what it gets back and a half-applied
 // in-place edit is exactly the state that survives a crash.
 
+import { isColorFormat, parseColorValue, type ColorFormat } from './colorValue';
 import { sanitizeOverrides, type TokenOverrides } from './overrides';
 
 /**
@@ -21,8 +22,34 @@ import { sanitizeOverrides, type TokenOverrides } from './overrides';
  * 2 — the workspace-view release. Nothing about profiles changed; see
  *     `readCollapsedGroups` for the one field whose stored value is NOT
  *     carried across.
+ * 3 — the colour picker: `savedSwatches` and `pickerFormat`. Both are new
+ *     fields with defaults; a version-2 file reads with an empty palette and
+ *     the HEX format, and nothing it had is dropped.
  */
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
+
+/** The most swatches the palette keeps. A working palette, not a library. */
+export const MAX_SWATCHES = 48;
+
+/**
+ * A stored palette, read fail-soft: anything that is not a colour the picker
+ * can show is dropped, duplicates are dropped, and each entry is kept in the
+ * form it was saved in — which is the stored form, alpha included.
+ */
+function readSwatches(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const entry of raw) {
+        if (typeof entry !== 'string') continue;
+        const value = entry.trim();
+        if (!parseColorValue(value) || seen.has(value)) continue;
+        seen.add(value);
+        result.push(value);
+        if (result.length >= MAX_SWATCHES) break;
+    }
+    return result;
+}
 
 /**
  * The fold state a file may carry, read according to the version that wrote it.
@@ -97,6 +124,17 @@ export interface NexusStudioSettings {
      * strings is the whole cost; there is no new persistence machinery here.
      */
     collapsedGroups: string[];
+    /**
+     * The picker's palette: colours the user saved to reuse, in the stored CSS
+     * form, alpha included. GLOBAL to the studio, like the fold state, and for
+     * the same reason: working colours are carried from token to token and from
+     * profile to profile — comparing two profiles with the same five greys at
+     * hand is the point of having them. A profile is what the theme looks like;
+     * the palette is what the user is working with.
+     */
+    savedSwatches: string[];
+    /** How the picker shows a colour: only a display preference, never a value. */
+    pickerFormat: ColorFormat;
 }
 
 function standardProfile(): NexusProfile {
@@ -117,6 +155,8 @@ export function defaultSettings(): NexusStudioSettings {
         // Everything open to begin with: a user who has never seen the editor
         // should see what it offers, not a row of closed drawers.
         collapsedGroups: [],
+        savedSwatches: [],
+        pickerFormat: 'hex',
         profiles: [
             standardProfile(),
             {
@@ -210,6 +250,8 @@ export function normalizeSettings(raw: unknown): NexusStudioSettings {
         activeProfileId,
         profiles,
         collapsedGroups: readCollapsedGroups(record),
+        savedSwatches: readSwatches(record.savedSwatches),
+        pickerFormat: isColorFormat(record.pickerFormat) ? record.pickerFormat : 'hex',
     };
 }
 
@@ -252,12 +294,14 @@ function withProfiles(
     activeProfileId = settings.activeProfileId
 ): NexusStudioSettings {
     return {
+        ...settings,
         version: SETTINGS_VERSION,
         activeProfileId,
         profiles,
         // Carried through every profile operation. A rename is not a reason to
-        // unfold the page.
+        // unfold the page, and a profile switch keeps the palette.
         collapsedGroups: [...settings.collapsedGroups],
+        savedSwatches: [...settings.savedSwatches],
     };
 }
 
@@ -435,4 +479,47 @@ export function setGroupCollapsed(
         profiles: settings.profiles,
         collapsedGroups: collapsed ? [...without, group] : without,
     };
+}
+
+// --- the picker's palette ------------------------------------------------------
+//
+// Studio UI state, saved through `updateUi` like the fold: adding a swatch is
+// not a colour change and re-applies nothing. Choosing a swatch never changes
+// it — it loads the colour into the picker, where it becomes a new value.
+
+/** Adds a colour to the end of the palette. A duplicate or a non-colour changes nothing. */
+export function addSwatch(settings: NexusStudioSettings, value: string): NexusStudioSettings {
+    const colour = value.trim();
+    if (!parseColorValue(colour)) return settings;
+    if (settings.savedSwatches.includes(colour)) return settings;
+    if (settings.savedSwatches.length >= MAX_SWATCHES) return settings;
+    return { ...settings, savedSwatches: [...settings.savedSwatches, colour] };
+}
+
+/** Removes the swatch at an index. */
+export function removeSwatch(settings: NexusStudioSettings, index: number): NexusStudioSettings {
+    if (index < 0 || index >= settings.savedSwatches.length) return settings;
+    return { ...settings, savedSwatches: settings.savedSwatches.filter((_, at) => at !== index) };
+}
+
+/** Replaces the swatch at an index, keeping its place. */
+export function replaceSwatch(
+    settings: NexusStudioSettings,
+    index: number,
+    value: string
+): NexusStudioSettings {
+    const colour = value.trim();
+    if (index < 0 || index >= settings.savedSwatches.length) return settings;
+    if (!parseColorValue(colour)) return settings;
+    // Replacing with a colour saved elsewhere would make it a duplicate.
+    if (settings.savedSwatches.some((entry, at) => at !== index && entry === colour)) return settings;
+    return {
+        ...settings,
+        savedSwatches: settings.savedSwatches.map((entry, at) => (at === index ? colour : entry)),
+    };
+}
+
+/** The display format the picker opens in next time. */
+export function setPickerFormat(settings: NexusStudioSettings, format: ColorFormat): NexusStudioSettings {
+    return { ...settings, pickerFormat: format };
 }
