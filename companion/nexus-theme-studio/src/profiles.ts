@@ -12,7 +12,18 @@
 // its argument, because the plugin persists what it gets back and a half-applied
 // in-place edit is exactly the state that survives a crash.
 
-import { isColorFormat, parseColorValue, type ColorFormat } from './colorValue';
+import {
+    RECENT_LIMIT,
+    SAVED_LIMIT,
+    addSaved,
+    mergeSaved,
+    pushRecent,
+    readColorList,
+    removeSaved,
+    replaceSaved,
+    type MergeResult,
+} from './colorLibrary';
+import { isColorFormat, type ColorFormat } from './colorValue';
 import { sanitizeOverrides, type TokenOverrides } from './overrides';
 
 /**
@@ -25,31 +36,16 @@ import { sanitizeOverrides, type TokenOverrides } from './overrides';
  * 3 — the colour picker: `savedSwatches` and `pickerFormat`. Both are new
  *     fields with defaults; a version-2 file reads with an empty palette and
  *     the HEX format, and nothing it had is dropped.
+ *
+ * `recentColors` was added WITHOUT a new version: it is one more optional
+ * field with an empty default, a version-3 file without it is exactly a file
+ * with no recent colours yet, and nothing existing is read differently. A
+ * version number marks a change a reader must know about; this is not one.
  */
 export const SETTINGS_VERSION = 3;
 
-/** The most swatches the palette keeps. A working palette, not a library. */
-export const MAX_SWATCHES = 48;
-
-/**
- * A stored palette, read fail-soft: anything that is not a colour the picker
- * can show is dropped, duplicates are dropped, and each entry is kept in the
- * form it was saved in — which is the stored form, alpha included.
- */
-function readSwatches(raw: unknown): string[] {
-    if (!Array.isArray(raw)) return [];
-    const seen = new Set<string>();
-    const result: string[] = [];
-    for (const entry of raw) {
-        if (typeof entry !== 'string') continue;
-        const value = entry.trim();
-        if (!parseColorValue(value) || seen.has(value)) continue;
-        seen.add(value);
-        result.push(value);
-        if (result.length >= MAX_SWATCHES) break;
-    }
-    return result;
-}
+/** The saved colours' limit, under its older name. See colorLibrary.ts. */
+export const MAX_SWATCHES = SAVED_LIMIT;
 
 /**
  * The fold state a file may carry, read according to the version that wrote it.
@@ -133,6 +129,13 @@ export interface NexusStudioSettings {
      * the palette is what the user is working with.
      */
     savedSwatches: string[];
+    /**
+     * The colours most recently COMMITTED from the picker, newest first, at
+     * most RECENT_LIMIT. Automatic: written only when a picker session commits
+     * a changed colour. Global for the same reason as the palette: it is the
+     * designer's working memory, not a property of a theme profile.
+     */
+    recentColors: string[];
     /** How the picker shows a colour: only a display preference, never a value. */
     pickerFormat: ColorFormat;
 }
@@ -156,6 +159,7 @@ export function defaultSettings(): NexusStudioSettings {
         // should see what it offers, not a row of closed drawers.
         collapsedGroups: [],
         savedSwatches: [],
+        recentColors: [],
         pickerFormat: 'hex',
         profiles: [
             standardProfile(),
@@ -250,7 +254,11 @@ export function normalizeSettings(raw: unknown): NexusStudioSettings {
         activeProfileId,
         profiles,
         collapsedGroups: readCollapsedGroups(record),
-        savedSwatches: readSwatches(record.savedSwatches),
+        // Canonicalised on read (see colorLibrary.ts): a colour's spelling may
+        // change, the colour and its opacity never do, and nothing is dropped
+        // but non-colours and duplicates.
+        savedSwatches: readColorList(record.savedSwatches, SAVED_LIMIT),
+        recentColors: readColorList(record.recentColors, RECENT_LIMIT),
         pickerFormat: isColorFormat(record.pickerFormat) ? record.pickerFormat : 'hex',
     };
 }
@@ -302,6 +310,7 @@ function withProfiles(
         // unfold the page, and a profile switch keeps the palette.
         collapsedGroups: [...settings.collapsedGroups],
         savedSwatches: [...settings.savedSwatches],
+        recentColors: [...settings.recentColors],
     };
 }
 
@@ -481,42 +490,57 @@ export function setGroupCollapsed(
     };
 }
 
-// --- the picker's palette ------------------------------------------------------
+// --- the colour library, in the settings ------------------------------------------
 //
-// Studio UI state, saved through `updateUi` like the fold: adding a swatch is
-// not a colour change and re-applies nothing. Choosing a swatch never changes
-// it — it loads the colour into the picker, where it becomes a new value.
+// Studio UI state, saved through `updateUi` like the fold: none of this is a
+// colour change, and none of it re-applies anything. The rules themselves live
+// in colorLibrary.ts; these only put the result where it is stored. Every one
+// returns the SAME settings object when nothing changed, so the caller can
+// skip the save.
 
-/** Adds a colour to the end of the palette. A duplicate or a non-colour changes nothing. */
+/** Keeps a colour in the saved palette. A duplicate (by colour) or a non-colour changes nothing. */
 export function addSwatch(settings: NexusStudioSettings, value: string): NexusStudioSettings {
-    const colour = value.trim();
-    if (!parseColorValue(colour)) return settings;
-    if (settings.savedSwatches.includes(colour)) return settings;
-    if (settings.savedSwatches.length >= MAX_SWATCHES) return settings;
-    return { ...settings, savedSwatches: [...settings.savedSwatches, colour] };
+    const result = addSaved(settings.savedSwatches, value);
+    return result.changed ? { ...settings, savedSwatches: result.saved } : settings;
 }
 
-/** Removes the swatch at an index. */
+/** Removes the saved colour at an index. */
 export function removeSwatch(settings: NexusStudioSettings, index: number): NexusStudioSettings {
-    if (index < 0 || index >= settings.savedSwatches.length) return settings;
-    return { ...settings, savedSwatches: settings.savedSwatches.filter((_, at) => at !== index) };
+    const saved = removeSaved(settings.savedSwatches, index);
+    return saved === settings.savedSwatches ? settings : { ...settings, savedSwatches: saved };
 }
 
-/** Replaces the swatch at an index, keeping its place. */
+/** Replaces the saved colour at an index, keeping its place. */
 export function replaceSwatch(
     settings: NexusStudioSettings,
     index: number,
     value: string
 ): NexusStudioSettings {
-    const colour = value.trim();
-    if (index < 0 || index >= settings.savedSwatches.length) return settings;
-    if (!parseColorValue(colour)) return settings;
-    // Replacing with a colour saved elsewhere would make it a duplicate.
-    if (settings.savedSwatches.some((entry, at) => at !== index && entry === colour)) return settings;
+    const saved = replaceSaved(settings.savedSwatches, index, value);
+    return saved === settings.savedSwatches ? settings : { ...settings, savedSwatches: saved };
+}
+
+/** Empties the saved palette. The caller asks first. */
+export function clearSwatches(settings: NexusStudioSettings): NexusStudioSettings {
+    return settings.savedSwatches.length === 0 ? settings : { ...settings, savedSwatches: [] };
+}
+
+/** Adds imported colours to the saved palette. Never removes one. */
+export function importSwatches(
+    settings: NexusStudioSettings,
+    colors: readonly string[]
+): { settings: NexusStudioSettings; result: MergeResult } {
+    const result = mergeSaved(settings.savedSwatches, colors);
     return {
-        ...settings,
-        savedSwatches: settings.savedSwatches.map((entry, at) => (at === index ? colour : entry)),
+        settings: result.added > 0 ? { ...settings, savedSwatches: result.saved } : settings,
+        result,
     };
+}
+
+/** Records a committed colour at the front of the recent colours. */
+export function recordRecent(settings: NexusStudioSettings, value: string): NexusStudioSettings {
+    const recent = pushRecent(settings.recentColors, value);
+    return recent === settings.recentColors ? settings : { ...settings, recentColors: recent };
 }
 
 /** The display format the picker opens in next time. */
