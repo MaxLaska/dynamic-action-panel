@@ -30,6 +30,8 @@
 // has no way into either any more, and this checks that there is none.
 
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const PORT = 9333;
 const STUDIO = 'nexus-theme-studio';
@@ -293,10 +295,11 @@ console.log('\nthe colour picker');
 const popover = `document.querySelector('.nexus-studio-popover')`;
 const openPicker = (key) =>
     cdp.evaluate(`${row(key)}.querySelector('.nexus-studio-swatch').click(); await new Promise((r) => setTimeout(r, 60));`);
-const pressKey = async (key, code = key, keyCode = 0) => {
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: keyCode });
-    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: keyCode });
+const pressKey = async (key, code = key, keyCode = 0, modifiers = 0) => {
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: keyCode, modifiers });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: keyCode, modifiers });
 };
+const SHIFT = 8;
 const escape = () => pressKey('Escape', 'Escape', 27);
 const inline = (variable) => `document.body.style.getPropertyValue('${variable}')`;
 const readData = () => cdp.evaluate(`return await app.vault.adapter.read('.obsidian/plugins/${STUDIO}/data.json');`);
@@ -638,27 +641,193 @@ await pause(100);
 const escPicker = await cdp.evaluate(`return { open: !!${popover}, draft: ${inline('--nexus-document-chrome')} };`);
 check('a second Escape closes the picker with nothing kept', !escPicker.open && escPicker.draft === chromeBefore, JSON.stringify({ escPicker, chromeBefore }));
 
-// --- the palette ---------------------------------------------------------------------------
-console.log('\nthe palette');
-const swatchesBefore = JSON.parse(await readData()).savedSwatches ?? [];
-await openPicker('splitterHover');
-await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-add').click();`);
-await pause(300);
-const saved = JSON.parse(await readData()).savedSwatches ?? [];
-check('+ saves the current colour, opacity included, to data.json at once', saved.includes('rgba(255, 255, 255, 0.28)'), JSON.stringify(saved));
-const added = saved.length - swatchesBefore.length;
-// Delete what this run added, with the keyboard, so the palette is left as found.
-if (added === 1) {
+// --- the colour library: recent and saved -------------------------------------------------
+//
+// RECENT is written by commits and nothing else; SAVED only by deliberate
+// actions. The palette's ⋯ menu is a NATIVE menu, which CDP cannot click, so
+// for this section — and only in this scratch instance — the panel's
+// `showMenu` is replaced by one that hands the items to the script, which runs
+// them the way a click on the menu item would. The native menu itself is not
+// opened: it would sit on the screen, and a key sent to close it would reach
+// the page instead. What the menu looks like is the operating system's; what
+// its items do is what is checked here.
+console.log('\nthe colour library');
+// The library as the plugin holds it right now. A commit is saved on the
+// usual 400ms debounce, so the FILE is checked separately, after it.
+const studioData = () => cdp.evaluate(`return JSON.parse(JSON.stringify(app.plugins.plugins['${STUDIO}'].settings));`);
+const fileData = async () => JSON.parse(await readData());
+const commitColour = async (key, hex) => {
+    await openPicker(key);
     await cdp.evaluate(`
-        const all = ${popover}.querySelectorAll('.nexus-studio-cp-swatch');
-        all[all.length - 1].focus();
+        const p = ${popover};
+        const f = p.querySelector('.nexus-studio-cp-field[data-field="hex"]');
+        f.value = ${JSON.stringify(hex)};
+        f.dispatchEvent(new Event('input', { bubbles: true }));
+        p.querySelector('.nexus-studio-cp-done').click();
     `);
-    await pressKey('Delete', 'Delete', 46);
-    await pause(300);
-}
+    await pause(60);
+};
+const recentShown = () =>
+    cdp.evaluate(`return Array.from(${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="recent"]')).map((s) => s.style.getPropertyValue('--nexus-studio-swatch'));`);
+const savedShown = () =>
+    cdp.evaluate(`return Array.from(${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="saved"]')).map((s) => s.style.getPropertyValue('--nexus-studio-swatch'));`);
+await cdp.evaluate(`
+    const view = app.workspace.getLeavesOfType('${VIEW_TYPE}')[0].view;
+    const host = view.panel.host;
+    host.showMenu = (evt, items) => { window.__smokeMenu = items; };
+`);
+const runMenu = async (startsWith) => {
+    await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-more').click();`);
+    await pause(50);
+    return cdp.evaluate(`
+        const item = (window.__smokeMenu || []).find((i) => i.title.startsWith(${JSON.stringify(startsWith)}));
+        if (!item || item.disabled) return false;
+        item.run();
+        return true;
+    `);
+};
+
+const RED = '#ff0000';
+const GREEN = '#00ff00';
+await commitColour('workspaceSurface', RED);
+check('a commit puts the colour in Recent', (await studioData()).recentColors?.[0] === RED, JSON.stringify((await studioData()).recentColors?.slice(0, 3)));
+await commitColour('workspaceSurface', GREEN);
+await commitColour('workspaceSurface', RED);
+const afterReuse = (await studioData()).recentColors;
+check('used again, a colour moves to the front and is not doubled', afterReuse[0] === RED && afterReuse[1] === GREEN && afterReuse.filter((c) => c === RED).length === 1, JSON.stringify(afterReuse.slice(0, 3)));
+await pause(600);
+check('and Recent reaches data.json once the save debounce has passed', JSON.stringify((await fileData()).recentColors) === JSON.stringify(afterReuse));
+await openPicker('workspaceSurface');
+const shownFront = await recentShown();
+check('the picker shows Recent newest first', shownFront[0] === RED && shownFront[1] === GREEN, JSON.stringify(shownFront.slice(0, 3)));
 await escape();
+await pause(80);
+
+for (let i = 1; i <= 16; i += 1) await commitColour('workspaceSurface', `#10${i.toString(16).padStart(2, '0')}30`);
+const full = (await studioData()).recentColors;
+check('Recent holds 16, and the oldest fell out', full.length === 16 && !full.includes(GREEN) && !full.includes(RED) && full[0] === '#101030', JSON.stringify({ length: full.length, first: full[0], last: full.at(-1) }));
+
+// A recent colour as a starting point: loaded as a draft, varied, committed.
+await openPicker('workspaceSurface');
+const escOnDraft = await cdp.evaluate(`
+    const pick = ${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="recent"]')[3];
+    const chosen = pick.style.getPropertyValue('--nexus-studio-swatch');
+    pick.click();
+    return { chosen, draft: ${inline('--nexus-workspace-surface')} };
+`);
+check('a recent colour loads as a draft', escOnDraft.draft === escOnDraft.chosen, JSON.stringify(escOnDraft));
+await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-area').focus();`);
+await pressKey('ArrowUp', 'ArrowUp', 38, SHIFT);
+const variant = await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`);
+await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-done').click();`);
+await pause(60);
+const afterVariant = (await studioData()).recentColors;
+check('the committed variant goes in front, and the original stays', afterVariant[0] === variant && afterVariant.includes(escOnDraft.chosen) && variant !== escOnDraft.chosen, JSON.stringify({ variant, chosen: escOnDraft.chosen, front: afterVariant.slice(0, 5) }));
+
+await openPicker('workspaceSurface');
+const recentBeforeEsc = JSON.stringify((await studioData()).recentColors);
+await cdp.evaluate(`
+    const f = ${popover}.querySelector('.nexus-studio-cp-field[data-field="hex"]');
+    f.value = '#abcdef';
+    f.dispatchEvent(new Event('input', { bubbles: true }));
+`);
+await escape();
+await pause(80);
+check('Escape adds nothing to Recent', JSON.stringify((await studioData()).recentColors) === recentBeforeEsc);
+
+// Saved: kept on purpose, and not rewritten by editing what was loaded from it.
+// A colour of its own per run, so a rerun does not meet the last run's.
+const KEEP = '#' + (0x200000 + (Date.now() % 0x0fffff)).toString(16).padStart(6, '0');
+await openPicker('workspaceSurface');
+await cdp.evaluate(`
+    const f = ${popover}.querySelector('.nexus-studio-cp-field[data-field="hex"]');
+    f.value = '${KEEP}';
+    f.dispatchEvent(new Event('input', { bubbles: true }));
+    ${popover}.querySelector('.nexus-studio-cp-add').click();
+`);
+await pause(150);
+const savedNow = (await studioData()).savedSwatches;
+check('+ keeps the colour in Saved', savedNow.includes(KEEP), JSON.stringify(savedNow));
+check('and saves it at once', (await fileData()).savedSwatches.includes(KEEP));
+const savedIndex = savedNow.indexOf(KEEP);
+await cdp.evaluate(`
+    ${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="saved"]')[${savedIndex}].click();
+    ${popover}.querySelector('.nexus-studio-cp-area').focus();
+`);
+await pressKey('ArrowUp', 'ArrowUp', 38, SHIFT);
+const loadedDraft = await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`);
+check('editing a loaded saved colour leaves the saved colour alone', (await studioData()).savedSwatches[savedIndex] === KEEP && (await savedShown())[savedIndex] === KEEP && loadedDraft !== KEEP, loadedDraft);
+check('Replace, from ⋯, changes the saved colour on purpose', (await runMenu('Replace')) === true);
+await pause(150);
+check('and it is stored', (await studioData()).savedSwatches[savedIndex] === loadedDraft, JSON.stringify((await studioData()).savedSwatches));
+
+// Export and import: the saved colours as a file, and back, merged.
+check('Export opens its dialog', (await runMenu('Export')) === true);
+await pause(200);
+const exported = await cdp.evaluate(`return document.querySelector('.modal-container textarea.nexus-studio-transfer')?.value ?? null;`);
+let exportedJson = null;
+try { exportedJson = JSON.parse(exported); } catch { /* reported below */ }
+check(
+    'the export is a nexus-color-palette with exactly the saved colours',
+    exportedJson?.format === 'nexus-color-palette' && exportedJson?.version === 1 &&
+        JSON.stringify(exportedJson.colors.map((c) => c.value)) === JSON.stringify((await studioData()).savedSwatches),
+    exported?.slice(0, 120)
+);
+await cdp.evaluate(`document.querySelector('.modal-container .modal-close-button')?.click();`);
+await pause(150);
+check('the picker stayed open behind the dialog', (await cdp.evaluate(`return !!${popover};`)) === true);
+
+const paletteFile = path.join(os.tmpdir(), `nexus-smoke-${process.pid}.nexus-color-palette.json`);
+fs.writeFileSync(paletteFile, exported ?? '');
+// A closing dialog still holds the keyboard for a moment; wait until it is gone.
+for (let i = 0; i < 40 && (await cdp.evaluate(`return !!document.querySelector('.modal-container');`)); i += 1) await pause(50);
 await pause(100);
-check('Delete on a focused swatch removes it again', JSON.stringify(JSON.parse(await readData()).savedSwatches ?? []) === JSON.stringify(swatchesBefore));
+const focusedSwatch = await cdp.evaluate(`
+    window.__keys = [];
+    window.__keyLog = (e) => window.__keys.push(e.key + '@' + (e.target.className || e.target.tagName) + '@' + e.target.dataset?.index + (e.defaultPrevented ? '!' : ''));
+    document.addEventListener('keydown', window.__keyLog, true);
+    const saved = ${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="saved"]');
+    saved[${savedIndex}].focus();
+    return document.activeElement === saved[${savedIndex}];
+`);
+await pressKey('Delete', 'Delete', 46);
+await pause(150);
+const keysSeen = await cdp.evaluate(`document.removeEventListener('keydown', window.__keyLog, true); return { keys: window.__keys, active: document.activeElement?.className, index: ${savedIndex}, count: ${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="saved"]').length };`);
+const beforeImport = await studioData();
+check('Delete removes the focused saved colour', focusedSwatch && !beforeImport.savedSwatches.includes(loadedDraft), JSON.stringify({ focusedSwatch, keysSeen, saved: beforeImport.savedSwatches }));
+const tokenBeforeImport = await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`);
+check('Import opens its dialog', (await runMenu('Import')) === true);
+await pause(200);
+const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
+const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '.modal-container input.nexus-studio-palette-file' });
+await cdp.send('DOM.setFileInputFiles', { nodeId, files: [paletteFile] });
+await pause(300);
+await cdp.evaluate(`
+    const buttons = Array.from(document.querySelectorAll('.modal-container button'));
+    buttons.find((b) => b.textContent === 'Import')?.click();
+`);
+await pause(300);
+fs.rmSync(paletteFile, { force: true });
+const afterImport = await studioData();
+check('a chosen palette file is merged back: the deleted colour returns', afterImport.savedSwatches.includes(loadedDraft), JSON.stringify(afterImport.savedSwatches));
+check('with nothing else doubled or lost', afterImport.savedSwatches.length === beforeImport.savedSwatches.length + 1, JSON.stringify({ before: beforeImport.savedSwatches.length, after: afterImport.savedSwatches.length }));
+check('and the import changed no theme value', (await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`)) === tokenBeforeImport && JSON.stringify(afterImport.profiles) === JSON.stringify(beforeImport.profiles));
+check('the picker shows the imported colour at once', (await savedShown()).includes(loadedDraft));
+// This run's colour goes again, so the palette does not grow run after run.
+await cdp.evaluate(`
+    const all = Array.from(${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="saved"]'));
+    all.find((s) => s.style.getPropertyValue('--nexus-studio-swatch') === ${JSON.stringify(loadedDraft)})?.focus();
+`);
+await pressKey('Delete', 'Delete', 46);
+await pause(150);
+await escape();
+await pause(80);
+const settled = await studioData();
+const libraryBeforeRestart = { recent: settled.recentColors, saved: settled.savedSwatches };
+check('clean-up: this run leaves the palette as it found it', !settled.savedSwatches.includes(loadedDraft));
+// Leave the token as it was found; the library keeps what this run made.
+await clearToken('workspaceSurface');
+if (original) await setToken('workspaceSurface', original);
 
 // --- Inspect UI, end to end ------------------------------------------------------------
 console.log('\nInspect UI');
@@ -750,6 +919,27 @@ check('rendered once, not twice', whileOn.panels === 1 && whileOn.rows === expec
 check('with at most one scratch stylesheet', whileOn.scratch <= 1);
 check('and no locator colour left over from before the reload', whileOn.magenta === false);
 check('and not the draft that was open when it was disabled', whileOn.draft !== '#ff0000', whileOn.draft);
+
+// --- a restart --------------------------------------------------------------------------
+// The window reloads, the plugin reads data.json again, and the library must be
+// what it was — shown in the picker, not only present in the file.
+console.log('\na restart');
+await cdp.send('Page.reload', { ignoreCache: true });
+for (let i = 0; i < 60; i += 1) {
+    await pause(250);
+    const ready = await cdp.evaluate(`return !!app?.workspace?.getLeavesOfType?.('${VIEW_TYPE}')[0]?.view?.contentEl?.querySelector('.nexus-studio-row');`).catch(() => false);
+    if (ready) break;
+}
+await pause(500);
+await cdp.evaluate(`window.electron.remote.getCurrentWebContents().setBackgroundThrottling(false);`);
+await openPicker('workspaceSurface');
+const afterRestart = { recent: await recentShown(), saved: await savedShown() };
+await escape();
+check(
+    'Recent and Saved survive a restart, in order, alpha included',
+    JSON.stringify(afterRestart) === JSON.stringify(libraryBeforeRestart),
+    JSON.stringify({ recent: afterRestart.recent.length, saved: afterRestart.saved.length })
+);
 
 // --- a picture, for the human reviewing this ------------------------------------------
 const shot = process.argv[2];

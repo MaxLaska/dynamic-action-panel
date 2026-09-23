@@ -1,6 +1,8 @@
 # OCAP – Status
 
-Last updated: 2026-09-23 (colour is edited in ONE Nexus colour picker —
+Last updated: 2026-09-23 (the colour picker has two memories — RECENT,
+filled by commits, and SAVED, kept on purpose and exportable as a palette file;
+on top of: colour is edited in ONE Nexus colour picker —
 drafts until closed, Escape restores, a global palette, Pick from Obsidian by
 mouse or keyboard, no native popup or red-grid pipette left; on top of the
 Theme Studio as a CONTROL PLANE that stays
@@ -24,6 +26,42 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **Nexus Theme Studio: Recent and Saved colours (2026-09-23).** Implemented
+  locally, deployed to the smoke vault only, checked live in an isolated
+  Obsidian. Not pushed, not in the productive vault. Normative: the
+  `DECISIONS.md` entries from "The colour library has two memories" onward.
+  - **Model:** `colorLibrary.ts` is pure (no DOM, no Obsidian):
+    - canonical RGBA identity, with alpha counted;
+    - Recent: 16 colours, newest left, a reused colour moved to the front;
+    - Saved: explicit, at most 48;
+    - the `nexus-color-palette` v1 file format, with merge import.
+
+    The picker is a client of it through `PickerLibrary`.
+  - **Recent:** recorded only when a picker session commits a changed colour,
+    in the same write as the token. Drafts, cancel, unchanged commits, Custom
+    CSS and cancelled picks are never recorded.
+  - **Saved:** `+` never saves a duplicate (the existing swatch is outlined).
+    `⋯` replaces or deletes the loaded colour, imports, exports, copies as CSS
+    variables, and clears after asking.
+  - **Transfer:** export is JSON with a name and Copy. Import takes pasted JSON
+    or a chosen file, read-only. There is no save dialog; see `DECISIONS.md`.
+  - **Persistence:** `recentColors` was added and the settings stay at v3.
+    Existing `savedSwatches` are kept and canonicalised on read.
+  - **Verified:**
+    - typecheck and lint are clean;
+    - 2126 tests pass in 62 files, including the new
+      `tests/nexusColorLibrary.test.ts`;
+    - mutations were caught: no dedupe, newest on the right, dedupe by spelling,
+      import replacing, dialog clicks closing the picker, recent recorded on
+      cancel, and an unchanged commit counted as use;
+    - `smokeView.mjs` passed 101/101 on the last three runs, with a restart
+      check.
+  - **Open:** the smoke's Delete-key check failed in 2 of its first 5 runs,
+    once even after waiting for the closing dialog. It has passed 15 runs in a
+    row since keydown instrumentation was added. The cause is not proven;
+    focus returning late after a dialog closes is plausible. The smoke now
+    records where the key landed.
 
 - **Nexus Theme Studio: one colour workflow (2026-09-23).** Implemented
   locally, deployed to the smoke vault only, checked live in an isolated

@@ -95,11 +95,19 @@ What a colour row gives you: the swatch, a compact readout (`#333333`, and
   Shift) and Enter or Space takes the pixel. Escape stops aiming and keeps the
   picker. It sees only this window, so no popped-out window and no other
   application. There is no red-gridded browser pipette anywhere any more.
-- **Swatches** are your working colours, shared by every token and every
-  profile. `+` saves the current colour, opacity included. Clicking a swatch
-  loads it; the swatch itself does not change, so you can make a variant and
-  save that as well. Right-click a swatch to replace or delete it; Delete
-  removes a focused one.
+- **Recent** fills itself: every colour you commit to a token lands on the
+  left, at most 16, the oldest dropping off the right. A colour used again moves
+  to the front. Drafts, Escape and unchanged commits add nothing.
+- **Saved** is what you keep on purpose. `+` saves the current colour, opacity
+  included, and never twice. Clicking any swatch, Recent or Saved, loads it as a
+  draft; the swatch itself does not change, so you can make a variant and commit
+  or save that too. After loading a saved colour, `⋯` can replace it with the
+  current colour or delete it. `⋯` also imports, exports and clears the palette,
+  and copies it as CSS variables. Right-click and the Delete key work as well.
+- **Palette files** (`.nexus-color-palette.json`) hold your saved colours.
+  Export shows the JSON to copy; import takes pasted JSON or a chosen file and
+  adds its colours to yours. Nothing is removed, and no theme value changes.
+  They are separate from profile files, which hold token values.
 - **CSS value** is the raw text, for what the picker cannot show:
   `color-mix()`, `var()`, `oklch()`. Such a value opens as **Custom CSS** and is
   never rewritten, unless you press *Convert to colour*.

@@ -2336,3 +2336,153 @@ through.
 
 Nothing transient is stored: not the open picker, its position, a draft, or
 the sampling cursor.
+
+## 2026-09-23 – The colour library has two memories: Recent and Saved
+
+**Decision:** the picker's single palette becomes two sections, kept by the
+colour library (`colorLibrary.ts`):
+
+| | RECENT | SAVED |
+| --- | --- | --- |
+| Written by | a committed picker session that changed a colour, only | the user, explicitly (`+`, Replace, Delete, Import, Clear) |
+| Size | at most 16 (`RECENT_LIMIT`): two rows in the picker; the oldest falls off the right | at most 48 (`SAVED_LIMIT`); nothing falls off |
+| Order | newest on the left; a colour used again moves to the front and is not doubled | the order it was kept in |
+| Controls | none: no `+`, no menu, no sorting | `+`, `⋯` (replace or delete the loaded colour, import, export, copy as CSS variables, clear), Delete key, right-click |
+| Exported | no: working memory, not something to hand on | yes, as a palette file |
+
+Clicking any swatch in either section loads it into the picker as a DRAFT. The
+entry itself is never changed by that. A variant is committed or saved as a
+new colour.
+
+**Why two:** one list that was history, library and active colour at once made
+every choice a trade-off: save something to find it again, and clutter the
+library with it. Photoshop's split is the model here, but only the split is
+adopted: no groups, presets or names.
+
+**Global, both:** neither belongs to a profile, a token or a group. Recent is
+the designer's recent work, and Saved is the designer's library. Both survive a
+restart.
+
+## 2026-09-23 – A colour is identified by its canonical RGBA
+
+**Decision:** both memories compare and store colours in the canonical form
+`rgbaToCss(parseRgba(value))`: `#rrggbb`, or `rgba()` below full opacity.
+`#ffffff`, `rgb(255,255,255)` and `rgba(255,255,255,1)` are one colour. Alpha is
+part of the colour: `rgba(255,255,255,0.5)` is a different colour from
+`#ffffff`.
+
+**Consequence for existing data:** stored lists are canonicalised on read. A
+colour's spelling may change (for example `rgba(0,0,0,0.5)` becomes
+`rgba(0, 0, 0, 0.5)`), but the colour and its opacity do not. Only non-colours
+and duplicates are dropped. The smoke vault's `savedSwatches` read unchanged.
+
+## 2026-09-23 – Recent means a changed colour, committed
+
+**Decision:** a colour enters Recent in exactly one case: a picker session
+COMMITS a colour whose canonical form differs from the token's value when the
+picker opened. It is recorded in the same write as the token, on the live path,
+so the save debounce is unchanged.
+
+Not recorded:
+
+- any draft: dragging, fields, loading a swatch, Pick from Obsidian while open;
+- Escape or Revert;
+- a commit with no change, including the same colour typed in another spelling;
+- a Custom CSS value such as `color-mix()`, which is not a colour;
+- the locator.
+
+Loading a Recent or Saved colour that is different from the token's value, and
+then committing it, IS a use: the token got that colour. A colour taken with
+Pick from Obsidian counts once the session commits, and a cancelled pick adds
+nothing.
+
+## 2026-09-23 – Saved colours are a library, and a palette file
+
+**Decision:**
+
+- `+` keeps the current colour. A colour already saved (by canonical colour) is
+  not saved twice: nothing is written, and the existing swatch is briefly
+  outlined.
+- A loaded saved colour is marked, and `⋯` then offers Replace with current
+  colour and Delete for it. The normal workflow therefore needs no context
+  menu; right-click and the Delete key still work.
+- Replace refuses a colour that is already saved elsewhere.
+- Clear asks first, and empties Saved only (not Recent, and not any theme
+  value).
+
+**The file** (`nexus-color-palette`, `version: 1`):
+
+```json
+{ "format": "nexus-color-palette", "version": 1, "name": "Nexus palette",
+  "colors": [{ "value": "#333333" }, { "value": "rgba(255, 255, 255, 0.28)" }] }
+```
+
+It holds exactly the saved colours, with alpha. The name is asked for in the
+export dialog, with *Nexus palette* as the default. It is flat on purpose: a
+later group would be a named list of the same entries, and nothing here
+prevents that.
+
+**Import MERGES.** Colours are added at the end, and canonical duplicates are
+skipped. Nothing is removed. The user is told how many colours were added, were
+already saved, were skipped as not a colour, or did not fit.
+
+Refused with a reason:
+
+- a file that is not JSON;
+- a file in another format, including a profile file;
+- a file with a newer version.
+
+An import changes Saved only: no token, profile, theme or Recent. There is no
+"Replace palette": Clear followed by Import does that in two deliberate steps.
+
+**Profile and palette stay apart:** `nexus-theme-profile` holds token overrides
+and scratch CSS, and `nexus-color-palette` holds colours. Neither parser
+accepts the other.
+
+**Copy as CSS variables** (`--nexus-palette-01: …;`) was cheap and is included.
+It is a convenience copy, not a storage form; the JSON is the palette.
+
+## 2026-09-23 – Palette transfer is text and a file you choose, not a save dialog
+
+**Checked:**
+
+- Obsidian's Electron exposes `remote.dialog`, and Node's `fs` is available on
+  desktop.
+- A real save dialog would therefore be possible, but it would mean the studio
+  writes a file outside its own `data.json` through Node, which the profile
+  export deliberately does not do.
+
+**Decision:**
+
+- **Export** shows the JSON with a name field, a suggested file name
+  (`<name>.nexus-color-palette.json`) and Copy.
+- **Import** takes pasted JSON, or a file chosen with a standard
+  `<input type="file">`. That is reading only: Electron shows the system's open
+  dialog and hands over the text.
+
+The live smoke drives the file import with CDP `DOM.setFileInputFiles`, so no
+dialog opens.
+
+## 2026-09-23 – The colour library is a module, not a service
+
+**Decision:** `colorLibrary.ts` holds the pure rules:
+
+- canonical identity;
+- recent push, dedupe and trim;
+- saved add, replace, remove and merge;
+- palette serialise and parse;
+- CSS variables.
+
+It imports only `colorValue.ts`: no DOM, no Obsidian, no settings. A test holds
+that. `profiles.ts` stores what it returns (`recentColors`, `savedSwatches`),
+and returns the same settings object when nothing changed, so an unchanged
+library is never saved. The picker is one client. It shows the lists and asks
+for changes through a small `PickerLibrary` interface, and it owns no list.
+
+Another Nexus tool, or DAP, can reuse the same functions over its own storage.
+Nothing is shared across plugins at runtime; that would be a service, and none
+is built.
+
+**Settings stay at version 3.** `recentColors` is one more optional field with
+an empty default. A v3 file without it is a file with no recent colours yet,
+and nothing existing is read differently.
