@@ -33,6 +33,7 @@ import {
 } from '../companion/nexus-theme-studio/src/profiles';
 import {
     ADVANCED_GROUP,
+    CONTRAST_GROUP,
     StudioPanel,
     type StudioMenuAction,
     type StudioPanelHost,
@@ -198,8 +199,13 @@ describe('the studio is a workspace view', () => {
     it('renders the whole studio into its content element on open', async () => {
         const { view, lifecycle } = makeView();
         await lifecycle.onOpen();
-        const groups = view.contentEl.querySelectorAll('.nexus-studio-group');
-        expect(groups.length).toBe(NEXUS_GROUPS.length + 1);
+        const groups = Array.from(view.contentEl.querySelectorAll<HTMLElement>('.nexus-studio-group'));
+        // Every registry group, then contrast, then the scratch section.
+        expect(groups.map((group) => group.dataset.group)).toEqual([
+            ...NEXUS_GROUPS,
+            CONTRAST_GROUP,
+            ADVANCED_GROUP,
+        ]);
         expect(view.contentEl.querySelectorAll('.nexus-studio-row').length).toBe(NEXUS_TOKENS.length);
     });
 
@@ -469,11 +475,21 @@ describe('the per-token reset', () => {
         expect(ui.log.updateLive).toBe(0);
     });
 
-    it('is not available on the locked baseline', () => {
+    it('is not available on the locked baseline, and neither is any editor', () => {
         const ui = mount(setActiveProfile(defaultSettings(), STANDARD_PROFILE_ID));
+        // The main editor of each kind of control, so a new kind cannot slip
+        // past the lock without this list being extended.
+        const editorOf: Record<string, string> = {
+            color: '.nexus-studio-picker',
+            length: '.nexus-studio-range',
+            number: '.nexus-studio-range',
+            'font-family': '.nexus-studio-font-input',
+        };
         for (const token of NEXUS_TOKENS) {
             expect(ui.inRow<HTMLButtonElement>(token.key, '.nexus-studio-reset').disabled).toBe(true);
-            expect(ui.inRow<HTMLInputElement>(token.key, '.nexus-studio-picker').disabled).toBe(true);
+            const editor = editorOf[token.controlType];
+            expect(editor).toBeDefined();
+            expect(ui.inRow<HTMLInputElement>(token.key, editor!).disabled).toBe(true);
         }
     });
 });
@@ -538,6 +554,15 @@ describe('the raw CSS value is there, but not in the way', () => {
     it('is closed on every row by default', () => {
         const ui = mount();
         for (const token of NEXUS_TOKENS) {
+            if (token.controlType === 'font-family') {
+                // A family list IS its raw CSS, so it has no second, hidden
+                // copy of itself: the field is the control, and it is shown.
+                expect(ui.row(token.key).querySelector('.nexus-studio-row-css')).toBeNull();
+                expect(ui.inRow<HTMLInputElement>(token.key, '.nexus-studio-font-input').value).toBe(
+                    token.defaultValue
+                );
+                continue;
+            }
             expect(ui.inRow<HTMLElement>(token.key, '.nexus-studio-row-css').hidden).toBe(true);
             expect(ui.inRow<HTMLElement>(token.key, '.nexus-studio-value').getAttribute('aria-expanded')).toBe(
                 'false'

@@ -77,6 +77,7 @@ function alphaValue(raw: string): number | null {
 
 const HEX = /^#([0-9a-f]{3,8})$/i;
 const FUNCTIONAL = /^rgba?\(([^)]*)\)$/i;
+const SRGB = /^color\(\s*srgb\s+([^/)]*?)\s*(?:\/\s*([^)]*?))?\s*\)$/i;
 
 /**
  * Reads a CSS colour into a swatch colour and an opacity, or answers null.
@@ -117,6 +118,24 @@ export function parseColorValue(value: string): ParsedColor | null {
         }
         // Five and seven digits are not colours, just truncated ones.
         return null;
+    }
+
+    // `color(srgb r g b / a)`, channels 0–1. Rarely typed, but it is how
+    // Chromium serialises the COMPUTED value of an sRGB `color-mix()`, so it is
+    // what comes back when the browser is asked to resolve one.
+    const srgb = SRGB.exec(text);
+    if (srgb) {
+        const parts = (srgb[1] ?? '').trim().split(/\s+/);
+        if (parts.length !== 3) return null;
+        const unit = parts.map(Number);
+        if (unit.some((v) => !Number.isFinite(v))) return null;
+        const alpha = srgb[2] === undefined ? 1 : alphaValue(srgb[2]);
+        if (alpha === null) return null;
+        const [r, g, b] = unit.map((v) => clamp(v, 0, 1) * 255);
+        return {
+            hex: `#${channelHex(r ?? 0)}${channelHex(g ?? 0)}${channelHex(b ?? 0)}`,
+            alpha: roundAlpha(alpha),
+        };
     }
 
     const functional = FUNCTIONAL.exec(text);

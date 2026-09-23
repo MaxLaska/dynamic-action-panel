@@ -23,13 +23,25 @@
 import { setIcon, setTooltip } from 'obsidian';
 
 import {
+    NEXUS_CONTRAST_PAIRS,
     NEXUS_THEME_NAME,
     nexusToken,
+    type NexusContrastPair,
     type ThemeTokenDefinition,
 } from '../../../theme/nexus/src/tokens';
+import { parseColorValue } from './colorValue';
+import {
+    CONTRAST_LARGE,
+    CONTRAST_TEXT,
+    formatRatio,
+    measureContrast,
+    type ContrastResult,
+} from './contrast';
 import { buildControlPlan } from './controlPlan';
 import { button, el, winOf } from './dom';
+import { inspectAvailable, startInspect, type InspectSession } from './inspectUi';
 import { effectiveValue, isOverridden } from './overrides';
+import { sampleColor, samplerKind, type SampleSession } from './sampler';
 import {
     activeProfile,
     createProfile,
@@ -84,6 +96,27 @@ export interface StudioPanelHost {
 /** The key of the scratch CSS section, alongside the token groups' keys. */
 export const ADVANCED_GROUP = 'advanced';
 
+/** The key of the contrast section. */
+export const CONTRAST_GROUP = 'contrast';
+
+/**
+ * The colour of the probe's host, as the browser serialises it. Must match
+ * `.nexus-studio-probe` in styles.css; a test holds the two together.
+ */
+export const PROBE_SENTINEL = 'rgb(1,2,3)';
+
+/** Said wherever contrast figures are shown, so a figure is not read as a verdict. */
+export const CONTRAST_DISCLAIMER =
+    'A contrast indicator for these colour pairs, by the WCAG ratio — not an accessibility audit of the theme.';
+
+interface ContrastRowParts {
+    pair: NexusContrastPair;
+    row: HTMLElement;
+    text: HTMLElement;
+    surface: HTMLElement;
+    figure: HTMLElement;
+}
+
 /** Unique ids across every panel in every window. */
 let panelSerial = 0;
 
@@ -101,6 +134,11 @@ export class StudioPanel {
     private rows: TokenRowHandle[] = [];
     private groups: GroupParts[] = [];
     private themeState: HTMLElement | null = null;
+    private contrastRows: ContrastRowParts[] = [];
+    private contrastMeta: HTMLElement | null = null;
+    private probe: HTMLElement | null = null;
+    /** A colour pick or an inspect in progress, so closing the view ends it. */
+    private pending: { cancel(): void } | null = null;
     private disposed = false;
 
     constructor(
@@ -136,11 +174,14 @@ export class StudioPanel {
         this.themeState = el(this.root, 'div', { cls: 'nexus-studio-theme-state' });
         this.syncThemeState();
         this.renderProfileBar();
+        this.renderTools();
         for (const group of buildControlPlan()) {
             this.renderTokenGroup(group.group, group.label, group.tokens);
         }
+        this.renderContrast();
         this.renderAdvanced();
         this.syncCollapse();
+        this.syncContrast();
     }
 
     /** Brings every row and every group count back in step with the settings. */
@@ -148,6 +189,7 @@ export class StudioPanel {
         if (this.disposed) return;
         for (const row of this.rows) row.sync();
         this.syncGroupMeta();
+        this.syncContrast();
     }
 
     /** Applies the stored fold state to the groups already on screen. */
@@ -162,6 +204,11 @@ export class StudioPanel {
     dispose(): void {
         if (this.disposed) return;
         this.disposed = true;
+        // A pick or an inspect left running would outlive the view that started
+        // it: a crosshair over Obsidian, or DevTools' picker, with nothing left
+        // to receive the result.
+        this.pending?.cancel();
+        this.pending = null;
         this.teardownRows();
         this.host.setPreview([]);
         this.root.replaceChildren();
@@ -172,6 +219,9 @@ export class StudioPanel {
         this.rows = [];
         this.groups = [];
         this.themeState = null;
+        this.contrastRows = [];
+        this.contrastMeta = null;
+        this.probe = null;
     }
 
     // --- top of the panel ---------------------------------------------------
@@ -423,6 +473,8 @@ export class StudioPanel {
                     isLocked: () => isLocked(this.current()),
                     write: (item, value) => this.write(item, value),
                     preview: (item) => this.preview(item),
+                    pickKind: this.pickKind(),
+                    pickColor: () => this.pickColor(),
                 })
             );
         }
@@ -458,6 +510,185 @@ export class StudioPanel {
             return found ? [found.cssVariable] : [];
         });
         this.host.setPreview(variables);
+    }
+
+    // --- discovery tools -------------------------------------------------------
+
+    private pickKind(): 'capture' | 'screen' | null {
+        const kind = samplerKind(this.win);
+        return kind === 'capture' ? 'capture' : kind === 'eyedropper' ? 'screen' : null;
+    }
+
+    /**
+     * Takes a colour off the screen. One at a time: starting a second pick
+     * cancels the first, so there is never more than one crosshair.
+     */
+    private pickColor(): Promise<string | null> {
+        this.pending?.cancel();
+        this.host.setPreview([]);
+        const session: SampleSession = sampleColor(this.win);
+        this.pending = session;
+        return session.result.finally(() => {
+            if (this.pending === session) this.pending = null;
+        });
+    }
+
+    /**
+     * The studio's way into DevTools, for finding a surface that has no token
+     * yet: DevTools' own element picker, started from here. The studio is not a
+     * DOM inspector and does not become one.
+     */
+    private renderTools(): void {
+        const bar = el(this.root, 'div', { cls: 'nexus-studio-tools' });
+        el(bar, 'span', { cls: 'nexus-studio-tools-label', text: 'Discovery' });
+
+        const inspect = button(bar, { cls: 'nexus-studio-tool', attr: { 'data-tool': 'inspect' } });
+        const inspectIcon = el(inspect, 'span', { cls: 'nexus-studio-tool-icon' });
+        setIcon(inspectIcon, 'scan-search');
+        el(inspect, 'span', { text: 'Inspect UI' });
+        const canInspect = inspectAvailable(this.win);
+        inspect.disabled = !canInspect;
+        const inspectTip = canInspect
+            ? "Pick an element with DevTools' inspector. Esc cancels."
+            : 'Developer tools cannot be reached from this Obsidian.';
+        inspect.setAttribute('aria-label', inspectTip);
+        setTooltip(inspect, inspectTip);
+        inspect.addEventListener('click', () => {
+            this.pending?.cancel();
+            this.host.setPreview([]);
+            const session: InspectSession = startInspect(this.win);
+            this.pending = session;
+            void session.result.then((outcome) => {
+                if (this.pending === session) this.pending = null;
+                if (outcome === 'unavailable') this.host.notify('Developer tools cannot be reached from this Obsidian.');
+                if (outcome === 'failed') this.host.notify('The inspector could not be started.');
+            });
+        });
+
+        const kind = this.pickKind();
+        if (kind) {
+            const pick = button(bar, { cls: 'nexus-studio-tool', attr: { 'data-tool': 'pick' } });
+            const pickIcon = el(pick, 'span', { cls: 'nexus-studio-tool-icon' });
+            setIcon(pickIcon, 'pipette');
+            el(pick, 'span', { text: 'Take colour' });
+            const tip =
+                kind === 'capture'
+                    ? 'Read the colour of any point in Obsidian and copy it. Esc cancels.'
+                    : 'Pick a colour from the screen and copy it. Esc cancels.';
+            pick.setAttribute('aria-label', tip);
+            setTooltip(pick, tip);
+            const readout = el(bar, 'span', { cls: 'nexus-studio-tools-readout' });
+            pick.addEventListener('click', () => {
+                void this.pickColor().then((picked) => {
+                    if (!picked) return;
+                    readout.textContent = picked;
+                    readout.style.setProperty('--nexus-studio-swatch', picked);
+                    void this.win.navigator.clipboard?.writeText(picked).then(
+                        () => this.host.notify(`${picked} copied.`),
+                        () => undefined
+                    );
+                });
+            });
+        }
+    }
+
+    // --- contrast ---------------------------------------------------------------
+
+    /**
+     * The contrast of each text-and-surface pair the registry names, by the
+     * WCAG ratio. It reports and never changes a value — there is no automatic
+     * text colour; see DECISIONS.md "Contrast is assisted, not automatic".
+     */
+    private renderContrast(): void {
+        const group = this.renderGroup(CONTRAST_GROUP, 'Contrast', []);
+        this.contrastMeta = group.meta;
+        el(group.body, 'div', { cls: 'nexus-studio-row-desc nexus-studio-contrast-note', text: CONTRAST_DISCLAIMER });
+        for (const pair of NEXUS_CONTRAST_PAIRS) {
+            const row = el(group.body, 'div', {
+                cls: 'nexus-studio-contrast-row',
+                attr: { 'data-pair': `${pair.text}:${pair.surface}` },
+            });
+            const sample = el(row, 'span', { cls: 'nexus-studio-contrast-sample' });
+            const surface = el(sample, 'span', { cls: 'nexus-studio-contrast-surface' });
+            const text = el(surface, 'span', { cls: 'nexus-studio-contrast-text', text: 'Aa' });
+            el(row, 'span', { cls: 'nexus-studio-contrast-label', text: pair.label });
+            const figure = el(row, 'span', { cls: 'nexus-studio-contrast-figure' });
+            this.contrastRows.push({ pair, row, text, surface, figure });
+        }
+        // A hidden element the browser resolves colours on, for values the
+        // parser cannot take apart — `color-mix()`, `var()`. It sits inside a
+        // host whose colour is a sentinel: a value that resolves to nothing
+        // makes the probe INHERIT, and inheriting the sentinel is detectable,
+        // where inheriting the studio's own text colour would be measured as if
+        // it were the answer.
+        const host = el(group.body, 'span', { cls: 'nexus-studio-probe', attr: { 'aria-hidden': 'true' } });
+        this.probe = el(host, 'span');
+    }
+
+    /**
+     * A token's current value as a colour this can measure.
+     *
+     * Parsed directly when it is a plain colour; otherwise the browser resolves
+     * it on a probe element and the COMPUTED colour is read back. What neither
+     * can read stays unmeasured rather than being guessed.
+     */
+    private resolveColour(value: string): string {
+        if (parseColorValue(value)) return value;
+        const probe = this.probe;
+        if (!probe) return value;
+        probe.style.setProperty('--nexus-studio-probe', value);
+        const computed = this.win.getComputedStyle(probe).color;
+        // The sentinel, inherited: the value resolved to nothing. Returning the
+        // original leaves it unparsed, so it is reported as unmeasured.
+        if (!computed || computed.replace(/\s+/g, '') === PROBE_SENTINEL) return value;
+        return computed;
+    }
+
+    private measure(pair: NexusContrastPair): ContrastResult {
+        const overrides = this.current().overrides;
+        const text = this.resolveColour(effectiveValue(overrides, pair.text));
+        const surface = this.resolveColour(effectiveValue(overrides, pair.surface));
+        return measureContrast(text, surface);
+    }
+
+    private syncContrast(): void {
+        let below = 0;
+        for (const parts of this.contrastRows) {
+            const result = this.measure(parts.pair);
+            const overrides = this.current().overrides;
+            parts.surface.style.setProperty('--nexus-studio-swatch', effectiveValue(overrides, parts.pair.surface));
+            parts.text.style.setProperty('--nexus-studio-contrast-ink', effectiveValue(overrides, parts.pair.text));
+            parts.row.classList.remove('is-text', 'is-large-only', 'is-too-low', 'is-unmeasured');
+            if (!result.measured) {
+                parts.row.classList.add('is-unmeasured');
+                parts.figure.textContent = '—';
+                parts.figure.setAttribute('title', result.reason);
+                parts.figure.setAttribute('aria-label', `${parts.pair.label}: not measured. ${result.reason}`);
+                continue;
+            }
+            const ratio = formatRatio(result.ratio);
+            const verdict =
+                result.grade === 'text'
+                    ? `${ratio} ✓`
+                    : result.grade === 'large-only'
+                      ? `${ratio} ⚠`
+                      : `${ratio} ✗`;
+            const meaning =
+                result.grade === 'text'
+                    ? `At least ${CONTRAST_TEXT}:1 — enough for normal text.`
+                    : result.grade === 'large-only'
+                      ? `Below ${CONTRAST_TEXT}:1 — enough only for large text and UI shapes (${CONTRAST_LARGE}:1).`
+                      : `Below ${CONTRAST_LARGE}:1 — too low even for large text.`;
+            if (result.grade !== 'text') below += 1;
+            parts.row.classList.add(`is-${result.grade}`);
+            parts.figure.textContent = verdict;
+            parts.figure.setAttribute('title', meaning);
+            parts.figure.setAttribute('aria-label', `${parts.pair.label}: ${ratio}. ${meaning}`);
+        }
+        if (this.contrastMeta) {
+            this.contrastMeta.textContent = below > 0 ? `${below} below ${CONTRAST_TEXT}:1` : '';
+            this.contrastMeta.classList.toggle('is-warning', below > 0);
+        }
     }
 
     // --- developer scratch CSS ------------------------------------------------

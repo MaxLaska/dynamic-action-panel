@@ -124,7 +124,11 @@ export class NexusStudioView extends ItemView {
                 new TransferModal(this.app, mode, profile, onImport).open();
             },
             showMenu: (evt, actions) => {
-                const menu = new Menu();
+                // A NATIVE menu, drawn by the operating system: the one kind of
+                // menu no theme token can reach. The studio's own controls must
+                // stay usable whatever the theme being edited does to Obsidian's
+                // text and surfaces — see styles.css, "the control plane".
+                const menu = new Menu().setUseNativeMenu(true);
                 for (const action of actions) {
                     menu.addItem((item) =>
                         item

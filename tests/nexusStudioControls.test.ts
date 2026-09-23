@@ -135,7 +135,12 @@ describe('a swatch and an opacity become a CSS colour', () => {
     });
 
     it('round-trips every opaque default as well', () => {
-        for (const token of NEXUS_TOKENS.filter((entry) => !entry.supportsAlpha)) {
+        // Colour tokens only: a font size is not a colour and has no swatch.
+        const opaque = NEXUS_TOKENS.filter(
+            (entry) => entry.controlType === 'color' && !entry.supportsAlpha
+        );
+        expect(opaque.length).toBeGreaterThan(0);
+        for (const token of opaque) {
             const parsed = parseColorValue(token.defaultValue);
             expect(parsed).not.toBeNull();
             if (!parsed) continue;
@@ -306,10 +311,10 @@ describe('the locator cannot reach the stored profile', () => {
 
     it('clears the preview before sampling the screen', () => {
         const row = readFileSync('companion/nexus-theme-studio/src/tokenRow.ts', 'utf8');
-        const pipette = row.slice(row.indexOf('const onPipette'));
-        const body = pipette.slice(0, pipette.indexOf('\n    };'));
+        const pipette = row.slice(row.indexOf("listen(theTool, 'click'"));
+        const body = pipette.slice(0, pipette.indexOf('}, detaches);'));
         expect(body.indexOf('host.preview(null)')).toBeGreaterThan(-1);
-        expect(body.indexOf('host.preview(null)')).toBeLessThan(body.indexOf('pickScreenColor'));
+        expect(body.indexOf('host.preview(null)')).toBeLessThan(body.indexOf('host.pickColor()'));
     });
 
     // Views close in an order the plugin does not control. One that closes
@@ -389,8 +394,8 @@ describe('a per-token reset touches one token', () => {
     // applied, because that is what failed the first time.
     it('checks for an override in the click handler as well as in the state', () => {
         const row = readFileSync('companion/nexus-theme-studio/src/tokenRow.ts', 'utf8');
-        const reset = row.slice(row.indexOf('const onReset'));
-        expect(reset.slice(0, reset.indexOf('\n    };'))).toContain('!host.isOverridden(token)');
+        const reset = row.slice(row.indexOf("listen(reset, 'click'"));
+        expect(reset.slice(0, reset.indexOf('}, detaches);'))).toContain('!host.isOverridden(token)');
     });
 });
 
@@ -401,8 +406,8 @@ describe('the colour picker is live', () => {
     // native colour input does not arrive until the picker is dismissed. That
     // is the whole of the report; owning the element is the fix.
     it('listens for input, not only for change', () => {
-        expect(row).toContain("picker.addEventListener('input'");
-        expect(row).toContain("picker.addEventListener('change'");
+        expect(row).toContain("listen(picker, 'input'");
+        expect(row).toContain("listen(picker, 'change'");
     });
 
     it('does not use the component that only hears change', () => {
@@ -415,7 +420,8 @@ describe('the colour picker is live', () => {
     // A native range input streams `input` while it is dragged — the live
     // behaviour Obsidian's SliderComponent needed `setInstant(true)` for.
     it('listens to the opacity slider while it moves', () => {
-        expect(row).toContain("alpha?.addEventListener('input'");
+        const opacity = row.slice(row.indexOf('if (token.supportsAlpha)'));
+        expect(opacity.slice(0, opacity.indexOf('syncs.push'))).toContain("listen(slider, 'input'");
         expect(row).toContain("type: 'range'");
     });
 

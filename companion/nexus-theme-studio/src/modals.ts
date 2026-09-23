@@ -36,6 +36,8 @@ class NameModal extends Modal {
     }
 
     onOpen(): void {
+        // The studio's own palette, not the theme's: see styles.css.
+        this.modalEl.addClass('nexus-studio-isolated');
         this.setTitle(this.title);
         const { contentEl } = this;
         new Setting(contentEl).setName('Name').addText((text) => {
@@ -103,6 +105,7 @@ export class TransferModal extends Modal {
     }
 
     onOpen(): void {
+        this.modalEl.addClass('nexus-studio-isolated');
         const { contentEl } = this;
         this.setTitle(this.mode === 'export' ? `Export "${this.profile.name}"` : 'Import a profile');
         contentEl.createEl('p', {

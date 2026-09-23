@@ -20,12 +20,13 @@
 // properties on `<body>`, so moving a colour picker repaints the running
 // Obsidian. See runtime.ts for why inline.
 
-import { Plugin } from 'obsidian';
+import { Notice, Plugin } from 'obsidian';
 
 import {
     NEXUS_THEME_NAME,
     NEXUS_TOKENS_CHANGED_EVENT,
 } from '../../../theme/nexus/src/tokens';
+import { startInspect, type InspectSession } from './inspectUi';
 import { openStudio } from './open';
 import { overrideDeclarations, withPreview } from './overrides';
 import {
@@ -78,6 +79,9 @@ export default class NexusThemeStudioPlugin extends Plugin implements StudioServ
     /** A pending debounced save, so it can be flushed or replaced. */
     private saveTimer = 0;
 
+    /** An inspect started from the command palette, so unload can end it. */
+    private inspectSession: InspectSession | null = null;
+
     /**
      * Set as the very first thing `onunload` does.
      *
@@ -108,6 +112,25 @@ export default class NexusThemeStudioPlugin extends Plugin implements StudioServ
             },
         });
 
+        // The same way into DevTools the studio's button offers, for when the
+        // studio is not open. The element picker, never a synthetic shortcut.
+        this.addCommand({
+            id: 'inspect-ui',
+            name: 'Inspect UI',
+            callback: () => {
+                this.inspectSession?.cancel();
+                const session = startInspect(window);
+                this.inspectSession = session;
+                void session.result.then((outcome) => {
+                    if (this.inspectSession === session) this.inspectSession = null;
+                    if (outcome === 'unavailable') {
+                        new Notice('Developer tools cannot be reached from this Obsidian.');
+                    }
+                    if (outcome === 'failed') new Notice('The inspector could not be started.');
+                });
+            },
+        });
+
         // The locator is ended by the row that started it, on pointerleave.
         // These cover every way the pointer can stop being on that row without
         // leaving it: the focus moving to another pane, the layout changing
@@ -130,6 +153,10 @@ export default class NexusThemeStudioPlugin extends Plugin implements StudioServ
 
     onunload(): void {
         this.unloaded = true;
+        // DevTools' picker left switched on would outlive the plugin that
+        // started it. (Picks started from a studio view end with the view.)
+        this.inspectSession?.cancel();
+        this.inspectSession = null;
         // A colour dragged a moment ago may still be waiting on the debounce.
         this.flushSave();
         // A disabled plugin must leave the theme exactly as it found it.
