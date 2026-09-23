@@ -202,6 +202,33 @@
     pointer-events: none;
 }
 
+/* The sampler's loupe: centre = the colour under the hot spot, ring = the
+ * picker's current colour. Black and white edges keep it neutral on any
+ * surface; it sits beside the hot spot and never on it. */
+.nexus-studio-sample-loupe {
+    position: fixed;
+    z-index: 2147483002;
+    width: 34px;
+    height: 34px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 6px solid var(--nexus-studio-loupe-ring, transparent);
+    box-shadow: 0 0 0 1px #000, 0 0 0 2px #fff, inset 0 0 0 1px #000;
+    pointer-events: none;
+}
+
+.nexus-studio-sample-loupe[hidden] {
+    display: none;
+}
+
+.nexus-studio-sample-candidate {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background-color: var(--nexus-studio-loupe-candidate, transparent);
+}
+
 /* --- top of the panel ---------------------------------------------------- */
 
 .nexus-studio-profile {
@@ -899,6 +926,76 @@
     background:
         linear-gradient(var(--nexus-studio-swatch), var(--nexus-studio-swatch)),
         var(--nexus-studio-checker);
+    /* A swatch is a colour to take: a small black-and-white pipette, hot spot
+     * at its tip (2, 18). Drawn here, not Chromium's red-gridded one. */
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='white' stroke-width='4.5'%3E%3Cpath d='m2 22 1-1h3l9-9'/%3E%3Cpath d='M3 21v-3l9-9'/%3E%3Cpath d='m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z'/%3E%3C/g%3E%3Cg stroke='black' stroke-width='2'%3E%3Cpath d='m2 22 1-1h3l9-9'/%3E%3Cpath d='M3 21v-3l9-9'/%3E%3Cpath d='m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z'/%3E%3C/g%3E%3C/svg%3E") 2 18, copy;
+    touch-action: none;
+    user-select: none;
+}
+
+/* --- the sampler as a tool --------------------------------------------------
+ * The picker stays above the sampling layer, so it can be watched — and its
+ * swatches sampled — while the tool is on. Only its own controls keep the
+ * ordinary cursor; everything else is the crosshair. */
+.nexus-studio-popover.is-sampling-mode {
+    z-index: 2147483001;
+    cursor: crosshair;
+}
+
+.nexus-studio-popover.is-sampling-mode * {
+    cursor: inherit;
+}
+
+.nexus-studio-popover.is-sampling-mode :is(.nexus-studio-cp-sample, .nexus-studio-cp-format, .nexus-studio-cp-done, .nexus-studio-cp-cancel) {
+    cursor: pointer;
+}
+
+.nexus-studio-popover .nexus-studio-cp-sample[aria-pressed='true'] {
+    background-color: var(--nexus-studio-text);
+    color: var(--nexus-studio-surface);
+}
+
+/* --- dragging swatches -------------------------------------------------------- */
+.nexus-studio-cp-palette {
+    position: relative;
+}
+
+.nexus-studio-popover.is-dragging,
+.nexus-studio-popover.is-dragging * {
+    cursor: grabbing;
+}
+
+.nexus-studio-popover .nexus-studio-cp-swatch.is-drag-source {
+    opacity: 0.35;
+}
+
+.nexus-studio-cp-palette.is-drop-target {
+    border-radius: var(--radius-s);
+    box-shadow: inset 0 0 0 1px var(--nexus-studio-focus);
+}
+
+/* Where the drop goes: a thin bar in the gap, full swatch height. */
+.nexus-studio-cp-insert {
+    position: absolute;
+    width: 2px;
+    height: var(--nexus-studio-insert-height, 22px);
+    border-radius: 1px;
+    background-color: var(--nexus-studio-text);
+    pointer-events: none;
+}
+
+.nexus-studio-cp-ghost {
+    position: fixed;
+    z-index: 2147483003;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-s);
+    background:
+        linear-gradient(var(--nexus-studio-swatch), var(--nexus-studio-swatch)),
+        var(--nexus-studio-checker);
+    box-shadow: 0 0 0 1px var(--nexus-studio-border), 0 4px 10px rgba(0, 0, 0, 0.4);
+    opacity: 0.9;
+    pointer-events: none;
 }
 
 .nexus-studio-popover .nexus-studio-cp-add,

@@ -50,7 +50,7 @@ import {
     type StudioServices,
 } from '../companion/nexus-theme-studio/src/view';
 import type { WorkspaceLeaf } from 'obsidian';
-import { fire, makeHost, mount, type } from './support/nexusStudioHarness';
+import { fire, makeHost, mount, type, unmountAll } from './support/nexusStudioHarness';
 
 const WORKSPACE = nexusToken('workspaceSurface')!;
 const DOCUMENT = nexusToken('documentSurface')!;
@@ -58,6 +58,7 @@ const SPLITTER_HOVER = nexusToken('splitterHover')!;
 const SPLITTER_IDLE = nexusToken('splitterIdle')!;
 
 beforeEach(() => {
+    unmountAll();
     document.body.replaceChildren();
 });
 

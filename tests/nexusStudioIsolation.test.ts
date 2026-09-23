@@ -125,6 +125,10 @@ describe('the studio is a control plane', () => {
             // the opacity bar: content, set by colorPicker.ts per draft.
             '--nexus-studio-cp-hue',
             '--nexus-studio-cp-opaque',
+            // The sampler's loupe and the drop marker: set per sample and per move.
+            '--nexus-studio-loupe-ring',
+            '--nexus-studio-loupe-candidate',
+            '--nexus-studio-insert-height',
         ]);
         for (const name of used) {
             if (runtime.has(name)) continue;

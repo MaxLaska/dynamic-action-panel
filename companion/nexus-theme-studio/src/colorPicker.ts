@@ -35,6 +35,14 @@
 // exactly, because the profile underneath was never touched. The panel owns
 // what commit and cancel mean (studioPanel.ts); this file only reports which.
 //
+// THE PIPETTE IS A TOOL: switched on, every click takes a colour (into the
+// draft and, by the one move-to-front rule, into Recent) and the tool stays on
+// with the picker visible above it. Pipette again or Escape switches it off;
+// Alt held switches it on for as long as it is held. See sampler.ts.
+//
+// SWATCHES DRAG: Recent → Saved copies, Saved → Saved reorders, and an insert
+// marker shows the exact place. Recent is never reordered by hand.
+//
 // One picker at a time. It lives on the document body, positioned against its
 // swatch, so a narrow dock does not clip it; it carries the studio's control
 // plane palette, so the colours being edited never style the picker itself.
@@ -59,6 +67,7 @@ import {
 } from './colorValue';
 import { button, docOf, el } from './dom';
 import { isValidValueFor } from './overrides';
+import { startSamplingMode, type SamplingMode } from './sampler';
 
 /** One entry in a swatch's or the palette's menu. */
 export interface PickerMenuItem {
@@ -86,6 +95,10 @@ export interface PickerLibrary {
     save(value: string): number;
     remove(index: number): void;
     replace(index: number, value: string): void;
+    /** Keeps a colour at an insertion point (a drop from Recent). A copy. */
+    insert(value: string, at: number): { index: number; added: boolean };
+    /** Moves a saved colour to an insertion point (a reorder). */
+    move(from: number, to: number): void;
     importPalette(): void;
     exportPalette(): void;
     copyAsCss(): void;
@@ -107,8 +120,6 @@ export interface ColorPickerHost {
     finish(outcome: 'commit' | 'cancel', value: string): void;
     /** Whether Pick from Obsidian can work in this window. */
     readonly canSample: boolean;
-    /** Takes a colour off the Obsidian window, `#rrggbb`; null when cancelled. */
-    sample(): Promise<string | null>;
     /** What the browser resolves a CSS value to, for converting Custom CSS. */
     resolve(value: string): string | null;
     /** Recent and saved colours. */
@@ -139,6 +150,67 @@ const clamp = (value: number, min: number, max: number): number => Math.min(max,
 
 type Detach = () => void;
 
+/** How far a pressed swatch must move before it is dragged rather than clicked. */
+export const DRAG_THRESHOLD = 5;
+
+/** The controls that stay clickable while the sampler is on; everything else is sampled. */
+export const SAMPLER_CONTROLS = '.nexus-studio-cp-sample, .nexus-studio-cp-format, .nexus-studio-cp-done, .nexus-studio-cp-cancel';
+
+/** A box, as `getBoundingClientRect` gives one. */
+export interface Box {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+}
+
+/**
+ * Where a drop at (x, y) lands in a wrapped row of swatches, as a LINEAR
+ * insertion point (0 = before the first, length = after the last), plus where
+ * to draw the marker. The swatches are grouped into visual rows by their top;
+ * the pointer picks a row by height (above the first row is the first, below
+ * the last the last), and within it goes before the first swatch whose middle
+ * it is left of — or after the row's last swatch. So the end of one row and
+ * the start of the next are the same insertion point, and the marker is drawn
+ * on the row the pointer is on: no jump at a wrap.
+ */
+export function insertIndexAt(
+    boxes: readonly Box[],
+    x: number,
+    y: number,
+    gap = 4
+): { index: number; markerX: number; top: number; bottom: number } | null {
+    if (boxes.length === 0) return null;
+    const rows: Array<{ top: number; bottom: number; items: number[] }> = [];
+    boxes.forEach((box, index) => {
+        const row = rows.find((candidate) => Math.abs(candidate.top - box.top) < (box.bottom - box.top) / 2);
+        if (row) {
+            row.items.push(index);
+            row.bottom = Math.max(row.bottom, box.bottom);
+        } else {
+            rows.push({ top: box.top, bottom: box.bottom, items: [index] });
+        }
+    });
+    rows.sort((a, b) => a.top - b.top);
+    let row = rows[rows.length - 1]!;
+    for (let r = 0; r < rows.length; r += 1) {
+        const next = rows[r + 1];
+        // A row owns the space down to halfway into the gap before the next.
+        const limit = next ? (rows[r]!.bottom + next.top) / 2 : Infinity;
+        if (y < limit) {
+            row = rows[r]!;
+            break;
+        }
+    }
+    for (const index of row.items) {
+        const box = boxes[index]!;
+        // The marker stands in the middle of the gap before this swatch.
+        if (x < (box.left + box.right) / 2) return { index, markerX: box.left - gap / 2, top: row.top, bottom: row.bottom };
+    }
+    const last = row.items[row.items.length - 1]!;
+    return { index: last + 1, markerX: boxes[last]!.right + gap / 2, top: row.top, bottom: row.bottom };
+}
+
 export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): ColorPickerHandle {
     const doc = docOf(anchor);
     const win = doc.defaultView ?? window;
@@ -161,8 +233,14 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
     /** The CSS text of the draft: what is previewed, and what a commit keeps. */
     let current = host.initialValue;
     let format: ColorFormat = host.format;
-    let sampling = false;
     let closed = false;
+    /**
+     * The sampler as a TOOL: off, on until switched off ('persistent'), or on
+     * while Alt is held ('temporary'). One state, so two ways in cannot fight.
+     */
+    let tool: SamplingMode | null = null;
+    let toolKind: 'persistent' | 'temporary' | null = null;
+    const sampling = (): boolean => tool !== null;
     const withAlpha = token.supportsAlpha === true || (initial !== null && initial.a < 1);
 
     // --- the shell ----------------------------------------------------------------
@@ -241,12 +319,17 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
 
     let sampleButton: HTMLButtonElement | null = null;
     if (host.canSample) {
+        // A toggle: pressed while the sampler is on. The label says what it
+        // does; aria-pressed says whether it is doing it.
         sampleButton = button(valuebar, {
             cls: ['clickable-icon', 'nexus-studio-cp-sample'],
-            attr: { 'aria-label': 'Pick from Obsidian' },
+            attr: { 'aria-label': 'Pick from Obsidian', 'aria-pressed': 'false' },
         });
         setIcon(sampleButton, 'pipette');
-        setTooltip(sampleButton, 'Pick from Obsidian — click a point, or aim with the arrows and press Enter');
+        setTooltip(
+            sampleButton,
+            'Pick from Obsidian: click to switch the sampler on or off; every click then takes a colour. Hold Alt to sample briefly. Esc ends it.'
+        );
     }
 
     // Two memories, visibly apart: what was used, and what was kept.
@@ -512,33 +595,193 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         }
     }
 
-    // --- sampling -----------------------------------------------------------------------
+    // --- sampling, as a tool -----------------------------------------------------------------
+    const setToolState = (): void => {
+        root.classList.toggle('is-sampling-mode', tool !== null);
+        sampleButton?.setAttribute('aria-pressed', tool !== null ? 'true' : 'false');
+        sampleButton?.classList.toggle('is-active', tool !== null);
+    };
+
+    const stopSampling = (): void => {
+        tool?.stop();
+        tool = null;
+        toolKind = null;
+        setToolState();
+    };
+
+    const startSampling = (kind: 'persistent' | 'temporary'): void => {
+        if (closed) return;
+        if (tool) {
+            // Already on: a click on the pipette during Alt makes it stay.
+            if (kind === 'persistent') toolKind = 'persistent';
+            return;
+        }
+        tool = startSamplingMode(win, {
+            // The mode's own controls stay clickable, and so does any dialog.
+            keepLive: (target) =>
+                (root.contains(target) && !!target.closest(SAMPLER_CONTROLS)) || !!target.closest('.modal-container'),
+            onSample: (picked) => {
+                const taken = parseRgba(picked);
+                if (!taken || closed) return;
+                // A pixel has no opacity of its own; the draft keeps the one it had.
+                setRgba({ ...taken, a: mode === 'color' ? rgba.a : 1 });
+                // The same rule as every other colour action: move to front.
+                markUsed();
+            },
+            // Escape ended it: the tool is off, the picker and its draft stay.
+            onEnd: () => {
+                tool = null;
+                toolKind = null;
+                setToolState();
+            },
+            reference: () => current,
+        });
+        toolKind = tool ? kind : null;
+        setToolState();
+    };
+
     if (sampleButton) {
-        const sampler = sampleButton;
-        on(sampler, 'click', () => {
-            if (sampling) return;
-            sampling = true;
-            // Hidden, not closed: the whole window can be sampled, including
-            // what sits under the picker, and the session is still open after.
-            root.classList.add('is-sampling');
-            void host
-                .sample()
-                .then((picked) => {
-                    if (closed || !picked) return;
-                    const taken = parseRgba(picked);
-                    // A pixel has no opacity of its own; the draft keeps the one it had.
-                    if (!taken) return;
-                    setRgba({ ...taken, a: mode === 'color' ? rgba.a : 1 });
-                    markUsed();
-                })
-                .finally(() => {
-                    sampling = false;
-                    if (closed) return;
-                    root.classList.remove('is-sampling');
-                    sampler.focus();
-                });
+        on(sampleButton, 'click', () => {
+            if (toolKind === 'persistent') stopSampling();
+            else startSampling('persistent');
         });
     }
+
+        // --- dragging swatches --------------------------------------------------------------------
+    //
+    // Recent → Saved is a COPY; Saved → Saved is a MOVE; nothing reorders Recent.
+    // A press becomes a drag only past DRAG_THRESHOLD, so a click stays a click;
+    // after a real drag the click that follows is swallowed. Nothing changes
+    // until the drop, and a drop outside Saved, Escape, or losing the pointer
+    // changes nothing. While the sampler is on, presses are samples, never drags.
+    let drag: {
+        kind: 'recent' | 'saved';
+        index: number;
+        value: string;
+        x: number;
+        y: number;
+        active: boolean;
+        insert: number | null;
+        source: HTMLElement;
+    } | null = null;
+    let ghost: HTMLElement | null = null;
+    let marker: HTMLElement | null = null;
+    let swallowClick = false;
+
+    const clearDragVisuals = (): void => {
+        ghost?.remove();
+        ghost = null;
+        marker?.remove();
+        marker = null;
+        root.classList.remove('is-dragging');
+        savedBox.classList.remove('is-drop-target');
+        drag?.source.classList.remove('is-drag-source');
+    };
+
+    const cancelDrag = (): void => {
+        clearDragVisuals();
+        drag = null;
+    };
+
+    const beginPress = (event: PointerEvent, kind: 'recent' | 'saved', index: number, value: string): void => {
+        if (event.button !== 0 || sampling()) return;
+        drag = {
+            kind,
+            index,
+            value,
+            x: event.clientX,
+            y: event.clientY,
+            active: false,
+            insert: null,
+            source: event.currentTarget as HTMLElement,
+        };
+    };
+
+    const showMarker = (x: number, y: number): number | null => {
+        const box = savedBox.getBoundingClientRect();
+        const slack = 8;
+        const inside = x >= box.left - slack && x <= box.right + slack && y >= box.top - slack && y <= box.bottom + slack;
+        const swatches = Array.from(grid.querySelectorAll<HTMLElement>('.nexus-studio-cp-swatch[data-kind="saved"]'));
+        if (!inside) {
+            marker?.remove();
+            marker = null;
+            savedBox.classList.remove('is-drop-target');
+            return null;
+        }
+        savedBox.classList.add('is-drop-target');
+        const spot = insertIndexAt(swatches.map((swatch) => swatch.getBoundingClientRect()), x, y);
+        if (!marker) marker = el(savedBox, 'span', { cls: 'nexus-studio-cp-insert', attr: { 'aria-hidden': 'true' } });
+        if (!spot) {
+            // An empty palette: the one place there is.
+            const g = grid.getBoundingClientRect();
+            marker.style.left = `${Math.round(g.left - box.left)}px`;
+            marker.style.top = `${Math.round(g.top - box.top)}px`;
+            // Height: the stylesheet's default, one swatch.
+            marker.style.removeProperty('--nexus-studio-insert-height');
+            marker.dataset.index = '0';
+            return 0;
+        }
+        // Two pixels wide, centred on the gap.
+        marker.style.left = `${Math.round(spot.markerX - box.left - 1)}px`;
+        marker.style.top = `${Math.round(spot.top - box.top)}px`;
+        marker.style.setProperty('--nexus-studio-insert-height', `${Math.round(spot.bottom - spot.top)}px`);
+        marker.dataset.index = String(spot.index);
+        return spot.index;
+    };
+
+    const onDragMove = (event: PointerEvent): void => {
+        if (!drag) return;
+        if (!drag.active) {
+            if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < DRAG_THRESHOLD) return;
+            drag.active = true;
+            root.classList.add('is-dragging');
+            drag.source.classList.add('is-drag-source');
+            ghost = doc.createElement('div');
+            ghost.className = 'nexus-studio-cp-ghost nexus-studio-isolated';
+            ghost.style.setProperty('--nexus-studio-swatch', drag.value);
+            doc.body.appendChild(ghost);
+        }
+        if (ghost) {
+            ghost.style.left = `${event.clientX - 11}px`;
+            ghost.style.top = `${event.clientY - 11}px`;
+        }
+        drag.insert = showMarker(event.clientX, event.clientY);
+    };
+
+    const onDragEnd = (event: PointerEvent): void => {
+        if (!drag) return;
+        const finished = drag;
+        drag = null;
+        clearDragVisuals();
+        if (!finished.active) return; // a click: it goes ahead
+        swallowClick = true;
+        win.setTimeout(() => (swallowClick = false), 0);
+        if (event.type !== 'pointerup' || finished.insert === null) return;
+        if (finished.kind === 'recent') {
+            const result = host.library.insert(finished.value, finished.insert);
+            renderPalette();
+            // Already saved: nothing changes, and the one there says so.
+            if (!result.added) flash(result.index);
+        } else {
+            host.library.move(finished.index, finished.insert);
+            loadedSaved = null;
+            renderPalette();
+        }
+    };
+
+    const onDragClick = (event: MouseEvent): void => {
+        if (!swallowClick) return;
+        swallowClick = false;
+        event.preventDefault();
+        event.stopPropagation();
+    };
+
+    const flash = (index: number): void => {
+        const found = grid.querySelector<HTMLButtonElement>(`.nexus-studio-cp-swatch[data-index="${index}"]`);
+        if (!found) return;
+        found.classList.add('is-found');
+        win.setTimeout(() => found.classList.remove('is-found'), 900);
+    };
 
     // --- the library ----------------------------------------------------------------------
     /** Loads a library colour as a draft. The entry itself is never changed by that. */
@@ -562,6 +805,7 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
             },
         });
         swatch.style.setProperty('--nexus-studio-swatch', value);
+        swatch.addEventListener('pointerdown', (event) => beginPress(event, kind, index, value));
         return swatch;
     };
 
@@ -576,6 +820,8 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         recent.forEach((value, index) => {
             const swatch = swatchButton(recentGrid, 'recent', value, index);
             swatch.addEventListener('click', () => {
+                // A swatch redrawn away by a drop is not there to be clicked.
+                if (!swatch.isConnected) return;
                 loadedSaved = null;
                 load(value);
                 // Using it again is a use: it moves to the front, now.
@@ -604,6 +850,7 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
             const swatch = swatchButton(grid, 'saved', value, index);
             swatch.setAttribute('aria-pressed', loadedSaved === index ? 'true' : 'false');
             swatch.addEventListener('click', () => {
+                if (!swatch.isConnected) return;
                 loadedSaved = index;
                 load(value);
                 // The saved colour is used, not changed: Recent records it.
@@ -636,11 +883,7 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
             const at = host.library.save(rgbaToCss(rgba));
             renderPalette();
             // Already saved: no second copy, and the one there is shown.
-            const found = grid.querySelector<HTMLButtonElement>(`.nexus-studio-cp-swatch[data-index="${at}"]`);
-            if (found) {
-                found.classList.add('is-found');
-                win.setTimeout(() => found.classList.remove('is-found'), 900);
-            }
+            flash(at);
         });
         // The palette's own actions — no context menu needed for any of them.
         const more = button(grid, {
@@ -794,6 +1037,9 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
     const close = (outcome: 'commit' | 'cancel'): void => {
         if (closed) return;
         closed = true;
+        // The tool and any drag end with the picker: no layer, loupe or marker left behind.
+        stopSampling();
+        cancelDrag();
         for (const detach of detaches) detach();
         for (const detach of fieldDetaches) detach();
         root.remove();
@@ -821,31 +1067,102 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         return !!element?.closest?.('.modal-container');
     };
 
+    /**
+     * Whether one of Obsidian's dialogs is open. Obsidian closes the topmost
+     * dialog on Escape wherever the focus is, so while one is open, Escape is
+     * the dialog's — found live: with the focus outside the dialog, one Escape
+     * closed the export dialog AND cancelled the picker session.
+     */
+    const dialogOpen = (): boolean => !!doc.querySelector('.modal-container');
+
+    /**
+     * Whether a key was already handled by a dialog that closed on it. Traced
+     * live: Obsidian closes a dialog in its own keydown handler, which runs
+     * BEFORE these listeners — so by the time the picker sees that Escape, the
+     * dialog is gone, and its field (the event's target) is no longer in the
+     * document. A key whose target has been taken out was somebody else's.
+     */
+    const alreadyHandled = (target: EventTarget | null): boolean => {
+        const node = target as Node | null;
+        return !!node && node !== doc && typeof node.isConnected === 'boolean' && !node.isConnected;
+    };
+
     const onDocKey = (event: KeyboardEvent): void => {
-        // While sampling, Escape belongs to the sampler: it cancels the pick,
-        // not the picker. In a dialog, it closes the dialog.
-        if (event.key !== 'Escape' || sampling || inDialog(event.target)) return;
+        if (event.key !== 'Escape' || inDialog(event.target) || dialogOpen() || alreadyHandled(event.target)) return;
+        // One Escape ends ONE thing. A drag first; then the sampler, which
+        // handles its own Escape and leaves the picker open; only then the
+        // picker session.
+        if (drag) {
+            cancelDrag();
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        if (sampling()) return;
         event.preventDefault();
         event.stopPropagation();
         close('cancel');
     };
     const onDocPointer = (event: PointerEvent): void => {
-        if (sampling) return;
+        if (sampling()) return;
         const target = event.target as Node | null;
         if (target && (root.contains(target) || anchor.contains(target))) return;
         if (inDialog(target)) return;
         close('commit');
     };
     const onScroll = (): void => place();
+
+    /**
+     * Alt held: the sampler, for as long as it is held — only while this picker
+     * is open, and never over a permanent sampler, which Alt leaves alone. Alt
+     * pressed as part of a chord (Alt+Tab, Alt+arrow) is not a tool: the
+     * temporary sampler ends at the other key, and the chord goes on.
+     */
+    const onAltDown = (event: KeyboardEvent): void => {
+        if (inDialog(event.target) || dialogOpen()) return;
+        if (event.key === 'Alt') {
+            if (event.repeat || toolKind === 'persistent' || tool || !host.canSample || mode !== 'color') return;
+            // Keeps Alt from reaching the window menu while it is a tool.
+            event.preventDefault();
+            startSampling('temporary');
+            return;
+        }
+        if (event.altKey && toolKind === 'temporary') stopSampling();
+    };
+    const onAltUp = (event: KeyboardEvent): void => {
+        if (event.key !== 'Alt' || toolKind !== 'temporary') return;
+        event.preventDefault();
+        stopSampling();
+    };
+    // Alt released outside the window never arrives: losing focus ends it.
+    const onBlur = (): void => {
+        if (toolKind === 'temporary') stopSampling();
+        cancelDrag();
+    };
+
     doc.addEventListener('keydown', onDocKey, true);
+    doc.addEventListener('keydown', onAltDown, true);
+    doc.addEventListener('keyup', onAltUp, true);
     doc.addEventListener('pointerdown', onDocPointer, true);
+    doc.addEventListener('pointermove', onDragMove, true);
+    doc.addEventListener('pointerup', onDragEnd, true);
+    doc.addEventListener('pointercancel', onDragEnd, true);
+    doc.addEventListener('click', onDragClick, true);
     doc.addEventListener('scroll', onScroll, true);
     win.addEventListener('resize', onScroll);
+    win.addEventListener('blur', onBlur);
     detaches.push(() => {
         doc.removeEventListener('keydown', onDocKey, true);
+        doc.removeEventListener('keydown', onAltDown, true);
+        doc.removeEventListener('keyup', onAltUp, true);
         doc.removeEventListener('pointerdown', onDocPointer, true);
+        doc.removeEventListener('pointermove', onDragMove, true);
+        doc.removeEventListener('pointerup', onDragEnd, true);
+        doc.removeEventListener('pointercancel', onDragEnd, true);
+        doc.removeEventListener('click', onDragClick, true);
         doc.removeEventListener('scroll', onScroll, true);
         win.removeEventListener('resize', onScroll);
+        win.removeEventListener('blur', onBlur);
     });
 
     // --- open -----------------------------------------------------------------------------

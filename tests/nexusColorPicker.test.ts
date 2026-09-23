@@ -12,7 +12,14 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { nexusToken } from '../theme/nexus/src/tokens';
-import { CUSTOM_CSS_LABEL, PICKER_STEP_LARGE } from '../companion/nexus-theme-studio/src/colorPicker';
+import {
+    CUSTOM_CSS_LABEL,
+    DRAG_THRESHOLD,
+    PICKER_STEP_LARGE,
+    insertIndexAt,
+    type Box,
+} from '../companion/nexus-theme-studio/src/colorPicker';
+import { CANDIDATE_INTERVAL_MS } from '../companion/nexus-theme-studio/src/sampler';
 import {
     describeColor,
     hslToRgba,
@@ -36,7 +43,7 @@ import {
     type NexusStudioSettings,
 } from '../companion/nexus-theme-studio/src/profiles';
 import { LOCATOR_DELAY_MS } from '../companion/nexus-theme-studio/src/tokenRow';
-import { fire, mount, type } from './support/nexusStudioHarness';
+import { fire, mount, type, unmountAll } from './support/nexusStudioHarness';
 
 const WORKSPACE = nexusToken('workspaceSurface')!;
 const DOCUMENT = nexusToken('documentSurface')!;
@@ -71,11 +78,19 @@ function withSettings(mutate: (settings: NexusStudioSettings) => NexusStudioSett
 
 const override = (ui: ReturnType<typeof mount>, tokenKey: string) => activeProfile(ui.settings).overrides[tokenKey];
 
-/** Fakes the Electron seam and a decoder that reads `pixel` under any click. */
-function installCapture(pixel: [number, number, number, number]): void {
+/**
+ * Fakes the Electron seam and a decoder that reads `pixel` under any point.
+ * The pixel can be changed between samples; captures are counted.
+ */
+function installCapture(start: [number, number, number, number]) {
+    const pixel = [...start];
+    let captures = 0;
     const wc = {
         getZoomFactor: () => 1,
-        capturePage: () => Promise.resolve({ toPNG: () => new Uint8Array(), getSize: () => ({ width: 1, height: 1 }) }),
+        capturePage: () => {
+            captures += 1;
+            return Promise.resolve({ toPNG: () => new Uint8Array(), getSize: () => ({ width: 1, height: 1 }) });
+        },
         inspectElement: () => undefined,
         debugger: {
             isAttached: () => false,
@@ -93,12 +108,19 @@ function installCapture(pixel: [number, number, number, number]): void {
         () =>
             ({
                 drawImage: () => undefined,
-                getImageData: () => ({ data: pixel }),
+                getImageData: () => ({ data: [...pixel] }),
             }) as unknown as RenderingContext
     );
+    return {
+        set(next: [number, number, number, number]): void {
+            pixel.splice(0, 4, ...next);
+        },
+        captures: () => captures,
+    };
 }
 
 beforeEach(() => {
+    unmountAll();
     document.body.replaceChildren();
 });
 
@@ -481,92 +503,6 @@ describe('the locator and the picker', () => {
         fire(ui.row(DOCUMENT.key), 'pointerenter');
         vi.advanceTimersByTime(LOCATOR_DELAY_MS * 2);
         expect(ui.log.previews.filter((entry) => entry.length > 0)).toEqual([]);
-    });
-});
-
-// --- Pick from Obsidian ----------------------------------------------------------------
-
-describe('Pick from Obsidian lives in the picker', () => {
-    const settle = () => new Promise((resolve) => window.setTimeout(resolve, 200));
-
-    it('is offered only where the window can be sampled', () => {
-        const ui = mount();
-        openFor(ui, WORKSPACE.key);
-        expect(popover()!.querySelector('.nexus-studio-cp-sample')).toBeNull();
-        key(document, 'Escape');
-        installCapture([0, 0, 0, 255]);
-        const again = mount();
-        openFor(again, WORKSPACE.key);
-        expect(popover()!.querySelector('.nexus-studio-cp-sample')).not.toBeNull();
-    });
-
-    it('lands the pixel in the open picker, as a draft, keyboard-aimed', async () => {
-        installCapture([0x12, 0x34, 0x56, 255]);
-        const ui = mount();
-        openFor(ui, WORKSPACE.key);
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-sample').click();
-        // Hidden while aiming, so what is under it can be sampled too.
-        expect(popover()!.classList.contains('is-sampling')).toBe(true);
-        expect(document.querySelector('.nexus-studio-pick-shield')).not.toBeNull();
-        key(document, 'ArrowRight');
-        key(document, 'Enter');
-        await settle();
-        expect(popover()!.classList.contains('is-sampling')).toBe(false);
-        expect(field('hex').value).toBe('#123456');
-        expect(ui.session.get(WORKSPACE.key)).toBe('#123456');
-        expect(ui.log.updateLive).toBe(0);
-        expect(document.querySelector('.nexus-studio-pick-shield')).toBeNull();
-    });
-
-    it('keeps the draft opacity: a pixel has none of its own', async () => {
-        installCapture([255, 0, 0, 255]);
-        const ui = mount();
-        openFor(ui, SPLITTER_HOVER.key);
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-sample').click();
-        document
-            .querySelector('.nexus-studio-pick-shield')!
-            .dispatchEvent(new MouseEvent('click', { clientX: 5, clientY: 5, bubbles: true }));
-        await settle();
-        expect(ui.session.get(SPLITTER_HOVER.key)).toBe('rgba(255, 0, 0, 0.28)');
-    });
-
-    // Escape belongs to the sampler while it aims: it ends the pick, and the
-    // picker — with its draft — is still there.
-    it('Escape while aiming cancels the pick, not the picker', async () => {
-        installCapture([0, 0, 0, 255]);
-        const ui = mount();
-        openFor(ui, WORKSPACE.key);
-        type(field('hex'), '#445566');
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-sample').click();
-        key(document, 'Escape');
-        await settle();
-        expect(popovers()).toHaveLength(1);
-        expect(popover()!.classList.contains('is-sampling')).toBe(false);
-        expect(ui.session.get(WORKSPACE.key)).toBe('#445566');
-        expect(document.querySelector('.nexus-studio-pick-shield')).toBeNull();
-    });
-
-    it('the click that takes the pixel does not count as a click outside', async () => {
-        installCapture([1, 2, 3, 255]);
-        const ui = mount();
-        openFor(ui, WORKSPACE.key);
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-sample').click();
-        const shield = document.querySelector('.nexus-studio-pick-shield')!;
-        shield.dispatchEvent(new Event('pointerdown', { bubbles: true }));
-        shield.dispatchEvent(new MouseEvent('click', { clientX: 5, clientY: 5, bubbles: true }));
-        await settle();
-        expect(popovers()).toHaveLength(1);
-        expect(ui.log.updateLive).toBe(0);
-    });
-
-    it('ends a running pick when the view closes', () => {
-        installCapture([0, 0, 0, 255]);
-        const ui = mount();
-        openFor(ui, WORKSPACE.key);
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-sample').click();
-        ui.panel.dispose();
-        expect(document.querySelector('.nexus-studio-pick-shield')).toBeNull();
-        expect(popovers()).toHaveLength(0);
     });
 });
 
@@ -1046,6 +982,40 @@ describe('palette export and import from the picker', () => {
         expect(ui.log.updateUi).toBe(0);
     });
 
+    // Obsidian closes its topmost dialog on Escape wherever the focus is. That
+    // Escape is the dialog's alone, even with the focus outside it.
+    it('leaves an Escape to an open dialog, even when the focus is not in it', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        type(field('hex'), '#445566');
+        const dialog = document.createElement('div');
+        dialog.className = 'modal-container';
+        document.body.appendChild(dialog);
+        (document.activeElement as HTMLElement | null)?.blur();
+        key(document.body, 'Escape');
+        expect(popovers()).toHaveLength(1);
+        expect(ui.session.get(WORKSPACE.key)).toBe('#445566');
+        dialog.remove();
+        key(document.body, 'Escape');
+        expect(popovers()).toHaveLength(0);
+    });
+
+    // Traced live: Obsidian closes a dialog in a keydown handler that runs
+    // before the picker's, and the dialog's field is gone by the time the
+    // picker sees the Escape. That Escape was the dialog's.
+    it('ignores an Escape that already closed a dialog', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        type(field('hex'), '#445566');
+        const field2 = document.createElement('input');
+        document.body.appendChild(field2);
+        field2.addEventListener('keydown', () => field2.remove(), { capture: true, once: true });
+        window.addEventListener('keydown', () => field2.remove(), { capture: true, once: true });
+        key(field2, 'Escape');
+        expect(popovers()).toHaveLength(1);
+        expect(ui.session.get(WORKSPACE.key)).toBe('#445566');
+    });
+
     // The import dialog is outside the picker; working in it is not "a click outside".
     it('keeps the picker open while one of its dialogs is in use', () => {
         const ui = mount();
@@ -1061,6 +1031,564 @@ describe('palette export and import from the picker', () => {
         expect(popovers()).toHaveLength(1);
         expect(ui.session.get(WORKSPACE.key)).toBe('#445566');
         dialog.remove();
+    });
+});
+
+// --- the pipette as a tool ---------------------------------------------------------------
+
+const settle = () => new Promise((resolve) => window.setTimeout(resolve, 60));
+const shield = () => document.querySelector<HTMLElement>('.nexus-studio-pick-shield');
+const pipette = () => inPicker<HTMLButtonElement>('.nexus-studio-cp-sample');
+/** A press where a user would press: pointerdown, then the click that follows. */
+const press = (target: Element, x = 5, y = 5) => {
+    target.dispatchEvent(new MouseEvent('pointerdown', { clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0 }));
+    target.dispatchEvent(new MouseEvent('click', { clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0 }));
+};
+
+describe('the pipette is a tool that stays on', () => {
+    it('switches on as a pressed toggle, with the picker still visible', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        expect(pipette().getAttribute('aria-pressed')).toBe('false');
+        pipette().click();
+        expect(pipette().getAttribute('aria-pressed')).toBe('true');
+        expect(pipette().classList.contains('is-active')).toBe(true);
+        expect(popover()!.classList.contains('is-sampling-mode')).toBe(true);
+        // Not hidden, as the one-shot pipette used to hide it.
+        expect(popover()!.classList.contains('is-sampling')).toBe(false);
+        expect(shield()?.classList.contains('is-persistent')).toBe(true);
+        expect(pipette().textContent).toBe('');
+    });
+
+    it('takes a colour on every click, without being switched on again, moving each to the front of Recent', async () => {
+        const pixel = installCapture([255, 0, 0, 255]);
+        const ui = mount(withSettings((s) => ({ ...s, recentColors: ['#0000ff', '#ff0000'], savedSwatches: ['#123456'] })));
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        press(shield()!);
+        await settle();
+        expect(ui.session.get(WORKSPACE.key)).toBe('#ff0000');
+        expect(ui.settings.recentColors).toEqual(['#ff0000', '#0000ff']);
+        pixel.set([0, 255, 0, 255]);
+        press(shield()!);
+        await settle();
+        expect(ui.settings.recentColors).toEqual(['#00ff00', '#ff0000', '#0000ff']);
+        // A colour already in Recent moves to the front; it is not doubled.
+        pixel.set([0, 0, 255, 255]);
+        press(shield()!);
+        await settle();
+        expect(ui.settings.recentColors).toEqual(['#0000ff', '#00ff00', '#ff0000']);
+        expect(recentSwatches()[0]!.style.getPropertyValue('--nexus-studio-swatch')).toBe('#0000ff');
+        // Still on, still visible, Saved untouched, no token written.
+        expect(pipette().getAttribute('aria-pressed')).toBe('true');
+        expect(popovers()).toHaveLength(1);
+        expect(ui.settings.savedSwatches).toEqual(['#123456']);
+        expect(ui.log.updateLive).toBe(0);
+    });
+
+    it('samples the picker\'s own swatches too, and the click that follows is swallowed', async () => {
+        installCapture([0x11, 0x11, 0x11, 255]);
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#abcdef'] })));
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        press(savedSwatches()[0]!);
+        await settle();
+        // The pixel was taken; the swatch was not also clicked (which would load #abcdef).
+        expect(ui.session.get(WORKSPACE.key)).toBe('#111111');
+        expect(ui.settings.recentColors).toEqual(['#111111']);
+        expect(ui.settings.savedSwatches).toEqual(['#abcdef']);
+    });
+
+    it('keeps its own controls live: format still cycles, the pipette switches it off', async () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        press(formatButton());
+        expect(formatButton().dataset.format).toBe('rgb');
+        press(pipette());
+        expect(pipette().getAttribute('aria-pressed')).toBe('false');
+        expect(shield()).toBeNull();
+        expect(document.querySelector('.nexus-studio-sample-loupe')).toBeNull();
+        await settle();
+        expect(ui.settings.recentColors).toEqual([]);
+    });
+
+    it('Done while sampling commits and leaves nothing behind', async () => {
+        installCapture([0x22, 0x33, 0x44, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        press(shield()!);
+        await settle();
+        press(inPicker('.nexus-studio-cp-done'));
+        expect(popovers()).toHaveLength(0);
+        expect(override(ui, WORKSPACE.key)).toBe('#223344');
+        expect(shield()).toBeNull();
+    });
+
+    // One Escape ends one thing.
+    it('Escape switches the tool off and keeps the picker; a second Escape cancels the session', async () => {
+        installCapture([0x22, 0x33, 0x44, 255]);
+        const ui = mount(withSettings((s) => setOverride(s, FIRST_PROFILE_ID, WORKSPACE.key, '#336699')));
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        press(shield()!);
+        await settle();
+        key(document, 'Escape');
+        expect(pipette().getAttribute('aria-pressed')).toBe('false');
+        expect(shield()).toBeNull();
+        expect(popovers()).toHaveLength(1);
+        expect(ui.session.get(WORKSPACE.key)).toBe('#223344');
+        expect(ui.settings.recentColors).toEqual(['#223344']);
+        key(document, 'Escape');
+        expect(popovers()).toHaveLength(0);
+        expect(override(ui, WORKSPACE.key)).toBe('#336699');
+        expect(ui.settings.recentColors).toEqual(['#223344']);
+    });
+
+    // A real click leaves the focus on the pipette button.
+    it('aims and ends from the keyboard with the focus on the pipette; Enter there presses it', async () => {
+        installCapture([3, 3, 3, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        pipette().focus();
+        key(pipette(), 'ArrowRight');
+        expect(document.querySelector<HTMLElement>('.nexus-studio-pick-reticle')!.hidden).toBe(false);
+        key(pipette(), 'Escape');
+        expect(pipette().getAttribute('aria-pressed')).toBe('false');
+        expect(popovers()).toHaveLength(1);
+        pipette().click();
+        const enter = key(pipette(), 'Enter');
+        // Not taken by the sampler: the button's own Enter.
+        expect(enter.defaultPrevented).toBe(false);
+        await settle();
+        expect(ui.settings.recentColors).toEqual([]);
+    });
+
+    it('aims with the arrows and takes with Enter, again and again', async () => {
+        const pixel = installCapture([1, 1, 1, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        key(document, 'ArrowRight');
+        key(document, 'Enter');
+        await settle();
+        pixel.set([2, 2, 2, 255]);
+        key(document, 'ArrowDown', true);
+        key(document, ' ');
+        await settle();
+        expect(ui.settings.recentColors).toEqual(['#020202', '#010101']);
+        expect(pipette().getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('keeps the draft\'s opacity: a pixel has none of its own', async () => {
+        installCapture([255, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, SPLITTER_HOVER.key);
+        pipette().click();
+        press(shield()!);
+        await settle();
+        expect(ui.session.get(SPLITTER_HOVER.key)).toBe('rgba(255, 0, 0, 0.28)');
+    });
+
+    it('adds nothing when a pixel cannot be read, and stays on', async () => {
+        installCapture([0, 0, 0, 255]);
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => null);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        press(shield()!);
+        await settle();
+        expect(ui.settings.recentColors).toEqual([]);
+        expect(pipette().getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('does not start a drag while it is on: a press is a sample', async () => {
+        installCapture([9, 9, 9, 255]);
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#111111', '#222222'] })));
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        const first = savedSwatches()[0]!;
+        first.dispatchEvent(new MouseEvent('pointerdown', { clientX: 0, clientY: 0, bubbles: true, button: 0 }));
+        document.body.dispatchEvent(new MouseEvent('pointermove', { clientX: 60, clientY: 0, bubbles: true }));
+        document.body.dispatchEvent(new MouseEvent('pointerup', { clientX: 60, clientY: 0, bubbles: true }));
+        await settle();
+        expect(document.querySelector('.nexus-studio-cp-ghost')).toBeNull();
+        expect(ui.settings.savedSwatches).toEqual(['#111111', '#222222']);
+        expect(ui.settings.recentColors).toEqual(['#090909']);
+    });
+
+    // Performance before show: a moving mouse must not mean a capture per event.
+    it('shows the colour under the cursor in a loupe, with captures throttled', async () => {
+        const pixel = installCapture([0x40, 0x50, 0x60, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        for (let i = 0; i < 40; i += 1) {
+            shield()!.dispatchEvent(new MouseEvent('pointermove', { clientX: 100 + i, clientY: 100, bubbles: true }));
+        }
+        expect(pixel.captures()).toBeLessThanOrEqual(1);
+        await new Promise((resolve) => window.setTimeout(resolve, CANDIDATE_INTERVAL_MS * 3));
+        expect(pixel.captures()).toBeLessThanOrEqual(3);
+        const loupe = document.querySelector<HTMLElement>('.nexus-studio-sample-loupe')!;
+        expect(loupe.hidden).toBe(false);
+        expect(loupe.querySelector<HTMLElement>('.nexus-studio-sample-candidate')!.style.getPropertyValue('--nexus-studio-loupe-candidate')).toBe('#405060');
+        // Beside the hot spot, never on it.
+        expect(parseInt(loupe.style.left, 10)).toBeGreaterThan(139);
+        // Moving is looking: nothing is recorded or saved.
+        expect(ui.settings.recentColors).toEqual([]);
+        expect(ui.log.updateUiLater).toBe(0);
+    });
+
+    it('ends with the view: no layer, no loupe left', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        shield()!.dispatchEvent(new MouseEvent('pointermove', { clientX: 10, clientY: 10, bubbles: true }));
+        ui.panel.dispose();
+        expect(shield()).toBeNull();
+        expect(document.querySelector('.nexus-studio-sample-loupe')).toBeNull();
+    });
+
+    it('is not offered where the window cannot be captured', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        expect(popover()!.querySelector('.nexus-studio-cp-sample')).toBeNull();
+    });
+});
+
+describe('Alt held is the pipette for as long as it is held', () => {
+    const altDown = () => {
+        const event = new KeyboardEvent('keydown', { key: 'Alt', altKey: true, bubbles: true, cancelable: true });
+        document.dispatchEvent(event);
+        return event;
+    };
+    const altUp = () => document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Alt', bubbles: true, cancelable: true }));
+
+    it('switches on while Alt is down and off when it is let go', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        const down = altDown();
+        expect(down.defaultPrevented).toBe(true);
+        expect(pipette().getAttribute('aria-pressed')).toBe('true');
+        expect(shield()).not.toBeNull();
+        altUp();
+        expect(pipette().getAttribute('aria-pressed')).toBe('false');
+        expect(shield()).toBeNull();
+        expect(popovers()).toHaveLength(1);
+    });
+
+    it('leaves a switched-on pipette switched on', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        altDown();
+        altUp();
+        expect(pipette().getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('is not a tool when it is part of a chord', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        altDown();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', altKey: true, bubbles: true }));
+        expect(pipette().getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('ends when the window loses focus, so no Alt is left hanging', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        altDown();
+        window.dispatchEvent(new Event('blur'));
+        expect(shield()).toBeNull();
+        expect(pipette().getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('takes nothing when no picker is open', () => {
+        installCapture([0, 0, 0, 255]);
+        mount();
+        expect(altDown().defaultPrevented).toBe(false);
+        expect(shield()).toBeNull();
+    });
+});
+
+// --- dragging swatches --------------------------------------------------------------------
+
+/**
+ * Lays out the Saved section as a wrapped grid, four swatches a row, 22px
+ * swatches and 4px gaps, starting at (0, 320). happy-dom has no layout.
+ */
+function layoutSaved(perRow = 4): void {
+    const box = popover()!.querySelector<HTMLElement>('.nexus-studio-cp-palette[data-section="saved"]')!;
+    vi.spyOn(box, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 300, right: 248, bottom: 420, width: 248, height: 120, x: 0, y: 300, toJSON: () => ({}) });
+    const grid = box.querySelector<HTMLElement>('.nexus-studio-cp-saved')!;
+    vi.spyOn(grid, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 320, right: 248, bottom: 400, width: 248, height: 80, x: 0, y: 320, toJSON: () => ({}) });
+    savedSwatches().forEach((swatch, index) => {
+        const left = (index % perRow) * 26;
+        const top = 320 + Math.floor(index / perRow) * 26;
+        vi.spyOn(swatch, 'getBoundingClientRect').mockReturnValue({ left, top, right: left + 22, bottom: top + 22, width: 22, height: 22, x: left, y: top, toJSON: () => ({}) });
+    });
+}
+
+/** Drags from an element to (x, y) past the threshold, and drops there. */
+function dragTo(source: Element, x: number, y: number, drop = true): void {
+    source.dispatchEvent(new MouseEvent('pointerdown', { clientX: 200, clientY: 200, bubbles: true, button: 0 }));
+    document.body.dispatchEvent(new MouseEvent('pointermove', { clientX: 200 + DRAG_THRESHOLD + 1, clientY: 200, bubbles: true }));
+    document.body.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+    if (drop) {
+        document.body.dispatchEvent(new MouseEvent('pointerup', { clientX: x, clientY: y, bubbles: true }));
+        // The click a real browser sends after the release, on the source.
+        source.dispatchEvent(new MouseEvent('click', { clientX: x, clientY: y, bubbles: true, cancelable: true }));
+    }
+}
+
+describe('where a drop lands in a wrapped row', () => {
+    const boxes: Box[] = Array.from({ length: 6 }, (_, index) => {
+        const left = (index % 4) * 26;
+        const top = Math.floor(index / 4) * 26;
+        return { left, top, right: left + 22, bottom: top + 22 };
+    });
+
+    it.each([
+        ['before the first', 2, 10, 0],
+        ['between the first two', 22, 10, 1],
+        ['after the last of the first row', 100, 10, 4],
+        ['before the first of the second row', 2, 36, 4],
+        ['between two on the second row', 24, 36, 5],
+        ['after the very last', 100, 36, 6],
+        ['above everything', 30, -40, 1],
+        ['below everything', 100, 400, 6],
+    ])('%s', (_label, x, y, index) => {
+        expect(insertIndexAt(boxes, x, y)?.index).toBe(index);
+    });
+
+    // The end of row 1 and the start of row 2 are one insertion point, drawn on
+    // the row the pointer is on — not a jump.
+    it('draws the same insertion point on the row the pointer is on', () => {
+        const endOfRow = insertIndexAt(boxes, 100, 10)!;
+        const startOfNext = insertIndexAt(boxes, 2, 36)!;
+        expect(endOfRow.index).toBe(startOfNext.index);
+        expect(endOfRow.top).toBe(0);
+        expect(startOfNext.top).toBe(26);
+        expect(endOfRow.markerX).toBe(102);
+        expect(startOfNext.markerX).toBe(-2);
+    });
+});
+
+describe('Recent → Saved is a copy, at the marked place', () => {
+    const start = () =>
+        mount(withSettings((s) => ({ ...s, savedSwatches: ['#aa0000', '#bb0000', '#cc0000', '#dd0000'], recentColors: ['#123456', '#654321'] })));
+
+    it.each([
+        ['before the first', 2, 331, ['#123456', '#aa0000', '#bb0000', '#cc0000', '#dd0000']],
+        ['between B and C', 50, 331, ['#aa0000', '#bb0000', '#123456', '#cc0000', '#dd0000']],
+        ['after the last', 100, 331, ['#aa0000', '#bb0000', '#cc0000', '#dd0000', '#123456']],
+    ])('drops %s', (_label, x, y, expected) => {
+        const ui = start();
+        openFor(ui, WORKSPACE.key);
+        layoutSaved();
+        dragTo(recentSwatches()[0]!, x, y);
+        expect(ui.settings.savedSwatches).toEqual(expected);
+        // A copy: Recent is exactly as it was, and the drop loaded nothing.
+        expect(ui.settings.recentColors).toEqual(['#123456', '#654321']);
+        expect(ui.session.size).toBe(0);
+        expect(ui.log.updateUi).toBe(1);
+        expect(savedSwatches().map((swatch) => swatch.style.getPropertyValue('--nexus-studio-swatch'))).toEqual(expected);
+    });
+
+    // A copy leaves Recent exactly as it was — even for a colour that is not in front.
+    it('copies a colour from further back without moving it in Recent', () => {
+        const ui = start();
+        openFor(ui, WORKSPACE.key);
+        layoutSaved();
+        dragTo(recentSwatches()[1]!, 50, 331);
+        expect(ui.settings.savedSwatches).toEqual(['#aa0000', '#bb0000', '#654321', '#cc0000', '#dd0000']);
+        expect(ui.settings.recentColors).toEqual(['#123456', '#654321']);
+        expect(ui.log.updateUiLater).toBe(0);
+    });
+
+    it('shows a marker at the insertion point while dragging, and a ghost', () => {
+        const ui = start();
+        openFor(ui, WORKSPACE.key);
+        layoutSaved();
+        dragTo(recentSwatches()[0]!, 50, 331, false);
+        const marker = popover()!.querySelector<HTMLElement>('.nexus-studio-cp-insert')!;
+        expect(marker.dataset.index).toBe('2');
+        // In the middle of the gap between B (ends at 48) and C (starts at 52).
+        expect(marker.style.left).toBe('49px');
+        expect(document.querySelector('.nexus-studio-cp-ghost')).not.toBeNull();
+        // Nothing has changed yet: data changes only on the drop.
+        expect(ui.settings.savedSwatches).toHaveLength(4);
+        document.body.dispatchEvent(new MouseEvent('pointerup', { clientX: 50, clientY: 331, bubbles: true }));
+        expect(popover()!.querySelector('.nexus-studio-cp-insert')).toBeNull();
+        expect(document.querySelector('.nexus-studio-cp-ghost')).toBeNull();
+    });
+
+    it('does not save a colour twice: nothing changes, and the one there says so', () => {
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#aa0000', '#123456'], recentColors: ['#123456'] })));
+        openFor(ui, WORKSPACE.key);
+        layoutSaved();
+        dragTo(recentSwatches()[0]!, 2, 331);
+        expect(ui.settings.savedSwatches).toEqual(['#aa0000', '#123456']);
+        expect(ui.log.updateUi).toBe(0);
+        expect(savedSwatches()[1]!.classList.contains('is-found')).toBe(true);
+    });
+
+    it('changes nothing when dropped outside Saved', () => {
+        const ui = start();
+        openFor(ui, WORKSPACE.key);
+        layoutSaved();
+        dragTo(recentSwatches()[0]!, 50, 40);
+        expect(ui.settings.savedSwatches).toHaveLength(4);
+        expect(ui.log.updateUi).toBe(0);
+        expect(ui.session.size).toBe(0);
+    });
+
+    it('never reorders Recent: a drop inside Recent changes nothing', () => {
+        const ui = start();
+        openFor(ui, WORKSPACE.key);
+        layoutSaved();
+        dragTo(recentSwatches()[0]!, 30, 200);
+        expect(ui.settings.recentColors).toEqual(['#123456', '#654321']);
+        expect(ui.log.updateUi + ui.log.updateUiLater).toBe(0);
+    });
+
+    it('Escape during a drag cancels it, and only it', () => {
+        const ui = start();
+        openFor(ui, WORKSPACE.key);
+        layoutSaved();
+        dragTo(recentSwatches()[0]!, 50, 331, false);
+        key(document, 'Escape');
+        document.body.dispatchEvent(new MouseEvent('pointerup', { clientX: 50, clientY: 331, bubbles: true }));
+        expect(ui.settings.savedSwatches).toHaveLength(4);
+        expect(popovers()).toHaveLength(1);
+        expect(popover()!.querySelector('.nexus-studio-cp-insert')).toBeNull();
+    });
+
+    // Click vs drag: below the threshold it is a click, and a click still works.
+    it('a press that barely moves is still a click', () => {
+        const ui = start();
+        openFor(ui, WORKSPACE.key);
+        const source = recentSwatches()[1]!;
+        source.dispatchEvent(new MouseEvent('pointerdown', { clientX: 10, clientY: 10, bubbles: true, button: 0 }));
+        document.body.dispatchEvent(new MouseEvent('pointermove', { clientX: 12, clientY: 11, bubbles: true }));
+        document.body.dispatchEvent(new MouseEvent('pointerup', { clientX: 12, clientY: 11, bubbles: true }));
+        source.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        expect(ui.session.get(WORKSPACE.key)).toBe('#654321');
+        expect(ui.settings.recentColors).toEqual(['#654321', '#123456']);
+        expect(document.querySelector('.nexus-studio-cp-ghost')).toBeNull();
+    });
+});
+
+describe('Saved → Saved is a move', () => {
+    const start = () => mount(withSettings((s) => ({ ...s, savedSwatches: ['#aa0000', '#bb0000', '#cc0000', '#dd0000'] })));
+    const order = () => savedSwatches().map((swatch) => swatch.style.getPropertyValue('--nexus-studio-swatch'));
+
+    it.each([
+        ['D before B', 3, 22, 331, ['#aa0000', '#dd0000', '#bb0000', '#cc0000']],
+        ['the first to the end', 0, 100, 331, ['#bb0000', '#cc0000', '#dd0000', '#aa0000']],
+        ['the last to the front', 3, 2, 331, ['#dd0000', '#aa0000', '#bb0000', '#cc0000']],
+    ])('moves %s, in the data and on screen, and saves it', (_label, from, x, y, expected) => {
+        const ui = start();
+        openFor(ui, WORKSPACE.key);
+        layoutSaved();
+        dragTo(savedSwatches()[from]!, x, y);
+        expect(ui.settings.savedSwatches).toEqual(expected);
+        expect(order()).toEqual(expected);
+        expect(ui.log.updateUi).toBe(1);
+        // Moving is not using: Recent and the draft are untouched.
+        expect(ui.settings.recentColors).toEqual([]);
+        expect(ui.session.size).toBe(0);
+    });
+
+    it('writes nothing when dropped where it already is', () => {
+        const ui = start();
+        openFor(ui, WORKSPACE.key);
+        layoutSaved();
+        dragTo(savedSwatches()[1]!, 22, 331);
+        // The palette was redrawn by the first drop; lay it out again.
+        layoutSaved();
+        dragTo(savedSwatches()[1]!, 50, 331);
+        expect(ui.settings.savedSwatches).toEqual(['#aa0000', '#bb0000', '#cc0000', '#dd0000']);
+        expect(ui.log.updateUi).toBe(0);
+    });
+
+    it('moves across a wrapped row', () => {
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#010101', '#020202', '#030303', '#040404', '#050505', '#060606'] })));
+        openFor(ui, WORKSPACE.key);
+        layoutSaved(4);
+        // The first, to the start of the second row: between the 4th and the 5th.
+        dragTo(savedSwatches()[0]!, 2, 357);
+        expect(ui.settings.savedSwatches).toEqual(['#020202', '#030303', '#040404', '#010101', '#050505', '#060606']);
+    });
+
+    it('exports in the order it was put in', async () => {
+        const ui = start();
+        openFor(ui, WORKSPACE.key);
+        layoutSaved();
+        dragTo(savedSwatches()[3]!, 22, 331);
+        // The click after a drag is swallowed for one tick; a real next click comes later.
+        await settle();
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-more').click();
+        ui.log.menus.at(-1)!.find((item) => item.title.startsWith('Export'))!.run();
+        expect(ui.log.exports.at(-1)).toEqual(['#aa0000', '#dd0000', '#bb0000', '#cc0000']);
+    });
+
+    it('swallows the click after a real drag, so nothing is loaded', () => {
+        const ui = start();
+        openFor(ui, WORKSPACE.key);
+        layoutSaved();
+        dragTo(savedSwatches()[3]!, 22, 331);
+        expect(ui.session.size).toBe(0);
+        expect(ui.settings.recentColors).toEqual([]);
+    });
+});
+
+describe('Recent is strictly move-to-front', () => {
+    // Clicking the same PLACE again and again rotates only the prefix up to it.
+    it('clicking slot 4 again and again rotates the first four and leaves the rest', () => {
+        const ui = mount(withSettings((s) => ({ ...s, recentColors: ['#aa0000', '#bb0000', '#cc0000', '#dd0000', '#ee0000'] })));
+        openFor(ui, WORKSPACE.key);
+        const seen: string[][] = [];
+        for (let i = 0; i < 4; i += 1) {
+            recentSwatches()[3]!.click();
+            seen.push([...ui.settings.recentColors]);
+        }
+        expect(seen).toEqual([
+            ['#dd0000', '#aa0000', '#bb0000', '#cc0000', '#ee0000'],
+            ['#cc0000', '#dd0000', '#aa0000', '#bb0000', '#ee0000'],
+            ['#bb0000', '#cc0000', '#dd0000', '#aa0000', '#ee0000'],
+            ['#aa0000', '#bb0000', '#cc0000', '#dd0000', '#ee0000'],
+        ]);
+    });
+});
+
+describe('swatches look like what they are', () => {
+    const css = readFileSync('companion/nexus-theme-studio/styles.css', 'utf8').replace(/\r\n/g, '\n');
+
+    it('gives Recent and Saved swatches a small pipette cursor with its hot spot at the tip', () => {
+        const rule = css.slice(css.indexOf('.nexus-studio-popover .nexus-studio-cp-swatch {'));
+        const body = rule.slice(0, rule.indexOf('}'));
+        expect(body).toMatch(/cursor: url\("data:image\/svg\+xml,[^"]+"\) 2 18, copy;/);
+    });
+
+    it('marks the pressed pipette and the sampling picker', () => {
+        expect(css).toContain(".nexus-studio-popover .nexus-studio-cp-sample[aria-pressed='true']");
+        expect(css).toContain('.nexus-studio-popover.is-sampling-mode');
+        expect(css).toContain('.nexus-studio-cp-insert');
+    });
+
+    it('keeps the loupe and the reticle neutral: no theme colour paints them', () => {
+        const loupe = css.slice(css.indexOf('.nexus-studio-sample-loupe {'), css.indexOf('/* --- top of the panel'));
+        expect(loupe).not.toMatch(/var\(--(background|text|interactive)-/);
     });
 });
 

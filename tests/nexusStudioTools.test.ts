@@ -9,7 +9,7 @@
 // opening, a pixel captured) is checked live by scripts/smokeView.mjs.
 
 import { readFileSync } from 'node:fs';
-import { mount } from './support/nexusStudioHarness';
+import { mount, unmountAll } from './support/nexusStudioHarness';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NEXUS_CONTRAST_PAIRS, nexusToken } from '../theme/nexus/src/tokens';
@@ -98,6 +98,7 @@ function installElectron(options: Partial<Pick<FakeWebContents, 'zoom' | 'attach
 const flush = () => new Promise((resolve) => window.setTimeout(resolve, 0));
 
 beforeEach(() => {
+    unmountAll();
     document.body.replaceChildren();
 });
 

@@ -49,6 +49,8 @@ import {
     addSwatch,
     clearSwatches,
     importSwatches,
+    insertSwatch,
+    moveSwatch,
     recordRecent,
     removeSwatch,
     replaceSwatch,
@@ -625,7 +627,6 @@ export class StudioPanel {
                 if (!this.disposed) this.sync();
             },
             canSample: canSample(this.win),
-            sample: () => this.pickColor(),
             resolve: (value) => {
                 const resolved = this.resolveColour(value);
                 return parseColorValue(resolved) ? resolved : null;
@@ -646,6 +647,14 @@ export class StudioPanel {
                     return colour ? settings().savedSwatches.indexOf(colour) : -1;
                 },
                 remove: (index) => this.updateLibrary(removeSwatch(settings(), index)),
+                insert: (value, at) => {
+                    const before = settings();
+                    const next = insertSwatch(before, value, at);
+                    this.updateLibrary(next);
+                    const colour = canonicalColor(value);
+                    return { index: colour ? next.savedSwatches.indexOf(colour) : -1, added: next !== before };
+                },
+                move: (from, to) => this.updateLibrary(moveSwatch(settings(), from, to)),
                 replace: (index, value) => this.updateLibrary(replaceSwatch(settings(), index, value)),
                 importPalette: () => this.host.openPaletteImport((text) => this.importPalette(text)),
                 exportPalette: () => this.host.openPaletteExport(settings().savedSwatches),

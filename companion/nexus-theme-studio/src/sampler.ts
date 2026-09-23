@@ -34,7 +34,7 @@
 // window, no history, nothing kept.
 
 import { webContentsOf, toWindowPoint, type CapturedImage } from './electronSurface';
-import { afterPaint, pickPoint } from './pickPoint';
+import { KEYBOARD_STEP_LARGE, afterPaint, pickPoint } from './pickPoint';
 
 /** Whether this window can take a colour from its own rendering. */
 export function canSample(win: Window): boolean {
@@ -116,4 +116,248 @@ export function sampleColor(win: Window, decode: PixelDecoder = decodeFirstPixel
         }
     })();
     return { result, cancel: () => pick.cancel() };
+}
+
+// --- the sampling MODE ----------------------------------------------------------------
+//
+// The picker's pipette is a TOOL, not a one-shot action: switched on, every
+// click anywhere in the window takes the colour under it, and the mode stays
+// on — the picker stays visible, above the layer, so the colour just taken,
+// Recent and Saved can be watched while the next one is taken. It ends with
+// the pipette again, with Escape, or with the picker closing.
+//
+// PRIORITY. While the mode is on, a press is a SAMPLE unless it lands on one of
+// the few controls the caller keeps live (the pipette itself, the format
+// button, Done, Revert). Everything else is sampled — including the picker's
+// own swatches, which is allowed rather than special-cased. The press is
+// taken on `pointerdown` and the click that would follow is swallowed, so a
+// swatch sampled is not also clicked.
+//
+// THE LOUPE. A small ring beside the cursor: its centre is the colour under the
+// hot spot, its ring the picker's current colour. The centre is a real pixel,
+// read with the same one-pixel capture as a sample — at most one capture in
+// flight and at most one every CANDIDATE_INTERVAL_MS, so a moving mouse costs a
+// dozen captures a second at most, never one per pointer event. It sits off the
+// hot spot, so it is never in the pixel it reports.
+
+/** The least time between two live candidate captures. */
+export const CANDIDATE_INTERVAL_MS = 80;
+
+/** How far the loupe sits from the hot spot, so it is never what it measures. */
+const LOUPE_OFFSET = 18;
+
+export interface SamplingModeOptions {
+    /** Presses on these stay ordinary clicks: the controls of the mode itself. */
+    keepLive(target: Element): boolean;
+    /** A colour was taken. `#rrggbb`. */
+    onSample(hex: string): void;
+    /** The mode ended by itself (Escape), not by `stop()`. */
+    onEnd(): void;
+    /** The colour the loupe's ring shows: the picker's current one. */
+    reference(): string;
+    decode?: PixelDecoder;
+}
+
+export interface SamplingMode {
+    /** Ends the mode. Harmless when already ended. */
+    stop(): void;
+    /** How many captures the loupe has made — for the throttle's tests and the smoke. */
+    readonly candidateCaptures: number;
+}
+
+/** Starts the sampling mode in a window; null where the window cannot be captured. */
+export function startSamplingMode(win: Window, options: SamplingModeOptions): SamplingMode | null {
+    const wc = webContentsOf(win);
+    if (!wc) return null;
+    const doc = win.document;
+    const decode = options.decode ?? decodeFirstPixel;
+
+    const shield = doc.createElement('div');
+    shield.className = 'nexus-studio-pick-shield nexus-studio-isolated is-persistent';
+    shield.setAttribute('role', 'presentation');
+    const reticle = doc.createElement('div');
+    reticle.className = 'nexus-studio-pick-reticle';
+    reticle.hidden = true;
+    shield.appendChild(reticle);
+    const loupe = doc.createElement('div');
+    loupe.className = 'nexus-studio-sample-loupe nexus-studio-isolated';
+    loupe.hidden = true;
+    const candidate = doc.createElement('span');
+    candidate.className = 'nexus-studio-sample-candidate';
+    loupe.appendChild(candidate);
+    doc.body.append(shield, loupe);
+
+    let ended = false;
+    let swallowClick = false;
+    const aim = { x: Math.round(win.innerWidth / 2), y: Math.round(win.innerHeight / 2) };
+    let captures = 0;
+    let inFlight = false;
+    let lastCapture = -Infinity;
+    let queued: { x: number; y: number } | null = null;
+    let queueTimer = 0;
+
+    const read = async (x: number, y: number): Promise<string | null> => {
+        const at = toWindowPoint(wc, x, y);
+        const image = await wc.capturePage({ x: at.x, y: at.y, width: 1, height: 1 });
+        const rgba = await decode(image, win);
+        return rgba ? `#${hex(rgba[0])}${hex(rgba[1])}${hex(rgba[2])}` : null;
+    };
+
+    /** One sample, in order: a second click waits for the first. */
+    let chain: Promise<void> = Promise.resolve();
+    const sampleAt = (x: number, y: number): void => {
+        chain = chain.then(async () => {
+            if (ended) return;
+            // The keyboard reticle sits exactly on the point: out of the frame first.
+            const wasShown = !reticle.hidden;
+            reticle.hidden = true;
+            if (wasShown) await afterPaint(doc);
+            try {
+                const colour = await read(x, y);
+                if (colour && !ended) {
+                    options.onSample(colour);
+                    ring();
+                }
+            } catch {
+                // A frame that could not be read is not a colour; the mode goes on.
+            } finally {
+                if (wasShown && !ended) reticle.hidden = false;
+            }
+        });
+    };
+
+    const ring = (): void => loupe.style.setProperty('--nexus-studio-loupe-ring', options.reference());
+
+    /** The live candidate under the cursor, throttled. */
+    const capture = (x: number, y: number): void => {
+        queued = { x, y };
+        if (inFlight || queueTimer) return;
+        const wait = CANDIDATE_INTERVAL_MS - (win.performance.now() - lastCapture);
+        if (wait > 0) {
+            queueTimer = win.setTimeout(() => {
+                queueTimer = 0;
+                if (queued) capture(queued.x, queued.y);
+            }, wait);
+            return;
+        }
+        const point = queued;
+        queued = null;
+        inFlight = true;
+        lastCapture = win.performance.now();
+        captures += 1;
+        void read(point.x, point.y)
+            .then((colour) => {
+                if (colour && !ended) candidate.style.setProperty('--nexus-studio-loupe-candidate', colour);
+            }, () => undefined)
+            .finally(() => {
+                inFlight = false;
+                if (queued && !ended) capture(queued.x, queued.y);
+            });
+    };
+
+    const placeLoupe = (x: number, y: number): void => {
+        const size = 34;
+        const left = x + LOUPE_OFFSET + size > win.innerWidth ? x - LOUPE_OFFSET - size : x + LOUPE_OFFSET;
+        const top = y + LOUPE_OFFSET + size > win.innerHeight ? y - LOUPE_OFFSET - size : y + LOUPE_OFFSET;
+        loupe.style.left = `${Math.round(left)}px`;
+        loupe.style.top = `${Math.round(top)}px`;
+    };
+
+    // Duck-typed, not `instanceof Element`: a pop-out window has its own Element.
+    const live = (target: EventTarget | null): boolean => {
+        const element = target as Element | null;
+        return !!element && typeof element.closest === 'function' && options.keepLive(element);
+    };
+
+    const onPointerDown = (event: PointerEvent): void => {
+        if (event.button !== 0 || live(event.target)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        swallowClick = true;
+        aim.x = event.clientX;
+        aim.y = event.clientY;
+        sampleAt(event.clientX, event.clientY);
+    };
+    const onClick = (event: MouseEvent): void => {
+        if (!swallowClick) return;
+        swallowClick = false;
+        event.preventDefault();
+        event.stopPropagation();
+    };
+    const onMove = (event: PointerEvent): void => {
+        aim.x = event.clientX;
+        aim.y = event.clientY;
+        reticle.hidden = true;
+        if (live(event.target)) {
+            loupe.hidden = true;
+            return;
+        }
+        loupe.hidden = false;
+        ring();
+        placeLoupe(event.clientX, event.clientY);
+        capture(event.clientX, event.clientY);
+    };
+    const ARROWS: Record<string, [number, number]> = {
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+        ArrowUp: [0, -1],
+        ArrowDown: [0, 1],
+    };
+    const onKey = (event: KeyboardEvent): void => {
+        // A dialog's keys are the dialog's. Enter and Space on a control the
+        // caller keeps live press that control (the pipette switches off). The
+        // arrows and Escape stay the sampler's even there: after a mouse click
+        // the focus IS on the pipette button, and aiming must still work.
+        if (doc.querySelector('.modal-container')) return;
+        // A key whose target a dialog has already taken out of the document
+        // closed that dialog; it is not the sampler's (see colorPicker.ts).
+        const target = event.target as Node | null;
+        if (target && target !== doc && target.isConnected === false) return;
+        if ((event.key === 'Enter' || event.key === ' ') && live(event.target)) return;
+        const arrow = ARROWS[event.key];
+        if (arrow) {
+            const step = event.shiftKey ? KEYBOARD_STEP_LARGE : 1;
+            aim.x = Math.min(Math.max(0, aim.x + arrow[0] * step), win.innerWidth - 1);
+            aim.y = Math.min(Math.max(0, aim.y + arrow[1] * step), win.innerHeight - 1);
+            reticle.hidden = false;
+            reticle.style.left = `${aim.x}px`;
+            reticle.style.top = `${aim.y}px`;
+            loupe.hidden = false;
+            ring();
+            placeLoupe(aim.x, aim.y);
+        } else if (event.key === 'Enter' || event.key === ' ') {
+            sampleAt(aim.x, aim.y);
+        } else if (event.key === 'Escape') {
+            stop();
+            options.onEnd();
+        } else {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+    };
+
+    doc.addEventListener('pointerdown', onPointerDown, true);
+    doc.addEventListener('click', onClick, true);
+    doc.addEventListener('pointermove', onMove, true);
+    doc.addEventListener('keydown', onKey, true);
+
+    function stop(): void {
+        if (ended) return;
+        ended = true;
+        win.clearTimeout(queueTimer);
+        doc.removeEventListener('pointerdown', onPointerDown, true);
+        doc.removeEventListener('click', onClick, true);
+        doc.removeEventListener('pointermove', onMove, true);
+        doc.removeEventListener('keydown', onKey, true);
+        shield.remove();
+        loupe.remove();
+    }
+
+    return {
+        stop,
+        get candidateCaptures(): number {
+            return captures;
+        },
+    };
 }

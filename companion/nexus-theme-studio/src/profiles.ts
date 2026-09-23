@@ -16,7 +16,9 @@ import {
     RECENT_LIMIT,
     SAVED_LIMIT,
     addSaved,
+    insertSaved,
     mergeSaved,
+    moveSaved,
     pushRecent,
     readColorList,
     removeSaved,
@@ -502,6 +504,18 @@ export function setGroupCollapsed(
 export function addSwatch(settings: NexusStudioSettings, value: string): NexusStudioSettings {
     const result = addSaved(settings.savedSwatches, value);
     return result.changed ? { ...settings, savedSwatches: result.saved } : settings;
+}
+
+/** Keeps a colour at a place in the saved palette (a drop). A duplicate changes nothing. */
+export function insertSwatch(settings: NexusStudioSettings, value: string, at: number): NexusStudioSettings {
+    const result = insertSaved(settings.savedSwatches, value, at);
+    return result.changed ? { ...settings, savedSwatches: result.saved } : settings;
+}
+
+/** Moves a saved colour to an insertion point (a reorder). The same place changes nothing. */
+export function moveSwatch(settings: NexusStudioSettings, from: number, to: number): NexusStudioSettings {
+    const saved = moveSaved(settings.savedSwatches, from, to);
+    return saved === settings.savedSwatches ? settings : { ...settings, savedSwatches: saved };
 }
 
 /** Removes the saved colour at an index. */

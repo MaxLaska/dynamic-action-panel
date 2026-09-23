@@ -15,6 +15,8 @@ import {
     SAVED_LIMIT,
     addSaved,
     canonicalColor,
+    insertSaved,
+    moveSaved,
     mergeSaved,
     paletteAsCssVariables,
     paletteFileName,
@@ -150,6 +152,70 @@ describe('saved colours', () => {
     it('report what did not fit', () => {
         const almost = Array.from({ length: SAVED_LIMIT - 1 }, (_, i) => `#0000${i.toString(16).padStart(2, '0')}`);
         expect(mergeSaved(almost, [RED, GREEN])).toMatchObject({ added: 1, overflow: 1 });
+    });
+});
+
+describe('saved colours at a place', () => {
+    const A = '#aa0000';
+    const B = '#bb0000';
+    const C = '#cc0000';
+    const D = '#dd0000';
+
+    it('inserts a copy at an insertion point, canonical', () => {
+        expect(insertSaved([A, B, C], 'rgb(0, 0, 255)', 0).saved).toEqual([BLUE, A, B, C]);
+        expect(insertSaved([A, B, C], BLUE, 2)).toEqual({ saved: [A, B, BLUE, C], index: 2, changed: true });
+        expect(insertSaved([A, B, C], BLUE, 3).saved).toEqual([A, B, C, BLUE]);
+        expect(insertSaved([A, B, C], BLUE, 99).saved).toEqual([A, B, C, BLUE]);
+    });
+
+    it('does not insert a colour that is already saved, and does not move it either', () => {
+        const saved = [A, B, C];
+        expect(insertSaved(saved, '#b00', 0)).toEqual({ saved, index: 1, changed: false });
+    });
+
+    it('keeps alpha', () => {
+        expect(insertSaved([A], 'rgba(0,0,0,0.5)', 0).saved).toEqual(['rgba(0, 0, 0, 0.5)', A]);
+    });
+
+    it.each([
+        ['D before B', 3, 1, [A, D, B, C]],
+        ['A to the end', 0, 4, [B, C, D, A]],
+        ['D to the front', 3, 0, [D, A, B, C]],
+        ['B after C', 1, 3, [A, C, B, D]],
+    ])('moves %s', (_label, from, to, expected) => {
+        expect(moveSaved([A, B, C, D], from, to)).toEqual(expected);
+    });
+
+    it('returns the same list for a drop just before or just after itself', () => {
+        const saved = [A, B, C, D];
+        expect(moveSaved(saved, 1, 1)).toBe(saved);
+        expect(moveSaved(saved, 1, 2)).toBe(saved);
+        expect(moveSaved(saved, 9, 0)).toBe(saved);
+    });
+});
+
+describe('recent colours are strictly move-to-front', () => {
+    // The same slot pressed again and again rotates only the prefix up to it.
+    it('rotates the first four when slot 4 is used repeatedly', () => {
+        let recent = ['#aa0000', '#bb0000', '#cc0000', '#dd0000', '#ee0000'];
+        const seen: string[][] = [];
+        for (let i = 0; i < 4; i += 1) {
+            recent = pushRecent(recent, recent[3]!);
+            seen.push(recent);
+        }
+        expect(seen.map((list) => list.map((c) => c.slice(1, 3)).join(''))).toEqual([
+            'ddaabbccee',
+            'ccddaabbee',
+            'bbccddaaee',
+            'aabbccddee',
+        ]);
+    });
+
+    it('rotates the whole list when the last slot is used repeatedly', () => {
+        const start = Array.from({ length: 16 }, (_, i) => `#0000${i.toString(16).padStart(2, '0')}`);
+        let recent = start;
+        for (let i = 0; i < 16; i += 1) recent = pushRecent(recent, recent[15]!);
+        expect(recent).toEqual(start);
     });
 });
 

@@ -105,6 +105,46 @@ export function addSaved(saved: readonly string[], value: string, limit = SAVED_
     return { saved: [...saved, colour], index: saved.length, changed: true };
 }
 
+/**
+ * Keeps a colour at a given place — a Recent swatch dropped between two saved
+ * ones. It is a COPY: the caller's other lists are untouched. A colour already
+ * saved is not saved twice and is NOT moved to the drop place (reordering is
+ * its own gesture); `index` then says where it already is.
+ */
+export function insertSaved(
+    saved: readonly string[],
+    value: string,
+    at: number,
+    limit = SAVED_LIMIT
+): SavedChange {
+    const colour = canonicalColor(value);
+    const same = saved as string[];
+    if (!colour) return { saved: same, index: -1, changed: false };
+    const existing = saved.indexOf(colour);
+    if (existing >= 0) return { saved: same, index: existing, changed: false };
+    if (saved.length >= limit) return { saved: same, index: -1, changed: false };
+    const place = Math.min(Math.max(0, Math.round(at)), saved.length);
+    return { saved: [...saved.slice(0, place), colour, ...saved.slice(place)], index: place, changed: true };
+}
+
+/**
+ * Moves one saved colour so that it lands at insertion point `to`, counted in
+ * the list as it was BEFORE the move (0 = before the first, length = after
+ * the last) — which is what a marker between two swatches means. Dropping a
+ * colour just before or just after itself changes nothing, and returns the
+ * same array.
+ */
+export function moveSaved(saved: readonly string[], from: number, to: number): string[] {
+    const same = saved as string[];
+    if (from < 0 || from >= saved.length) return same;
+    const target = Math.min(Math.max(0, Math.round(to)), saved.length);
+    if (target === from || target === from + 1) return same;
+    const moved = saved[from] as string;
+    const without = saved.filter((_, index) => index !== from);
+    const place = target > from ? target - 1 : target;
+    return [...without.slice(0, place), moved, ...without.slice(place)];
+}
+
 /** Replaces one saved colour in place. Refused if it would duplicate another. */
 export function replaceSaved(saved: readonly string[], index: number, value: string): string[] {
     const colour = canonicalColor(value);

@@ -105,12 +105,26 @@ export function makeHost(initial: NexusStudioSettings = defaultSettings()) {
     };
 }
 
+/** Every panel mounted and not yet taken down. */
+const mounted: StudioPanel[] = [];
+
+/**
+ * Takes every mounted panel down the way closing the view does — which closes
+ * an open picker and switches its sampler off. Emptying `document.body` is not
+ * enough: a picker's listeners are on the DOCUMENT, and one left running would
+ * take the next test's pointer events.
+ */
+export function unmountAll(): void {
+    for (const panel of mounted.splice(0)) panel.dispose();
+}
+
 /** Renders a panel into the live document and hands back its parts. */
 export function mount(initial?: NexusStudioSettings) {
     const root = document.createElement('div');
     document.body.appendChild(root);
     const fake = makeHost(initial);
     const panel = new StudioPanel(root, fake.host);
+    mounted.push(panel);
     fake.attach(panel);
     panel.render();
     const q = <T extends Element>(selector: string) => root.querySelector<T>(selector);
