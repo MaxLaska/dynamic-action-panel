@@ -44,6 +44,8 @@ export interface StudioServices {
     updateLive(next: NexusStudioSettings): void;
     updateUi(next: NexusStudioSettings): Promise<void>;
     setPreview(variables: readonly string[]): void;
+    setSessionValue(key: string, value: string | null): void;
+    sessionValue(key: string): string | undefined;
 }
 
 export class NexusStudioView extends ItemView {
@@ -119,6 +121,8 @@ export class NexusStudioView extends ItemView {
             updateLive: (next) => services.updateLive(next),
             updateUi: (next) => services.updateUi(next),
             setPreview: (variables) => services.setPreview(variables),
+            setSessionValue: (key, value) => services.setSessionValue(key, value),
+            sessionValue: (key) => services.sessionValue(key),
             promptName: (title, initial) => promptForName(this.app, title, initial),
             openTransfer: (mode, profile, onImport) => {
                 new TransferModal(this.app, mode, profile, onImport).open();

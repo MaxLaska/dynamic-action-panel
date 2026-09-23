@@ -11,7 +11,7 @@
 // that the locator has no path to a file. The native colour dialog and the
 // screen sampler are the operating system's, and are not simulated here.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { NEXUS_TOKENS, nexusToken } from '../theme/nexus/src/tokens';
@@ -22,10 +22,6 @@ import {
     percentToAlpha,
     roundAlpha,
 } from '../companion/nexus-theme-studio/src/colorValue';
-import {
-    eyedropperAvailable,
-    pickScreenColor,
-} from '../companion/nexus-theme-studio/src/eyedropper';
 import {
     LOCATOR_COLOR,
     effectiveValue,
@@ -309,12 +305,12 @@ describe('the locator cannot reach the stored profile', () => {
         expect(body).toContain('setPreview([])');
     });
 
-    it('clears the preview before sampling the screen', () => {
+    it('clears the preview before the picker opens', () => {
         const row = readFileSync('companion/nexus-theme-studio/src/tokenRow.ts', 'utf8');
-        const pipette = row.slice(row.indexOf("listen(theTool, 'click'"));
-        const body = pipette.slice(0, pipette.indexOf('}, detaches);'));
+        const swatch = row.slice(row.indexOf("listen(preview, 'click'"));
+        const body = swatch.slice(0, swatch.indexOf('}, detaches);'));
         expect(body.indexOf('host.preview(null)')).toBeGreaterThan(-1);
-        expect(body.indexOf('host.preview(null)')).toBeLessThan(body.indexOf('host.pickColor()'));
+        expect(body.indexOf('host.preview(null)')).toBeLessThan(body.indexOf('host.openPicker('));
     });
 
     // Views close in an order the plugin does not control. One that closes
@@ -400,32 +396,25 @@ describe('a per-token reset touches one token', () => {
 });
 
 describe('the colour picker is live', () => {
-    const row = readFileSync('companion/nexus-theme-studio/src/tokenRow.ts', 'utf8');
+    const picker = readFileSync('companion/nexus-theme-studio/src/colorPicker.ts', 'utf8');
+    const code = (source: string) => source.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
-    // Obsidian's ColorComponent registers `change` only, and `change` on a
-    // native colour input does not arrive until the picker is dismissed. That
-    // is the whole of the report; owning the element is the fix.
-    it('listens for input, not only for change', () => {
-        expect(row).toContain("listen(picker, 'input'");
-        expect(row).toContain("listen(picker, 'change'");
+    // Native range inputs stream `input` while dragged; the square streams
+    // pointermove. Neither waits for a release.
+    it('listens for input on the bars and pointer moves on the square', () => {
+        expect(picker).toContain("on(hue, 'input'");
+        expect(picker).toContain("on(range, 'input'");
+        expect(picker).toContain("on(area, 'pointermove'");
+        expect(picker).toContain("type: 'range'");
     });
 
     it('does not use the component that only hears change', () => {
-        // Asserted against the CODE: the comment above the swatch names
-        // `addColorPicker` precisely to explain why it is not used.
-        const code = row.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-        expect(code).not.toContain('addColorPicker');
+        expect(code(picker)).not.toContain('addColorPicker');
+        const row = readFileSync('companion/nexus-theme-studio/src/tokenRow.ts', 'utf8');
+        expect(code(row)).not.toContain('addColorPicker');
     });
 
-    // A native range input streams `input` while it is dragged — the live
-    // behaviour Obsidian's SliderComponent needed `setInstant(true)` for.
-    it('listens to the opacity slider while it moves', () => {
-        const opacity = row.slice(row.indexOf('if (token.supportsAlpha)'));
-        expect(opacity.slice(0, opacity.indexOf('syncs.push'))).toContain("listen(slider, 'input'");
-        expect(row).toContain("type: 'range'");
-    });
-
-    // Moving the picker on `rgba(255,255,255,0.28)` must keep the 0.28 rather
+    // Moving the colour on `rgba(255,255,255,0.28)` must keep the 0.28 rather
     // than silently making the splitter opaque.
     it('keeps the current opacity when only the colour moves', () => {
         const parsed = parseColorValue(SPLITTER_HOVER.defaultValue)!;
@@ -433,67 +422,22 @@ describe('the colour picker is live', () => {
     });
 });
 
-describe('the screen sampler is offered only where it exists', () => {
-    it('detects the API structurally rather than by version', () => {
-        expect(eyedropperAvailable({} as unknown as Window)).toBe(false);
-        expect(
-            eyedropperAvailable({ EyeDropper: class {} } as unknown as Window)
-        ).toBe(true);
-        expect(
-            eyedropperAvailable({ EyeDropper: 'nope' } as unknown as Window)
-        ).toBe(false);
+describe('the native colour UI is gone from the studio', () => {
+    const studio = ['colorPicker.ts', 'tokenRow.ts', 'studioPanel.ts', 'sampler.ts', 'pickPoint.ts', 'view.ts', 'main.ts'];
+    const code = (file: string) =>
+        readFileSync(`companion/nexus-theme-studio/src/${file}`, 'utf8')
+            .replace(/\/\/.*$/gm, '')
+            .replace(/\/\*[\s\S]*?\*\//g, '');
+
+    // `<input type="color">` opens Chromium's popup, and its pipette is the
+    // EyeDropper with Electron's red grid. Neither is reachable any more.
+    it('creates no native colour input anywhere', () => {
+        for (const file of studio) expect(code(file)).not.toMatch(/type:\s*'color'|type="color"/);
     });
 
-    it('answers null where the API is missing, instead of throwing', async () => {
-        await expect(pickScreenColor({} as unknown as Window)).resolves.toBeNull();
-    });
-
-    it('returns the sampled colour', async () => {
-        const win = {
-            EyeDropper: class {
-                open(): Promise<{ sRGBHex: string }> {
-                    return Promise.resolve({ sRGBHex: '#AABBCC' });
-                }
-            },
-        } as unknown as Window;
-        await expect(pickScreenColor(win)).resolves.toBe('#aabbcc');
-    });
-
-    // Escape rejects with AbortError. That is a normal outcome, not a failure,
-    // and it must leave the value alone.
-    it('answers null when the user cancels', async () => {
-        const win = {
-            EyeDropper: class {
-                open(): Promise<{ sRGBHex: string }> {
-                    return Promise.reject(new Error('AbortError'));
-                }
-            },
-        } as unknown as Window;
-        await expect(pickScreenColor(win)).resolves.toBeNull();
-    });
-
-    it.each([
-        ['a missing field', {}],
-        ['a non-string', { sRGBHex: 3 }],
-        ['something that is not a colour', { sRGBHex: 'rgb(1,2,3)' }],
-    ])('answers null for %s in the result', async (_label, result) => {
-        const win = {
-            EyeDropper: class {
-                open(): Promise<unknown> {
-                    return Promise.resolve(result);
-                }
-            },
-        } as unknown as Window;
-        await expect(pickScreenColor(win)).resolves.toBeNull();
-    });
-
-    // The magnifier is Chromium's and cannot be restyled, so there must be no
-    // code here pretending otherwise.
-    it('draws no sampler UI of its own', () => {
-        const source = readFileSync('companion/nexus-theme-studio/src/eyedropper.ts', 'utf8');
-        const code = source.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-        expect(code).not.toContain('createEl');
-        expect(code).not.toContain('canvas');
+    it('never opens the native EyeDropper, not even as a fallback', () => {
+        for (const file of studio) expect(code(file)).not.toMatch(/EyeDropper|eyedropper/);
+        expect(existsSync('companion/nexus-theme-studio/src/eyedropper.ts')).toBe(false);
     });
 });
 
@@ -593,8 +537,8 @@ describe('the swatch has room for its own focus ring', () => {
     // now our own element and the ring a box-shadow on it, drawn for pointer
     // hover and for keyboard focus of the input inside.
     it('draws the ring on our own element, for hover and for keyboard focus', () => {
-        expect(css).toContain('.nexus-studio-swatch:hover');
-        expect(css).toContain('.nexus-studio-swatch:has(.nexus-studio-picker:focus-visible)');
+        expect(css).toContain('.nexus-studio .nexus-studio-swatch:hover');
+        expect(css).toContain('.nexus-studio .nexus-studio-swatch:focus-visible');
     });
 
     // Nothing between the swatch and the edge of the panel may clip it.
@@ -603,17 +547,6 @@ describe('the swatch has room for its own focus ring', () => {
             const block = css.slice(css.indexOf(selector));
             expect(block.slice(0, block.indexOf('}'))).not.toContain('overflow');
         }
-    });
-
-    // Obsidian styles every `input[type="color"]` with its own width and
-    // height. The invisible picker has to cover the whole circle, so our rule
-    // must outweigh that one.
-    it('stretches the invisible picker across the whole circle', () => {
-        const rule = ruleOf('.nexus-studio .nexus-studio-swatch input.nexus-studio-picker');
-        expect(rule).toContain('inset: 0');
-        expect(rule).toContain('width: 100%');
-        expect(rule).toContain('height: 100%');
-        expect(rule).toContain('opacity: 0');
     });
 
     // The raw CSS field is no longer a permanent 16em column. The compact
@@ -664,6 +597,17 @@ describe('a drag repaints every frame but is written once', () => {
         const body = update.slice(0, update.indexOf('\n    }'));
         expect(body).toContain('await this.saveData');
         expect(body).toContain('clearTimeout');
+    });
+
+    // A picker's draft is shown and never saved: the only way it reaches
+    // data.json is a commit, which is an ordinary override write.
+    it('never saves a picker draft', () => {
+        const session = main.slice(main.indexOf('setSessionValue(key: string, value: string | null): void'));
+        const body = session.slice(0, session.indexOf('\n    }'));
+        expect(body.length).toBeGreaterThan(0);
+        expect(body).not.toContain('saveData');
+        expect(body).not.toContain('this.settings =');
+        expect(body).toContain('this.applyActiveProfile()');
     });
 
     it('uses the deferred path for the token controls', () => {

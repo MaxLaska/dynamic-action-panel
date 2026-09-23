@@ -51,6 +51,8 @@
     /* A font chosen under Appearance is the user's, not the theme's, and is
      * honoured; the THEME slot is skipped. */
     --nexus-studio-font: var(--font-interface-override), var(--font-default);
+    /* Behind every translucent colour the studio shows. */
+    --nexus-studio-checker: repeating-conic-gradient(var(--color-base-35) 0% 25%, var(--color-base-05) 0% 50%) 50% / 8px 8px;
 
     /* Obsidian's variables, pointed at the palette for this subtree. The list
      * is every variable theme.css re-points, plus the neighbours Obsidian's own
@@ -152,6 +154,37 @@
     z-index: 2147483000;
     background: transparent;
     cursor: crosshair;
+}
+
+/* Keyboard aiming: a page cannot move the OS cursor, so it draws a cross of
+ * its own — black and white, neutral on any surface, never tinted. Removed,
+ * like the hint, before anything is captured. */
+.nexus-studio-pick-reticle {
+    position: absolute;
+    width: 21px;
+    height: 21px;
+    margin: -10px 0 0 -10px;
+    pointer-events: none;
+    background:
+        linear-gradient(#000, #000) 50% 0 / 3px 8px no-repeat,
+        linear-gradient(#000, #000) 50% 100% / 3px 8px no-repeat,
+        linear-gradient(#000, #000) 0 50% / 8px 3px no-repeat,
+        linear-gradient(#000, #000) 100% 50% / 8px 3px no-repeat;
+}
+
+.nexus-studio-pick-reticle::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(#fff, #fff) 50% 0 / 1px 7px no-repeat,
+        linear-gradient(#fff, #fff) 50% 100% / 1px 7px no-repeat,
+        linear-gradient(#fff, #fff) 0 50% / 7px 1px no-repeat,
+        linear-gradient(#fff, #fff) 100% 50% / 7px 1px no-repeat;
+}
+
+.nexus-studio-pick-reticle[hidden] {
+    display: none;
 }
 
 .nexus-studio-pick-hint {
@@ -266,10 +299,12 @@
 
 /* --- a token row ----------------------------------------------------------
  *
- *   [swatch]  Label  •                          [#333333] [pipette] [reset]
+ *   [swatch]  Label  •                          #ffffff  28%  [reset]
  *             one line saying what it paints
- *             Opacity [=========o========] 28%
- *             [ rgba(255, 255, 255, 0.28)                              ]
+ *
+ * A colour row is that and nothing more: the swatch opens the picker, where
+ * everything else about the colour lives. Slider rows add their slider (and
+ * a raw CSS line behind their value chip) on the second line.
  */
 
 .nexus-studio-row {
@@ -321,69 +356,62 @@
 
 /* --- the swatch -----------------------------------------------------------
  *
- * The visible circle is OUR element, painting the stored CSS string through a
- * custom property over a checkerboard, so a translucent splitter white is
- * visible as translucent and a `color-mix()` shows its real colour. The native
- * colour input sits invisibly across it and is what receives the click.
- *
- * This is also why the hover and focus ring can no longer be clipped. The ring
- * in the old settings tab belonged to Obsidian's styling of a native colour
- * input, which is 4px too short for its own padding. Here the ring is a
- * box-shadow on an element that has the row's padding all round it.
+ * A button painting the stored CSS string through a custom property over a
+ * checkerboard, so a translucent splitter white is visible as translucent and
+ * a `color-mix()` shows its real colour. It is the one way into editing a
+ * colour: it opens the Nexus picker. No native colour input sits under it any
+ * more, so nothing here can open Chromium's colour popup.
  */
 
-.nexus-studio-swatch {
+.nexus-studio .nexus-studio-swatch {
     grid-area: swatch;
     /* Beside the label, not centred on label-plus-description: in a narrow
      * dock the description runs to three lines and a centred circle floats
      * away from the name it belongs to. */
     align-self: start;
-    position: relative;
     display: block;
     flex: 0 0 auto;
     width: var(--swatch-width);
     height: var(--swatch-height);
+    padding: 0;
+    border: 0;
     border-radius: 50%;
     background:
         linear-gradient(var(--nexus-studio-swatch), var(--nexus-studio-swatch)),
-        repeating-conic-gradient(var(--background-modifier-border) 0% 25%, transparent 0% 50%) 50% / 8px 8px;
-    box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+        repeating-conic-gradient(var(--nexus-studio-border) 0% 25%, transparent 0% 50%) 50% / 8px 8px;
+    box-shadow: inset 0 0 0 1px var(--nexus-studio-border);
+    cursor: var(--cursor);
 }
 
-.nexus-studio-swatch:hover,
-.nexus-studio-swatch:has(.nexus-studio-picker:focus-visible) {
+.nexus-studio .nexus-studio-swatch:hover,
+.nexus-studio .nexus-studio-swatch:focus-visible,
+.nexus-studio .nexus-studio-swatch[aria-expanded='true'] {
     box-shadow:
-        inset 0 0 0 1px var(--background-modifier-border),
-        0 0 0 2px var(--background-modifier-border-focus);
+        inset 0 0 0 1px var(--nexus-studio-border),
+        0 0 0 2px var(--nexus-studio-focus);
+}
+
+.nexus-studio .nexus-studio-swatch:disabled {
+    cursor: default;
+    box-shadow: inset 0 0 0 1px var(--nexus-studio-border);
 }
 
 /* A value the picker cannot represent: still painted, but visibly not a
  * picker-editable colour. */
-.nexus-studio-swatch.is-complex {
-    outline: 1px dashed var(--text-faint);
+.nexus-studio .nexus-studio-swatch.is-complex {
+    outline: 1px dashed var(--nexus-studio-text-faint);
     outline-offset: 2px;
 }
 
-/* Beats Obsidian's global `input[type="color"]` sizing. */
-.nexus-studio .nexus-studio-swatch input.nexus-studio-picker {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    opacity: 0;
-    cursor: var(--cursor);
-}
-
-.nexus-studio .nexus-studio-swatch input.nexus-studio-picker:disabled {
-    cursor: default;
+/* The row whose picker is open. */
+.nexus-studio-row.is-editing {
+    background-color: var(--background-modifier-hover);
 }
 
 /* --- the value chip -------------------------------------------------------
  *
- * A compact readout, and the disclosure for the raw CSS editor. One fixed
+ * A compact readout — on a slider row also the disclosure for the raw CSS
+ * editor; on a colour row only the readout. One fixed
  * width on every row, so a column of values does not ripple when one of them
  * changes length.
  */
@@ -402,8 +430,8 @@
     cursor: var(--cursor);
 }
 
-.nexus-studio .nexus-studio-value:hover,
-.nexus-studio .nexus-studio-value[aria-expanded='true'] {
+.nexus-studio button.nexus-studio-value:hover,
+.nexus-studio button.nexus-studio-value[aria-expanded='true'] {
     border-color: var(--background-modifier-border);
     color: var(--text-normal);
 }
@@ -419,31 +447,13 @@
     font-style: italic;
 }
 
-.nexus-studio .nexus-studio-reset:disabled,
-.nexus-studio .nexus-studio-pipette:disabled {
+.nexus-studio .nexus-studio-reset:disabled {
     opacity: 0.3;
     cursor: default;
 }
 
-/* --- opacity --------------------------------------------------------------- */
-
-.nexus-studio-row-alpha {
-    grid-area: alpha;
-    display: flex;
-    align-items: center;
-    gap: var(--size-4-2);
-    min-width: 0;
-}
-
-.nexus-studio-row-alpha-label {
-    font-size: var(--font-ui-smaller);
-    color: var(--text-muted);
-}
-
-.nexus-studio .nexus-studio-alpha {
-    flex: 1 1 auto;
-    min-width: 0;
-}
+/* --- opacity, as a readout ---------------------------------------------------
+ * The control is in the picker; the row only says how much. */
 
 .nexus-studio-alpha-readout {
     min-width: 4ch;
@@ -603,6 +613,332 @@
 
 .nexus-studio .nexus-studio-css-input[aria-invalid='true'] {
     border-color: var(--text-error);
+}
+
+/* --- the colour picker --------------------------------------------------------
+ *
+ * On the document body, beside its swatch, and on the control plane palette
+ * like the rest of the studio: `.nexus-studio-isolated` re-points Obsidian's
+ * variables for this subtree, and everything below paints from
+ * `--nexus-studio-*`. The colour being edited appears only where it is the
+ * content — the square, the bars, the swatches — never as the picker's own
+ * text or surface.
+ */
+
+.nexus-studio-popover {
+    position: fixed;
+    z-index: var(--layer-popover, 30);
+    box-sizing: border-box;
+    width: 248px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-2);
+    padding: var(--size-4-2) var(--size-4-3) var(--size-4-3);
+    border-radius: var(--radius-m);
+    background-color: var(--nexus-studio-surface-elevated);
+    color: var(--nexus-studio-text);
+    box-shadow:
+        0 0 0 1px var(--nexus-studio-border),
+        0 8px 24px rgba(0, 0, 0, 0.35);
+    font-family: var(--nexus-studio-font);
+    font-size: 13px;
+    line-height: 1.3;
+}
+
+/* Hidden while Pick from Obsidian aims, so what is under it can be taken too. */
+.nexus-studio-popover.is-sampling {
+    visibility: hidden;
+}
+
+.nexus-studio-popover [hidden] {
+    display: none;
+}
+
+.nexus-studio-popover button:focus-visible,
+.nexus-studio-popover input:focus-visible,
+.nexus-studio-popover .nexus-studio-cp-area:focus-visible {
+    outline: 2px solid var(--nexus-studio-focus);
+    outline-offset: 1px;
+}
+
+.nexus-studio-cp-head {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+}
+
+/* Before and now, side by side: what Esc returns to, and the draft. */
+.nexus-studio-cp-compare {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 36px;
+    height: 24px;
+    border-radius: var(--radius-s);
+    overflow: hidden;
+    background: var(--nexus-studio-checker);
+    box-shadow: inset 0 0 0 1px var(--nexus-studio-border);
+}
+
+.nexus-studio-cp-before,
+.nexus-studio-cp-now {
+    flex: 1 1 50%;
+    background-color: var(--nexus-studio-swatch);
+}
+
+.nexus-studio-cp-titles {
+    min-width: 0;
+}
+
+.nexus-studio-cp-title {
+    font-weight: var(--font-semibold);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nexus-studio-cp-readout {
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    color: var(--nexus-studio-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nexus-studio-popover.is-custom .nexus-studio-cp-readout {
+    color: var(--text-accent);
+    font-style: italic;
+}
+
+.nexus-studio-cp-custom {
+    font-size: 12px;
+    color: var(--nexus-studio-text-muted);
+}
+
+.nexus-studio-cp-custom strong {
+    color: var(--nexus-studio-text);
+}
+
+.nexus-studio-popover .nexus-studio-cp-convert {
+    display: block;
+    margin-top: var(--size-4-1);
+}
+
+.nexus-studio-cp-visual {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-2);
+}
+
+/* The square: saturation left to right, brightness bottom to top, over the
+ * pure hue. */
+.nexus-studio-cp-area {
+    position: relative;
+    height: 132px;
+    border-radius: var(--radius-s);
+    background:
+        linear-gradient(to top, #000, transparent),
+        linear-gradient(to right, #fff, transparent),
+        var(--nexus-studio-cp-hue, #f00);
+    box-shadow: inset 0 0 0 1px var(--nexus-studio-border);
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.nexus-studio-cp-thumb {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border-radius: 50%;
+    box-shadow:
+        0 0 0 2px #fff,
+        0 0 0 3px rgba(0, 0, 0, 0.6),
+        inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+}
+
+.nexus-studio-popover input[type='range'] {
+    width: 100%;
+    margin: 0;
+}
+
+.nexus-studio-popover .nexus-studio-cp-hue {
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+}
+
+.nexus-studio-cp-alpha-line {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1);
+}
+
+.nexus-studio-popover .nexus-studio-cp-alpha {
+    flex: 1 1 auto;
+    height: 12px;
+    border-radius: 6px;
+    background:
+        linear-gradient(to right, transparent, var(--nexus-studio-cp-opaque, #000)),
+        var(--nexus-studio-checker);
+}
+
+.nexus-studio-popover .nexus-studio-cp-alpha-number {
+    width: 5ch;
+    flex: 0 0 auto;
+}
+
+.nexus-studio-cp-unit {
+    color: var(--nexus-studio-text-muted);
+}
+
+.nexus-studio-cp-formats {
+    display: flex;
+    gap: 2px;
+}
+
+.nexus-studio-popover .nexus-studio-cp-format {
+    flex: 1 1 0;
+    height: auto;
+    padding: 2px 0;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    background-color: transparent;
+    box-shadow: inset 0 0 0 1px var(--nexus-studio-border);
+    color: var(--nexus-studio-text-muted);
+}
+
+.nexus-studio-popover .nexus-studio-cp-format[aria-pressed='true'] {
+    background-color: var(--nexus-studio-hover);
+    color: var(--nexus-studio-text);
+}
+
+.nexus-studio-cp-fields {
+    display: flex;
+    gap: var(--size-4-1);
+}
+
+.nexus-studio-cp-field-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1 1 0;
+    min-width: 0;
+    gap: 2px;
+}
+
+.nexus-studio-popover .nexus-studio-cp-field {
+    width: 100%;
+    min-width: 0;
+    text-align: center;
+    font-family: var(--font-monospace);
+    font-size: 12px;
+}
+
+.nexus-studio-cp-field-label {
+    font-size: 10px;
+    color: var(--nexus-studio-text-faint);
+}
+
+.nexus-studio-popover [aria-invalid='true'] {
+    border-color: var(--text-error);
+}
+
+.nexus-studio-popover .nexus-studio-cp-sample {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--size-4-1);
+    height: auto;
+    padding: 4px var(--size-4-2);
+}
+
+.nexus-studio-cp-sample-icon {
+    display: inline-flex;
+    --icon-size: var(--icon-xs);
+}
+
+.nexus-studio-cp-palette-label {
+    font-size: 11px;
+    color: var(--nexus-studio-text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+}
+
+.nexus-studio-cp-swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 22px);
+    gap: 4px;
+}
+
+/* A saved colour over the checkerboard, so a translucent one looks it. */
+.nexus-studio-popover .nexus-studio-cp-swatch,
+.nexus-studio-popover .nexus-studio-cp-add {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-s);
+    box-shadow: inset 0 0 0 1px var(--nexus-studio-border);
+}
+
+.nexus-studio-popover .nexus-studio-cp-swatch {
+    background:
+        linear-gradient(var(--nexus-studio-swatch), var(--nexus-studio-swatch)),
+        var(--nexus-studio-checker);
+}
+
+.nexus-studio-popover .nexus-studio-cp-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: transparent;
+    color: var(--nexus-studio-text-muted);
+    --icon-size: var(--icon-xs);
+}
+
+.nexus-studio-popover .nexus-studio-cp-add:disabled {
+    opacity: 0.4;
+}
+
+.nexus-studio-popover .nexus-studio-cp-advanced-toggle {
+    align-self: flex-start;
+    height: auto;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+    font-size: 12px;
+    color: var(--nexus-studio-text-muted);
+}
+
+.nexus-studio-popover .nexus-studio-cp-advanced-toggle::before {
+    content: '\25B8  ';
+}
+
+.nexus-studio-popover .nexus-studio-cp-advanced-toggle[aria-expanded='true']::before {
+    content: '\25BE  ';
+}
+
+.nexus-studio-popover .nexus-studio-cp-css {
+    width: 100%;
+    font-family: var(--font-monospace);
+    font-size: 12px;
+}
+
+.nexus-studio-cp-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--size-4-2);
+}
+
+.nexus-studio-popover .nexus-studio-cp-actions button {
+    height: auto;
+    padding: 3px var(--size-4-3);
 }
 
 /* --- narrow docks ---------------------------------------------------------

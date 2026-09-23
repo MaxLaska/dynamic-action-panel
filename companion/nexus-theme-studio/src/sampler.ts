@@ -22,25 +22,23 @@
 // the screen sampler is not: it reads what the page drew, before the display's
 // colour profile touches it — the CSS value, which is what a token holds.
 //
-// Its one limit is the reason the native pipette stays as a fallback: it sees
-// this window and nothing else. That is the whole of the job here — the colours
-// worth taking are Obsidian's — and where `capturePage` is not reachable, the
-// native sampler is used rather than nothing.
+// Its one limit: it sees this window and nothing else. That is the whole of the
+// job here — the colours worth taking are Obsidian's. Where `capturePage` is
+// not reachable there is NO sampler: the native pipette, red grid and all, is
+// deliberately not a fallback any more. It was the thing the user kept landing
+// in by accident, and a pipette that sometimes draws a red grid is not one
+// tool. (The native `<input type="color">` is gone from the studio for the same
+// reason; see colorPicker.ts.)
 //
 // It is deliberately NOT a screenshot tool: one pixel, one click, no zoom
 // window, no history, nothing kept.
 
 import { webContentsOf, toWindowPoint, type CapturedImage } from './electronSurface';
-import { eyedropperAvailable, pickScreenColor } from './eyedropper';
 import { afterPaint, pickPoint } from './pickPoint';
 
-/** Which sampler a window offers. */
-export type SamplerKind = 'capture' | 'eyedropper' | 'none';
-
-export function samplerKind(win: Window): SamplerKind {
-    if (webContentsOf(win)) return 'capture';
-    if (eyedropperAvailable(win)) return 'eyedropper';
-    return 'none';
+/** Whether this window can take a colour from its own rendering. */
+export function canSample(win: Window): boolean {
+    return webContentsOf(win) !== null;
 }
 
 /** Reads the top-left pixel of a captured image as RGBA 0–255. */
@@ -93,12 +91,12 @@ const hex = (value: number) => Math.max(0, Math.min(255, Math.round(value))).toS
  */
 export function sampleColor(win: Window, decode: PixelDecoder = decodeFirstPixel): SampleSession {
     const wc = webContentsOf(win);
-    if (!wc) {
-        // The native pipette: red grid and all, but a colour rather than none.
-        return { result: pickScreenColor(win), cancel: () => undefined };
-    }
+    if (!wc) return { result: Promise.resolve(null), cancel: () => undefined };
 
-    const pick = pickPoint(win.document, 'Click to take a colour · Esc to cancel');
+    const pick = pickPoint(
+        win.document,
+        'Click to take a colour · arrows aim, Enter takes · Esc cancels'
+    );
     const result = (async (): Promise<string | null> => {
         const point = await pick.result;
         if (!point) return null;

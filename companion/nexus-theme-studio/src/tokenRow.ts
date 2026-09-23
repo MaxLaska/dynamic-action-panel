@@ -12,7 +12,11 @@
 // one line of description, and on the right the value readout and the reset —
 // and below it the editor its `controlType` calls for:
 //
-//   color        swatch, pipette, opacity where `supportsAlpha`, raw CSS
+//   color        the swatch, which opens the Nexus colour picker; a compact
+//                readout of the value and, where there is one, the opacity.
+//                Everything else about a colour — the square, the fields,
+//                Pick from Obsidian, the palette, the raw CSS — lives in the
+//                picker (colorPicker.ts), in ONE place.
 //   length       a slider over the registry's range, raw CSS
 //   number       the same, unitless
 //   font-family  suggestions and the family list itself, which IS the raw CSS
@@ -30,12 +34,7 @@
 import { setIcon, setTooltip } from 'obsidian';
 
 import type { ThemeTokenDefinition } from '../../../theme/nexus/src/tokens';
-import {
-    alphaToPercent,
-    formatColorValue,
-    parseColorValue,
-    percentToAlpha,
-} from './colorValue';
+import { alphaToPercent, parseColorValue } from './colorValue';
 import { button, docOf, el } from './dom';
 import { isValidValueFor } from './overrides';
 
@@ -51,13 +50,12 @@ export interface TokenRowHost {
     write(token: ThemeTokenDefinition, value: string | null): void;
     /** Starts or stops the locator preview for this token. */
     preview(token: ThemeTokenDefinition | null): void;
-    /**
-     * How colours can be taken off the screen here, or null when they cannot.
-     * `capture` reads Obsidian's own rendering; `screen` is the native pipette.
-     */
-    readonly pickKind: 'capture' | 'screen' | null;
-    /** Takes a colour off the screen; null when cancelled. Writes nothing. */
-    pickColor(): Promise<string | null>;
+    /** Opens the colour picker for this token at its swatch, or closes it if open. */
+    openPicker(token: ThemeTokenDefinition, anchor: HTMLElement): void;
+    /** Whether the picker is open for this token. */
+    pickerOpenFor(token: ThemeTokenDefinition): boolean;
+    /** Whether any picker is open; the locator stays off while one is. */
+    pickerActive(): boolean;
     /** The window this row lives in, for timers. */
     win: Window;
 }
@@ -120,9 +118,13 @@ export function renderTokenRow(
     });
 
     // --- the shell ---------------------------------------------------------
-    const preview = el(row, token.controlType === 'color' ? 'label' : 'div', {
-        cls: token.controlType === 'color' ? 'nexus-studio-swatch' : 'nexus-studio-glyph',
-    });
+    const preview =
+        token.controlType === 'color'
+            ? button(row, {
+                  cls: 'nexus-studio-swatch',
+                  attr: { 'aria-label': `${token.label}: open colour picker`, 'aria-haspopup': 'dialog' },
+              })
+            : el(row, 'div', { cls: 'nexus-studio-glyph' });
     const text = el(row, 'div', { cls: 'nexus-studio-row-text' });
     el(text, 'div', { cls: 'nexus-studio-row-label', text: token.label });
     el(text, 'div', { cls: 'nexus-studio-row-desc', text: token.description });
@@ -133,11 +135,11 @@ export function renderTokenRow(
         sync();
     };
 
-    // The value chip and its raw editor, for every kind whose main control is
-    // not already the raw text (font families are).
+    // The value chip and its raw editor, for the slider kinds. A font family
+    // IS its raw text; a colour's raw text lives in the picker.
     let cssInput: HTMLInputElement | null = null;
-    let chip: HTMLButtonElement | null = null;
-    if (token.controlType !== 'font-family') {
+    let chip: HTMLElement | null = null;
+    if (token.controlType === 'length' || token.controlType === 'number') {
         const cssId = `nexus-studio-css-${serial}`;
         chip = button(actions, {
             cls: 'nexus-studio-value',
@@ -189,10 +191,9 @@ export function renderTokenRow(
     };
 
     // --- the editor for this kind --------------------------------------------
-    let pipette: HTMLButtonElement | null = null;
     switch (token.controlType) {
         case 'color':
-            pipette = buildColorEditor();
+            buildColorEditor();
             break;
         case 'length':
         case 'number':
@@ -219,7 +220,11 @@ export function renderTokenRow(
     if (token.controlType === 'color') {
         const start = (): void => {
             win.clearTimeout(hoverTimer);
-            hoverTimer = win.setTimeout(() => host.preview(token), LOCATOR_DELAY_MS);
+            // An open picker is showing a draft; a hover must not paint over it.
+            if (host.pickerActive()) return;
+            hoverTimer = win.setTimeout(() => {
+                if (!host.pickerActive()) host.preview(token);
+            }, LOCATOR_DELAY_MS);
         };
         const stop = (): void => {
             win.clearTimeout(hoverTimer);
@@ -230,99 +235,46 @@ export function renderTokenRow(
         listen(row, 'pointerleave', stop, detaches);
     }
 
-    function buildColorEditor(): HTMLButtonElement | null {
-        // A label wrapping an invisible native colour input. The label paints
-        // the STORED STRING through a custom property — so it shows
-        // translucency and `color-mix()` truthfully — and the input across it
-        // takes the click. Owning the input is what makes it live: Obsidian's
-        // ColorComponent listens for `change` only, which does not arrive until
-        // the native picker is dismissed.
-        const picker = el(preview, 'input', {
-            cls: 'nexus-studio-picker',
-            attr: { type: 'color', 'aria-label': `${token.label} colour` },
-        });
-
-        const parsed = () => parseColorValue(host.currentValue(token));
-        const writeColor = (hexValue: string, nextAlpha?: number): void => {
+    function buildColorEditor(): void {
+        // The swatch paints the STORED STRING through a custom property — so it
+        // shows translucency and `color-mix()` truthfully — and is the one way
+        // into editing: it opens the Nexus picker. There is no native colour
+        // input any more, so there is no way into Chromium's popup and its
+        // red-gridded pipette from here.
+        listen(preview, 'click', () => {
             if (host.isLocked()) return;
-            commit(formatColorValue(hexValue, nextAlpha ?? parsed()?.alpha ?? 1));
-        };
-        // `input` streams while the colour moves; `change` covers the keyboard
-        // path and any platform where the picker only commits.
-        listen(picker, 'input', () => writeColor(picker.value), detaches);
-        listen(picker, 'change', () => writeColor(picker.value), detaches);
+            win.clearTimeout(hoverTimer);
+            hoverTimer = 0;
+            // The locator goes first: a picker opened over magenta would
+            // start from the preview colour, not the token's.
+            host.preview(null);
+            host.openPicker(token, preview);
+            sync();
+        }, detaches);
 
-        let tool: HTMLButtonElement | null = null;
-        if (host.pickKind) {
-            const tip =
-                host.pickKind === 'capture'
-                    ? 'Take a colour from Obsidian'
-                    : 'Pick a colour from the screen';
-            const theTool = button(actions, {
-                cls: ['clickable-icon', 'nexus-studio-pipette'],
-                attr: { 'aria-label': tip },
-            });
-            tool = theTool;
-            setIcon(theTool, 'pipette');
-            setTooltip(theTool, tip);
-            listen(theTool, 'click', () => {
-                if (host.isLocked()) return;
-                // The preview goes first, or the pick would take the locator's
-                // magenta off the very surface being sampled.
-                win.clearTimeout(hoverTimer);
-                host.preview(null);
-                void host.pickColor().then((picked) => {
-                    if (picked !== null) writeColor(picked);
-                });
-            }, detaches);
-        }
-
-        let alpha: HTMLInputElement | null = null;
-        let readout: HTMLElement | null = null;
+        // A readout, not a control: the value in words, and the opacity.
+        const theChip = el(actions, 'span', { cls: 'nexus-studio-value' });
+        chip = theChip;
+        let alphaReadout: HTMLElement | null = null;
         if (token.supportsAlpha) {
-            const line = el(row, 'div', { cls: 'nexus-studio-row-alpha' });
-            el(line, 'span', { cls: 'nexus-studio-row-alpha-label', text: 'Opacity' });
-            const slider = el(line, 'input', {
-                cls: 'nexus-studio-alpha',
-                attr: {
-                    type: 'range',
-                    min: '0',
-                    max: '100',
-                    step: '1',
-                    'aria-label': `${token.label} opacity`,
-                },
-            });
-            alpha = slider;
-            readout = el(line, 'span', { cls: 'nexus-studio-alpha-readout' });
-            listen(slider, 'input', () => {
-                const current = parsed();
-                if (!current) return;
-                writeColor(current.hex, percentToAlpha(Number(slider.value)));
-            }, detaches);
+            alphaReadout = el(actions, 'span', { cls: 'nexus-studio-alpha-readout' });
         }
 
         syncs.push(() => {
-            const locked = host.isLocked();
             const value = host.currentValue(token);
             const colour = parseColorValue(value);
-            const focused = docOf(row).activeElement;
+            const open = host.pickerOpenFor(token);
             preview.style.setProperty('--nexus-studio-swatch', value);
             preview.classList.toggle('is-complex', colour === null);
-            picker.disabled = locked || colour === null;
-            if (colour && picker.value !== colour.hex) picker.value = colour.hex;
-            if (chip) {
-                chip.textContent = colour ? colour.hex : COMPLEX_VALUE_LABEL;
-                chip.classList.toggle('is-complex', colour === null);
+            (preview as HTMLButtonElement).disabled = host.isLocked();
+            preview.setAttribute('aria-expanded', open ? 'true' : 'false');
+            row.classList.toggle('is-editing', open);
+            theChip.textContent = colour ? colour.hex : COMPLEX_VALUE_LABEL;
+            theChip.classList.toggle('is-complex', colour === null);
+            if (alphaReadout) {
+                alphaReadout.textContent = colour ? `${alphaToPercent(colour.alpha)}%` : '—';
             }
-            if (alpha && readout) {
-                alpha.disabled = locked || colour === null;
-                const percent = colour ? alphaToPercent(colour.alpha) : 100;
-                if (focused !== alpha && alpha.value !== String(percent)) alpha.value = String(percent);
-                readout.textContent = colour ? `${percent}%` : '—';
-            }
-            if (tool) tool.disabled = locked;
         });
-        return tool;
     }
 
     function buildRangeEditor(): void {
@@ -431,7 +383,6 @@ export function renderTokenRow(
         const overridden = host.isOverridden(token);
         reset.disabled = locked || !overridden;
         row.classList.toggle('is-overridden', overridden);
-        if (pipette) pipette.disabled = locked;
     }
 
     sync();

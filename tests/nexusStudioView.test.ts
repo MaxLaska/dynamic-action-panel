@@ -9,10 +9,10 @@
 // that could have caught it, so that is the kind this file is.
 //
 // Everything Obsidian-specific the panel needs arrives through a host object,
-// which is faked here the way the plugin behaves: `update` rebuilds the view,
-// `updateLive` applies without rebuilding, `updateUi` touches only UI state.
-// The native colour dialog and the screen sampler are the operating system's;
-// the sampler is faked at the `window.EyeDropper` seam and nothing below it.
+// faked the way the plugin behaves (tests/support/nexusStudioHarness.ts):
+// `update` rebuilds the view, `updateLive` applies without rebuilding,
+// `updateUi` touches only UI state. The colour picker itself is pinned in
+// tests/nexusColorPicker.test.ts.
 
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,6 +21,7 @@ import { NEXUS_GROUPS, NEXUS_TOKENS, nexusToken } from '../theme/nexus/src/token
 import { openStudio, type StudioOpener } from '../companion/nexus-theme-studio/src/open';
 import {
     FIRST_PROFILE_ID,
+    SETTINGS_VERSION,
     STANDARD_PROFILE_ID,
     activeProfile,
     defaultSettings,
@@ -29,13 +30,11 @@ import {
     setActiveProfile,
     setGroupCollapsed,
     setOverride,
-    type NexusStudioSettings,
 } from '../companion/nexus-theme-studio/src/profiles';
 import {
     ADVANCED_GROUP,
     CONTRAST_GROUP,
     StudioPanel,
-    type StudioMenuAction,
     type StudioPanelHost,
 } from '../companion/nexus-theme-studio/src/studioPanel';
 import {
@@ -51,113 +50,12 @@ import {
     type StudioServices,
 } from '../companion/nexus-theme-studio/src/view';
 import type { WorkspaceLeaf } from 'obsidian';
+import { fire, makeHost, mount, type } from './support/nexusStudioHarness';
 
 const WORKSPACE = nexusToken('workspaceSurface')!;
 const DOCUMENT = nexusToken('documentSurface')!;
 const SPLITTER_HOVER = nexusToken('splitterHover')!;
 const SPLITTER_IDLE = nexusToken('splitterIdle')!;
-
-/** A host that behaves like the plugin, recording what the panel asked of it. */
-function makeHost(initial: NexusStudioSettings = defaultSettings()) {
-    let settings = initial;
-    const log = {
-        update: 0,
-        updateLive: 0,
-        updateUi: 0,
-        previews: [] as string[][],
-        menus: [] as StudioMenuAction[][],
-        notices: [] as string[],
-    };
-    let panel: StudioPanel | null = null;
-    const host: StudioPanelHost = {
-        settings: () => settings,
-        themeIsActive: () => true,
-        update: (next) => {
-            settings = next;
-            log.update += 1;
-            // The plugin rebuilds every studio view after a discrete change.
-            panel?.render();
-            return Promise.resolve();
-        },
-        updateLive: (next) => {
-            settings = next;
-            log.updateLive += 1;
-        },
-        updateUi: (next) => {
-            settings = next;
-            log.updateUi += 1;
-            panel?.syncCollapse();
-            return Promise.resolve();
-        },
-        setPreview: (variables) => {
-            log.previews.push([...variables]);
-        },
-        promptName: () => Promise.resolve('Named'),
-        openTransfer: () => undefined,
-        showMenu: (_evt, actions) => {
-            log.menus.push(actions);
-        },
-        notify: (message) => {
-            log.notices.push(message);
-        },
-    };
-    return {
-        host,
-        log,
-        get settings() {
-            return settings;
-        },
-        attach(next: StudioPanel) {
-            panel = next;
-        },
-    };
-}
-
-/** Renders a panel into the live document and hands back its parts. */
-function mount(initial?: NexusStudioSettings) {
-    const root = document.createElement('div');
-    document.body.appendChild(root);
-    const fake = makeHost(initial);
-    const panel = new StudioPanel(root, fake.host);
-    fake.attach(panel);
-    panel.render();
-    const q = <T extends Element>(selector: string) => root.querySelector<T>(selector);
-    const group = (key: string) => q<HTMLElement>(`.nexus-studio-group[data-group="${key}"]`)!;
-    const header = (key: string) =>
-        group(key).querySelector<HTMLButtonElement>('.nexus-studio-group-header')!;
-    const body = (key: string) => group(key).querySelector<HTMLElement>('.nexus-studio-group-body')!;
-    const row = (key: string) => q<HTMLElement>(`.nexus-studio-row[data-token="${key}"]`)!;
-    const inRow = <T extends Element>(key: string, selector: string) =>
-        row(key).querySelector<T>(selector)!;
-    // Not `...fake`: spreading evaluates the `settings` getter once, and every
-    // assertion afterwards would read the settings as they were at mount.
-    return {
-        root,
-        panel,
-        host: fake.host,
-        log: fake.log,
-        get settings() {
-            return fake.settings;
-        },
-        q,
-        group,
-        header,
-        body,
-        row,
-        inRow,
-    };
-}
-
-/** Fires an event of any name, the way a real control would. */
-function fire(target: Element, type: string): void {
-    target.dispatchEvent(new Event(type, { bubbles: true }));
-}
-
-/** Types a value into an input and fires `input`, as the browser does per keystroke. */
-function type(input: HTMLInputElement, value: string): void {
-    input.value = value;
-    fire(input, 'input');
-}
 
 beforeEach(() => {
     document.body.replaceChildren();
@@ -165,7 +63,6 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.useRealTimers();
-    delete (window as unknown as { EyeDropper?: unknown }).EyeDropper;
 });
 
 describe('the studio is a workspace view', () => {
@@ -180,6 +77,8 @@ describe('the studio is a workspace view', () => {
             setPreview: (variables) => {
                 previews.push([...variables]);
             },
+            setSessionValue: () => undefined,
+            sessionValue: () => undefined,
         };
         const leaf = { app: {} } as unknown as WorkspaceLeaf;
         const view = new NexusStudioView(leaf, services);
@@ -441,8 +340,10 @@ describe('the per-token reset', () => {
         const ui = mount();
         const reset = ui.inRow<HTMLButtonElement>(WORKSPACE.key, '.nexus-studio-reset');
         expect(reset.disabled).toBe(true);
-        const picker = ui.inRow<HTMLInputElement>(WORKSPACE.key, '.nexus-studio-picker');
-        type(picker, '#445566');
+        // Through the picker: a change, then Done.
+        ui.inRow<HTMLButtonElement>(WORKSPACE.key, '.nexus-studio-swatch').click();
+        type(document.querySelector<HTMLInputElement>('.nexus-studio-cp-field[data-field="hex"]')!, '#445566');
+        document.querySelector<HTMLButtonElement>('.nexus-studio-cp-done')!.click();
         expect(ui.log.update).toBe(0);
         expect(reset.disabled).toBe(false);
     });
@@ -460,9 +361,9 @@ describe('the per-token reset', () => {
         expect(ui.inRow<HTMLElement>(WORKSPACE.key, '.nexus-studio-value').textContent).toBe(
             WORKSPACE.defaultValue
         );
-        expect(ui.inRow<HTMLInputElement>(WORKSPACE.key, '.nexus-studio-picker').value).toBe(
-            WORKSPACE.defaultValue
-        );
+        expect(ui.inRow<HTMLElement>(WORKSPACE.key, '.nexus-studio-swatch').style.getPropertyValue(
+            '--nexus-studio-swatch'
+        )).toBe(WORKSPACE.defaultValue);
         expect(ui.inRow<HTMLButtonElement>(WORKSPACE.key, '.nexus-studio-reset').disabled).toBe(true);
     });
 
@@ -480,7 +381,7 @@ describe('the per-token reset', () => {
         // The main editor of each kind of control, so a new kind cannot slip
         // past the lock without this list being extended.
         const editorOf: Record<string, string> = {
-            color: '.nexus-studio-picker',
+            color: '.nexus-studio-swatch',
             length: '.nexus-studio-range',
             number: '.nexus-studio-range',
             'font-family': '.nexus-studio-font-input',
@@ -494,64 +395,56 @@ describe('the per-token reset', () => {
     });
 });
 
-describe('colour is edited visually, and live', () => {
-    it('writes on input, not on change — while the picker is still open', () => {
+describe('a colour row is a swatch and a readout', () => {
+    // Everything else about a colour lives in the picker. The row used to
+    // carry four ways into the same value; it carries one.
+    it('has no native colour input, no pipette, no opacity slider and no raw CSS line', () => {
         const ui = mount();
-        type(ui.inRow<HTMLInputElement>(WORKSPACE.key, '.nexus-studio-picker'), '#abcdef');
-        expect(ui.log.updateLive).toBe(1);
-        expect(activeProfile(ui.settings).overrides[WORKSPACE.key]).toBe('#abcdef');
-        expect(ui.inRow<HTMLElement>(WORKSPACE.key, '.nexus-studio-value').textContent).toBe('#abcdef');
+        for (const token of NEXUS_TOKENS.filter((entry) => entry.controlType === 'color')) {
+            const row = ui.row(token.key);
+            expect(row.querySelector('input[type="color"]')).toBeNull();
+            expect(row.querySelector('.nexus-studio-pipette')).toBeNull();
+            expect(row.querySelector('input[type="range"]')).toBeNull();
+            expect(row.querySelector('.nexus-studio-row-css')).toBeNull();
+            expect(row.querySelector('.nexus-studio-css-input')).toBeNull();
+            expect(row.querySelector('button.nexus-studio-swatch')).not.toBeNull();
+        }
     });
 
-    // The swatch paints the stored string itself — so it shows translucency
-    // and `color-mix()` truthfully, which a native colour input cannot.
+    // The swatch paints the stored string itself, so it shows translucency
+    // and `color-mix()` truthfully.
     it('paints the swatch with the stored value', () => {
         const ui = mount();
         const swatch = ui.inRow<HTMLElement>(SPLITTER_HOVER.key, '.nexus-studio-swatch');
         expect(swatch.style.getPropertyValue('--nexus-studio-swatch')).toBe(SPLITTER_HOVER.defaultValue);
     });
 
-    it('offers opacity exactly where the registry says', () => {
+    it('reads out the colour, and the opacity exactly where the registry has one', () => {
         const ui = mount();
-        for (const token of NEXUS_TOKENS) {
-            const slider = ui.row(token.key).querySelector('.nexus-studio-alpha');
-            expect(slider !== null).toBe(token.supportsAlpha === true);
+        expect(ui.inRow<HTMLElement>(SPLITTER_HOVER.key, '.nexus-studio-value').textContent).toBe('#ffffff');
+        expect(ui.inRow<HTMLElement>(SPLITTER_HOVER.key, '.nexus-studio-alpha-readout').textContent).toBe('28%');
+        for (const token of NEXUS_TOKENS.filter((entry) => entry.controlType === 'color')) {
+            const readout = ui.row(token.key).querySelector('.nexus-studio-alpha-readout');
+            expect(readout !== null).toBe(token.supportsAlpha === true);
         }
     });
 
-    it('shows a translucent default as colour plus percent, not as rgba text', () => {
-        const ui = mount();
-        const slider = ui.inRow<HTMLInputElement>(SPLITTER_HOVER.key, '.nexus-studio-alpha');
-        expect(slider.value).toBe('28');
-        expect(ui.inRow<HTMLElement>(SPLITTER_HOVER.key, '.nexus-studio-alpha-readout').textContent).toBe('28%');
-        expect(ui.inRow<HTMLElement>(SPLITTER_HOVER.key, '.nexus-studio-value').textContent).toBe('#ffffff');
-    });
-
-    it('moves opacity live and keeps the colour', () => {
-        const ui = mount();
-        type(ui.inRow<HTMLInputElement>(SPLITTER_HOVER.key, '.nexus-studio-alpha'), '60');
-        expect(activeProfile(ui.settings).overrides[SPLITTER_HOVER.key]).toBe('rgba(255, 255, 255, 0.6)');
-        expect(ui.inRow<HTMLElement>(SPLITTER_HOVER.key, '.nexus-studio-alpha-readout').textContent).toBe('60%');
-    });
-
-    it('moves colour live and keeps the opacity', () => {
-        const ui = mount();
-        type(ui.inRow<HTMLInputElement>(SPLITTER_HOVER.key, '.nexus-studio-picker'), '#ff0000');
-        expect(activeProfile(ui.settings).overrides[SPLITTER_HOVER.key]).toBe('rgba(255, 0, 0, 0.28)');
-    });
-
-    it('treats opacity 0 and 100 as values, not as edge cases', () => {
-        const ui = mount();
-        const slider = ui.inRow<HTMLInputElement>(SPLITTER_HOVER.key, '.nexus-studio-alpha');
-        type(slider, '0');
-        expect(activeProfile(ui.settings).overrides[SPLITTER_HOVER.key]).toBe('rgba(255, 255, 255, 0)');
-        type(slider, '100');
-        expect(activeProfile(ui.settings).overrides[SPLITTER_HOVER.key]).toBe('#ffffff');
+    it('says CSS for a value the picker cannot show, and still paints it', () => {
+        const complex = 'color-mix(in oklch, #333333 90%, #88aaff 10%)';
+        const ui = mount(setOverride(defaultSettings(), FIRST_PROFILE_ID, WORKSPACE.key, complex));
+        const chip = ui.inRow<HTMLElement>(WORKSPACE.key, '.nexus-studio-value');
+        expect(chip.textContent).toBe(COMPLEX_VALUE_LABEL);
+        expect(chip.getAttribute('title')).toBe(complex);
+        expect(ui.inRow<HTMLElement>(WORKSPACE.key, '.nexus-studio-swatch').style.getPropertyValue(
+            '--nexus-studio-swatch'
+        )).toBe(complex);
     });
 });
 
-describe('the raw CSS value is there, but not in the way', () => {
-    it('is closed on every row by default', () => {
+describe('the raw CSS value of a slider row is there, but not in the way', () => {
+    const SIZE = nexusToken('uiFontSize')!;
+
+    it('is closed on every slider row by default', () => {
         const ui = mount();
         for (const token of NEXUS_TOKENS) {
             if (token.controlType === 'font-family') {
@@ -563,6 +456,7 @@ describe('the raw CSS value is there, but not in the way', () => {
                 );
                 continue;
             }
+            if (token.controlType === 'color') continue;
             expect(ui.inRow<HTMLElement>(token.key, '.nexus-studio-row-css').hidden).toBe(true);
             expect(ui.inRow<HTMLElement>(token.key, '.nexus-studio-value').getAttribute('aria-expanded')).toBe(
                 'false'
@@ -572,66 +466,50 @@ describe('the raw CSS value is there, but not in the way', () => {
 
     it('opens from the value readout, showing the exact stored value', () => {
         const ui = mount();
-        const chip = ui.inRow<HTMLButtonElement>(SPLITTER_HOVER.key, '.nexus-studio-value');
+        const chip = ui.inRow<HTMLButtonElement>(SIZE.key, '.nexus-studio-value');
         chip.click();
-        expect(ui.inRow<HTMLElement>(SPLITTER_HOVER.key, '.nexus-studio-row-css').hidden).toBe(false);
+        expect(ui.inRow<HTMLElement>(SIZE.key, '.nexus-studio-row-css').hidden).toBe(false);
         expect(chip.getAttribute('aria-expanded')).toBe('true');
-        expect(ui.inRow<HTMLInputElement>(SPLITTER_HOVER.key, '.nexus-studio-css-input').value).toBe(
-            SPLITTER_HOVER.defaultValue
-        );
+        expect(ui.inRow<HTMLInputElement>(SIZE.key, '.nexus-studio-css-input').value).toBe(SIZE.defaultValue);
     });
 
-    // A value the picker cannot represent is written as typed, stays exactly
-    // as typed, and the row says an advanced value is active.
     it('keeps a complex value intact and says it is one', () => {
         const ui = mount();
-        ui.inRow<HTMLButtonElement>(WORKSPACE.key, '.nexus-studio-value').click();
-        const complex = 'color-mix(in oklch, #333333 90%, #88aaff 10%)';
-        type(ui.inRow<HTMLInputElement>(WORKSPACE.key, '.nexus-studio-css-input'), complex);
-
-        expect(activeProfile(ui.settings).overrides[WORKSPACE.key]).toBe(complex);
-        const chip = ui.inRow<HTMLElement>(WORKSPACE.key, '.nexus-studio-value');
+        ui.inRow<HTMLButtonElement>(SIZE.key, '.nexus-studio-value').click();
+        const complex = 'calc(13px * 1.1)';
+        type(ui.inRow<HTMLInputElement>(SIZE.key, '.nexus-studio-css-input'), complex);
+        expect(activeProfile(ui.settings).overrides[SIZE.key]).toBe(complex);
+        const chip = ui.inRow<HTMLElement>(SIZE.key, '.nexus-studio-value');
         expect(chip.textContent).toBe(COMPLEX_VALUE_LABEL);
-        expect(chip.classList.contains('is-complex')).toBe(true);
         expect(chip.getAttribute('title')).toBe(complex);
-        expect(ui.inRow<HTMLInputElement>(WORKSPACE.key, '.nexus-studio-picker').disabled).toBe(true);
-        expect(ui.inRow<HTMLElement>(WORKSPACE.key, '.nexus-studio-swatch').style.getPropertyValue(
-            '--nexus-studio-swatch'
-        )).toBe(complex);
-
-        // A full rebuild does not "simplify" it.
         ui.panel.render();
-        expect(activeProfile(ui.settings).overrides[WORKSPACE.key]).toBe(complex);
-        expect(ui.inRow<HTMLElement>(WORKSPACE.key, '.nexus-studio-value').textContent).toBe(
-            COMPLEX_VALUE_LABEL
-        );
+        expect(activeProfile(ui.settings).overrides[SIZE.key]).toBe(complex);
     });
 
-    it('writes a valid exact value and brings the visual controls with it', () => {
+    it('writes a valid exact value and brings the slider with it', () => {
         const ui = mount();
-        ui.inRow<HTMLButtonElement>(SPLITTER_HOVER.key, '.nexus-studio-value').click();
-        type(ui.inRow<HTMLInputElement>(SPLITTER_HOVER.key, '.nexus-studio-css-input'), 'rgba(0, 128, 255, 0.5)');
-        expect(ui.inRow<HTMLInputElement>(SPLITTER_HOVER.key, '.nexus-studio-picker').value).toBe('#0080ff');
-        expect(ui.inRow<HTMLInputElement>(SPLITTER_HOVER.key, '.nexus-studio-alpha').value).toBe('50');
-        expect(ui.inRow<HTMLElement>(SPLITTER_HOVER.key, '.nexus-studio-value').textContent).toBe('#0080ff');
+        ui.inRow<HTMLButtonElement>(SIZE.key, '.nexus-studio-value').click();
+        type(ui.inRow<HTMLInputElement>(SIZE.key, '.nexus-studio-css-input'), '15px');
+        expect(ui.inRow<HTMLInputElement>(SIZE.key, '.nexus-studio-range').value).toBe('15');
+        expect(ui.inRow<HTMLElement>(SIZE.key, '.nexus-studio-value').textContent).toBe('15px');
     });
 
     it('refuses an invalid value without writing it or reverting the field', () => {
         const ui = mount();
-        ui.inRow<HTMLButtonElement>(WORKSPACE.key, '.nexus-studio-value').click();
-        const input = ui.inRow<HTMLInputElement>(WORKSPACE.key, '.nexus-studio-css-input');
-        type(input, '#fff; color: red');
+        ui.inRow<HTMLButtonElement>(SIZE.key, '.nexus-studio-value').click();
+        const input = ui.inRow<HTMLInputElement>(SIZE.key, '.nexus-studio-css-input');
+        type(input, '13px; color: red');
         expect(ui.log.updateLive).toBe(0);
         expect(input.getAttribute('aria-invalid')).toBe('true');
-        expect(input.value).toBe('#fff; color: red');
+        expect(input.value).toBe('13px; color: red');
     });
 
     it('changes nothing when it is closed again', () => {
         const ui = mount();
-        const chip = ui.inRow<HTMLButtonElement>(WORKSPACE.key, '.nexus-studio-value');
+        const chip = ui.inRow<HTMLButtonElement>(SIZE.key, '.nexus-studio-value');
         chip.click();
         chip.click();
-        expect(ui.inRow<HTMLElement>(WORKSPACE.key, '.nexus-studio-row-css').hidden).toBe(true);
+        expect(ui.inRow<HTMLElement>(SIZE.key, '.nexus-studio-row-css').hidden).toBe(true);
         expect(ui.log.updateLive + ui.log.update).toBe(0);
     });
 });
@@ -713,57 +591,6 @@ describe('the locator', () => {
         vi.advanceTimersByTime(LOCATOR_DELAY_MS * 3);
         expect(nonEmpty(ui.log.previews)).toEqual([]);
         expect(ui.root.childElementCount).toBe(0);
-    });
-});
-
-describe('the pipette', () => {
-    function withEyeDropper(open: () => Promise<unknown>): { opened: () => number } {
-        let count = 0;
-        (window as unknown as { EyeDropper: unknown }).EyeDropper = class {
-            open(): Promise<unknown> {
-                count += 1;
-                return open();
-            }
-        };
-        return { opened: () => count };
-    }
-
-    it('is not offered where the screen sampler does not exist', () => {
-        const ui = mount();
-        expect(ui.row(WORKSPACE.key).querySelector('.nexus-studio-pipette')).toBeNull();
-    });
-
-    it('writes the sampled colour into the token', async () => {
-        withEyeDropper(() => Promise.resolve({ sRGBHex: '#3A4B5C' }));
-        const ui = mount();
-        ui.inRow<HTMLButtonElement>(WORKSPACE.key, '.nexus-studio-pipette').click();
-        await vi.waitFor(() =>
-            expect(activeProfile(ui.settings).overrides[WORKSPACE.key]).toBe('#3a4b5c')
-        );
-    });
-
-    // The locator's magenta must not be what gets sampled.
-    it('clears the locator before the sampler opens', () => {
-        let previewsWhenOpened: string[][] = [];
-        const ui = mount();
-        withEyeDropper(() => {
-            previewsWhenOpened = [...ui.log.previews];
-            return new Promise(() => undefined);
-        });
-        // Rendered again so the row sees the sampler that now exists.
-        ui.panel.render();
-        ui.inRow<HTMLButtonElement>(WORKSPACE.key, '.nexus-studio-pipette').click();
-        expect(previewsWhenOpened.at(-1)).toEqual([]);
-    });
-
-    it('changes nothing when the pick is cancelled', async () => {
-        const dropper = withEyeDropper(() => Promise.reject(new DOMException('cancelled', 'AbortError')));
-        const ui = mount();
-        ui.inRow<HTMLButtonElement>(WORKSPACE.key, '.nexus-studio-pipette').click();
-        await vi.waitFor(() => expect(dropper.opened()).toBe(1));
-        await Promise.resolve();
-        expect(ui.log.updateLive).toBe(0);
-        expect(activeProfile(ui.settings).overrides[WORKSPACE.key]).toBeUndefined();
     });
 });
 
@@ -936,14 +763,14 @@ describe('an existing data.json from the settings-tab version', () => {
         const stored = JSON.parse(
             JSON.stringify(setGroupCollapsed(defaultSettings(), 'workspace', true))
         ) as { version: number };
-        expect(stored.version).toBe(2);
+        expect(stored.version).toBe(SETTINGS_VERSION);
         expect(normalizeSettings(stored).collapsedGroups).toEqual(['workspace']);
     });
 
     it('renders in the new view with those values on screen', () => {
         const ui = mount(normalizeSettings(JSON.parse(JSON.stringify(v01))));
         expect(ui.inRow<HTMLElement>(DOCUMENT.key, '.nexus-studio-value').textContent).toBe('#1f1d1b');
-        expect(ui.inRow<HTMLInputElement>(SPLITTER_HOVER.key, '.nexus-studio-alpha').value).toBe('30');
+        expect(ui.inRow<HTMLElement>(SPLITTER_HOVER.key, '.nexus-studio-alpha-readout').textContent).toBe('30%');
         for (const key of [...NEXUS_GROUPS, ADVANCED_GROUP]) expect(ui.body(key).hidden).toBe(false);
     });
 });

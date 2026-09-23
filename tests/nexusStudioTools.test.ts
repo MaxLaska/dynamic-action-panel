@@ -9,25 +9,25 @@
 // opening, a pixel captured) is checked live by scripts/smokeView.mjs.
 
 import { readFileSync } from 'node:fs';
+import { mount } from './support/nexusStudioHarness';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NEXUS_CONTRAST_PAIRS, nexusToken } from '../theme/nexus/src/tokens';
 import { inspectAvailable, quadCentre, startInspect } from '../companion/nexus-theme-studio/src/inspectUi';
-import { PAINT_WAIT_MS, afterPaint, pickPoint } from '../companion/nexus-theme-studio/src/pickPoint';
+import {
+    KEYBOARD_STEP_LARGE,
+    PAINT_WAIT_MS,
+    afterPaint,
+    pickPoint,
+} from '../companion/nexus-theme-studio/src/pickPoint';
 import {
     FIRST_PROFILE_ID,
     activeProfile,
     defaultSettings,
     setOverride,
-    type NexusStudioSettings,
 } from '../companion/nexus-theme-studio/src/profiles';
-import { sampleColor, samplerKind } from '../companion/nexus-theme-studio/src/sampler';
-import {
-    CONTRAST_DISCLAIMER,
-    CONTRAST_GROUP,
-    StudioPanel,
-    type StudioPanelHost,
-} from '../companion/nexus-theme-studio/src/studioPanel';
+import { canSample, sampleColor } from '../companion/nexus-theme-studio/src/sampler';
+import { CONTRAST_DISCLAIMER, CONTRAST_GROUP } from '../companion/nexus-theme-studio/src/studioPanel';
 import { LOCATOR_DELAY_MS } from '../companion/nexus-theme-studio/src/tokenRow';
 
 // --- a fake WebContents ---------------------------------------------------------
@@ -157,6 +157,57 @@ describe('picking a point', () => {
         raf.mockRestore();
     });
 
+    // Keyboard aiming: a page cannot move the OS cursor, so it draws its own
+    // reticle and moves that, one pixel per arrow, ten with Shift.
+    it('aims with the arrows and takes the point with Enter', async () => {
+        const pick = pickPoint(document, 'x');
+        const shield = document.querySelector<HTMLElement>('.nexus-studio-pick-shield')!;
+        const reticle = shield.querySelector<HTMLElement>('.nexus-studio-pick-reticle')!;
+        expect(reticle.hidden).toBe(true);
+        shield.dispatchEvent(new MouseEvent('mousemove', { clientX: 100, clientY: 100, bubbles: true }));
+        const key = (k: string, shiftKey = false) =>
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: k, shiftKey, bubbles: true, cancelable: true }));
+        key('ArrowRight');
+        key('ArrowRight');
+        key('ArrowDown', true);
+        expect(reticle.hidden).toBe(false);
+        expect(reticle.style.left).toBe('102px');
+        expect(reticle.style.top).toBe(`${100 + KEYBOARD_STEP_LARGE}px`);
+        key('ArrowLeft');
+        key('ArrowUp');
+        key('Enter');
+        await expect(pick.result).resolves.toEqual({ x: 101, y: 100 + KEYBOARD_STEP_LARGE - 1 });
+        // Removed before anything is captured, like the hint.
+        expect(document.querySelector('.nexus-studio-pick-reticle')).toBeNull();
+        pick.release();
+    });
+
+    it('takes the point with Space too, and does not press the button behind the shield', async () => {
+        const behind = document.createElement('button');
+        document.body.appendChild(behind);
+        let pressed = 0;
+        behind.addEventListener('click', () => (pressed += 1));
+        behind.focus();
+        const pick = pickPoint(document, 'x');
+        const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        document.dispatchEvent(space);
+        expect(space.defaultPrevented).toBe(true);
+        await expect(pick.result).resolves.not.toBeNull();
+        expect(pressed).toBe(0);
+        pick.release();
+    });
+
+    it('never moves the reticle out of the window', async () => {
+        const pick = pickPoint(document, 'x');
+        const shield = document.querySelector<HTMLElement>('.nexus-studio-pick-shield')!;
+        shield.dispatchEvent(new MouseEvent('mousemove', { clientX: 0, clientY: 0, bubbles: true }));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', shiftKey: true, bubbles: true }));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await expect(pick.result).resolves.toEqual({ x: 0, y: 0 });
+        pick.release();
+    });
+
     it('can be cancelled from outside, once', async () => {
         const pick = pickPoint(document, 'x');
         pick.cancel();
@@ -169,12 +220,12 @@ describe('picking a point', () => {
 // --- the sampler ------------------------------------------------------------------
 
 describe('taking a colour off Obsidian', () => {
-    it('prefers the capture sampler where Electron is reachable', () => {
-        expect(samplerKind(window)).toBe('none');
+    it('samples only where Electron capture is reachable, whatever else the window has', () => {
+        expect(canSample(window)).toBe(false);
         (window as unknown as { EyeDropper: unknown }).EyeDropper = class {};
-        expect(samplerKind(window)).toBe('eyedropper');
+        expect(canSample(window)).toBe(false);
         installElectron();
-        expect(samplerKind(window)).toBe('capture');
+        expect(canSample(window)).toBe(true);
     });
 
     it('reads exactly one pixel under the click', async () => {
@@ -216,13 +267,17 @@ describe('taking a colour off Obsidian', () => {
         await expect(session.result).resolves.toBeNull();
     });
 
-    it('falls back to the native pipette only where capture is not reachable', async () => {
+    // The red-gridded native pipette is not a fallback any more.
+    it('never opens the native pipette, even where it exists', async () => {
+        let opened = 0;
         (window as unknown as { EyeDropper: unknown }).EyeDropper = class {
             open(): Promise<{ sRGBHex: string }> {
+                opened += 1;
                 return Promise.resolve({ sRGBHex: '#123456' });
             }
         };
-        await expect(sampleColor(window).result).resolves.toBe('#123456');
+        await expect(sampleColor(window).result).resolves.toBeNull();
+        expect(opened).toBe(0);
         expect(document.querySelector('.nexus-studio-pick-shield')).toBeNull();
     });
 });
@@ -331,52 +386,6 @@ describe('Inspect UI', () => {
 
 // --- the panel ----------------------------------------------------------------------
 
-function mount(initial: NexusStudioSettings = defaultSettings()) {
-    let settings = initial;
-    const log = { updateLive: 0, update: 0, previews: [] as string[][] };
-    const root = document.createElement('div');
-    document.body.appendChild(root);
-    let panel: StudioPanel | null = null;
-    const host: StudioPanelHost = {
-        settings: () => settings,
-        themeIsActive: () => true,
-        update: (next) => {
-            settings = next;
-            log.update += 1;
-            panel?.render();
-            return Promise.resolve();
-        },
-        updateLive: (next) => {
-            settings = next;
-            log.updateLive += 1;
-        },
-        updateUi: (next) => {
-            settings = next;
-            return Promise.resolve();
-        },
-        setPreview: (variables) => {
-            log.previews.push([...variables]);
-        },
-        promptName: () => Promise.resolve(null),
-        openTransfer: () => undefined,
-        showMenu: () => undefined,
-        notify: () => undefined,
-    };
-    panel = new StudioPanel(root, host);
-    panel.render();
-    const row = (key: string) => root.querySelector<HTMLElement>(`.nexus-studio-row[data-token="${key}"]`)!;
-    return {
-        root,
-        panel,
-        log,
-        get settings() {
-            return settings;
-        },
-        row,
-        inRow: <T extends Element>(key: string, selector: string) => row(key).querySelector<T>(selector)!,
-    };
-}
-
 const type = (input: HTMLInputElement | HTMLSelectElement, value: string) => {
     input.value = value;
     input.dispatchEvent(new Event(input instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
@@ -397,16 +406,19 @@ describe('the discovery tools in the panel', () => {
         expect(ui.root.querySelector<HTMLButtonElement>('[data-tool="inspect"]')!.disabled).toBe(false);
     });
 
-    it('offers a colour pick only where some sampler exists', () => {
-        expect(mount().root.querySelector('[data-tool="pick"]')).toBeNull();
+    // A developer utility beside Inspect UI, not a way to edit a token.
+    it('offers Copy colour only where the window can be sampled', () => {
+        expect(mount().root.querySelector('[data-tool="copy-colour"]')).toBeNull();
         installElectron();
-        expect(mount().root.querySelector('[data-tool="pick"]')).not.toBeNull();
+        const tool = mount().root.querySelector<HTMLButtonElement>('[data-tool="copy-colour"]')!;
+        expect(tool.textContent).toContain('Copy colour');
+        expect(tool.getAttribute('aria-label')).toMatch(/not for editing a token|rather than editing a token/);
     });
 
     it('ends a running pick when the panel goes away', () => {
         installElectron();
         const ui = mount();
-        ui.inRow<HTMLButtonElement>('workspaceSurface', '.nexus-studio-pipette').click();
+        ui.root.querySelector<HTMLButtonElement>('[data-tool="copy-colour"]')!.click();
         expect(document.querySelector('.nexus-studio-pick-shield')).not.toBeNull();
         ui.panel.dispose();
         expect(document.querySelector('.nexus-studio-pick-shield')).toBeNull();
@@ -415,7 +427,7 @@ describe('the discovery tools in the panel', () => {
     it('writes nothing until a colour has actually been taken', async () => {
         installElectron();
         const ui = mount();
-        ui.inRow<HTMLButtonElement>('workspaceSurface', '.nexus-studio-pipette').click();
+        ui.root.querySelector<HTMLButtonElement>('[data-tool="copy-colour"]')!.click();
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         await flush();
         expect(ui.log.updateLive).toBe(0);
@@ -514,7 +526,11 @@ describe('the contrast section', () => {
 
     it('warns, live, when text sinks into its surface — and changes nothing', () => {
         const ui = mount();
-        type(ui.inRow<HTMLInputElement>('textPrimary', '.nexus-studio-picker'), '#3a3a3a');
+        // A draft in the picker: the figure follows it before anything is saved.
+        ui.inRow<HTMLButtonElement>('textPrimary', '.nexus-studio-swatch').click();
+        type(document.querySelector<HTMLInputElement>('.nexus-studio-cp-field[data-field="hex"]')!, '#3a3a3a');
+        expect(ui.log.updateLive).toBe(0);
+        document.querySelector<HTMLButtonElement>('.nexus-studio-cp-done')!.click();
         const onDocks = ui.root.querySelector('[data-pair="textPrimary:workspaceSurface"]')!;
         expect(onDocks.classList.contains('is-too-low')).toBe(true);
         expect(onDocks.querySelector('.nexus-studio-contrast-figure')!.textContent).toMatch(/✗$/);

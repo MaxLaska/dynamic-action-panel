@@ -29,6 +29,7 @@ import {
     type NexusContrastPair,
     type ThemeTokenDefinition,
 } from '../../../theme/nexus/src/tokens';
+import { openColorPicker, type ColorPickerHandle } from './colorPicker';
 import { parseColorValue } from './colorValue';
 import {
     CONTRAST_LARGE,
@@ -41,9 +42,13 @@ import { buildControlPlan } from './controlPlan';
 import { button, el, winOf } from './dom';
 import { inspectAvailable, startInspect, type InspectSession } from './inspectUi';
 import { effectiveValue, isOverridden } from './overrides';
-import { sampleColor, samplerKind, type SampleSession } from './sampler';
+import { canSample, sampleColor, type SampleSession } from './sampler';
 import {
     activeProfile,
+    addSwatch,
+    removeSwatch,
+    replaceSwatch,
+    setPickerFormat,
     createProfile,
     deleteProfile,
     duplicateProfile,
@@ -83,6 +88,10 @@ export interface StudioPanelHost {
     updateUi(next: NexusStudioSettings): Promise<void>;
     /** Paints the given custom properties in the locator colour; [] stops. */
     setPreview(variables: readonly string[]): void;
+    /** Shows an open picker's draft for a token, or drops it (null). Never saved. */
+    setSessionValue(key: string, value: string | null): void;
+    /** The draft an open picker is showing for a token, if any. */
+    sessionValue(key: string): string | undefined;
     /** Asks for a profile name; null when cancelled. */
     promptName(title: string, initial: string): Promise<string | null>;
     /** Opens the import/export dialog. */
@@ -139,6 +148,8 @@ export class StudioPanel {
     private probe: HTMLElement | null = null;
     /** A colour pick or an inspect in progress, so closing the view ends it. */
     private pending: { cancel(): void } | null = null;
+    /** The one open colour picker, if any. */
+    private picker: ColorPickerHandle | null = null;
     private disposed = false;
 
     constructor(
@@ -156,6 +167,11 @@ export class StudioPanel {
         return activeProfile(this.host.settings());
     }
 
+    /** What a token shows right now: an open picker's draft, else the profile's value. */
+    private valueOf(key: string): string {
+        return this.host.sessionValue(key) ?? effectiveValue(this.current().overrides, key);
+    }
+
     /**
      * Builds the whole panel from the current settings.
      *
@@ -165,6 +181,10 @@ export class StudioPanel {
      */
     render(): void {
         if (this.disposed) return;
+        // A rebuild comes from a discrete change: a profile switch, a reset,
+        // an import. A draft open over the old state is dropped, not kept, so
+        // nothing half-tried survives into a state it was not made for.
+        this.closePicker('cancel');
         this.teardownRows();
         // A rebuild removes the row under the pointer without a pointerleave,
         // so a preview started by that row would otherwise outlive it.
@@ -203,6 +223,9 @@ export class StudioPanel {
     /** Takes the panel down: rows, timers, and any preview they started. */
     dispose(): void {
         if (this.disposed) return;
+        // An open picker is cancelled, not committed: closing the view does
+        // not mean "keep this".
+        this.closePicker('cancel');
         this.disposed = true;
         // A pick or an inspect left running would outlive the view that started
         // it: a crosshair over Obsidian, or DevTools' picker, with nothing left
@@ -468,13 +491,14 @@ export class StudioPanel {
             this.rows.push(
                 renderTokenRow(group.body, token, {
                     win: this.win,
-                    currentValue: (item) => effectiveValue(this.current().overrides, item.key),
+                    currentValue: (item) => this.valueOf(item.key),
                     isOverridden: (item) => isOverridden(this.current().overrides, item.key),
                     isLocked: () => isLocked(this.current()),
                     write: (item, value) => this.write(item, value),
                     preview: (item) => this.preview(item),
-                    pickKind: this.pickKind(),
-                    pickColor: () => this.pickColor(),
+                    openPicker: (item, anchor) => this.openPicker(item, anchor),
+                    pickerOpenFor: (item) => this.picker?.token.key === item.key,
+                    pickerActive: () => this.picker !== null,
                 })
             );
         }
@@ -512,12 +536,78 @@ export class StudioPanel {
         this.host.setPreview(variables);
     }
 
-    // --- discovery tools -------------------------------------------------------
+    // --- the colour picker -------------------------------------------------------
 
-    private pickKind(): 'capture' | 'screen' | null {
-        const kind = samplerKind(this.win);
-        return kind === 'capture' ? 'capture' : kind === 'eyedropper' ? 'screen' : null;
+    /**
+     * Opens the picker for a token, or closes it when it is already open for
+     * that token. One at a time: another open picker is committed first, as a
+     * click outside it would be.
+     *
+     * THE SESSION. While open, every change is a draft (`setSessionValue`):
+     * live on the workspace and in the reader, never saved. On commit the draft
+     * becomes one ordinary override write on the live path (applied, saved on
+     * the usual debounce), and a draft equal to the starting value writes
+     * nothing at all. On cancel the draft is dropped, and the value from before
+     * is back exactly, because the profile was never changed.
+     */
+    private openPicker(token: ThemeTokenDefinition, anchor: HTMLElement): void {
+        if (this.picker?.token.key === token.key) {
+            this.closePicker('commit');
+            return;
+        }
+        this.closePicker('commit');
+        if (isLocked(this.current())) return;
+        this.pending?.cancel();
+        this.host.setPreview([]);
+        const initialValue = effectiveValue(this.current().overrides, token.key);
+        const settings = (): NexusStudioSettings => this.host.settings();
+        this.picker = openColorPicker(anchor, {
+            token,
+            initialValue,
+            format: settings().pickerFormat,
+            setFormat: (format) => void this.host.updateUi(setPickerFormat(settings(), format)),
+            preview: (value) => this.host.setSessionValue(token.key, value),
+            finish: (outcome, value) => {
+                this.picker = null;
+                if (outcome === 'commit' && value !== initialValue) this.write(token, value);
+                this.host.setSessionValue(token.key, null);
+                if (!this.disposed) this.sync();
+            },
+            canSample: canSample(this.win),
+            sample: () => this.pickColor(),
+            resolve: (value) => {
+                const resolved = this.resolveColour(value);
+                return parseColorValue(resolved) ? resolved : null;
+            },
+            palette: {
+                list: () => settings().savedSwatches,
+                add: (value) => void this.host.updateUi(addSwatch(settings(), value)),
+                remove: (index) => void this.host.updateUi(removeSwatch(settings(), index)),
+                replace: (index, value) => void this.host.updateUi(replaceSwatch(settings(), index, value)),
+            },
+            showMenu: (evt, items) =>
+                this.host.showMenu(
+                    evt,
+                    items.map((item, index) => ({
+                        id: `swatch-${index}`,
+                        title: item.title,
+                        icon: item.icon,
+                        disabled: false,
+                        run: () => item.run(),
+                    }))
+                ),
+        });
+        this.sync();
     }
+
+    private closePicker(outcome: 'commit' | 'cancel'): void {
+        const picker = this.picker;
+        if (!picker) return;
+        picker.close(outcome);
+        this.picker = null;
+    }
+
+    // --- discovery tools -------------------------------------------------------
 
     /**
      * Takes a colour off the screen. One at a time: starting a second pick
@@ -565,16 +655,15 @@ export class StudioPanel {
             });
         });
 
-        const kind = this.pickKind();
-        if (kind) {
-            const pick = button(bar, { cls: 'nexus-studio-tool', attr: { 'data-tool': 'pick' } });
+        // A developer utility, not part of editing a token. It answers "which
+        // colour is that?" for a surface that may have no token at all, and
+        // copies the answer. Editing a token's colour is the picker's job.
+        if (canSample(this.win)) {
+            const pick = button(bar, { cls: 'nexus-studio-tool', attr: { 'data-tool': 'copy-colour' } });
             const pickIcon = el(pick, 'span', { cls: 'nexus-studio-tool-icon' });
-            setIcon(pickIcon, 'pipette');
-            el(pick, 'span', { text: 'Take colour' });
-            const tip =
-                kind === 'capture'
-                    ? 'Read the colour of any point in Obsidian and copy it. Esc cancels.'
-                    : 'Pick a colour from the screen and copy it. Esc cancels.';
+            setIcon(pickIcon, 'copy');
+            el(pick, 'span', { text: 'Copy colour' });
+            const tip = 'Copy the hex of any point in Obsidian, for finding colours rather than editing a token. Esc cancels.';
             pick.setAttribute('aria-label', tip);
             setTooltip(pick, tip);
             const readout = el(bar, 'span', { cls: 'nexus-studio-tools-readout' });
@@ -645,9 +734,9 @@ export class StudioPanel {
     }
 
     private measure(pair: NexusContrastPair): ContrastResult {
-        const overrides = this.current().overrides;
-        const text = this.resolveColour(effectiveValue(overrides, pair.text));
-        const surface = this.resolveColour(effectiveValue(overrides, pair.surface));
+        // Drafts included: the figure follows the picker while it moves.
+        const text = this.resolveColour(this.valueOf(pair.text));
+        const surface = this.resolveColour(this.valueOf(pair.surface));
         return measureContrast(text, surface);
     }
 
@@ -655,9 +744,8 @@ export class StudioPanel {
         let below = 0;
         for (const parts of this.contrastRows) {
             const result = this.measure(parts.pair);
-            const overrides = this.current().overrides;
-            parts.surface.style.setProperty('--nexus-studio-swatch', effectiveValue(overrides, parts.pair.surface));
-            parts.text.style.setProperty('--nexus-studio-contrast-ink', effectiveValue(overrides, parts.pair.text));
+            parts.surface.style.setProperty('--nexus-studio-swatch', this.valueOf(parts.pair.surface));
+            parts.text.style.setProperty('--nexus-studio-contrast-ink', this.valueOf(parts.pair.text));
             parts.row.classList.remove('is-text', 'is-large-only', 'is-too-low', 'is-unmeasured');
             if (!result.measured) {
                 parts.row.classList.add('is-unmeasured');

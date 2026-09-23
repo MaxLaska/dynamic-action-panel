@@ -28,7 +28,7 @@ import {
 } from '../../../theme/nexus/src/tokens';
 import { startInspect, type InspectSession } from './inspectUi';
 import { openStudio } from './open';
-import { overrideDeclarations, withPreview } from './overrides';
+import { overrideDeclarations, withPreview, withSession } from './overrides';
 import {
     activeProfile,
     defaultSettings,
@@ -75,6 +75,13 @@ export default class NexusThemeStudioPlugin extends Plugin implements StudioServ
      * state lives rather than a rule someone has to remember.
      */
     private previewVariables: readonly string[] = [];
+
+    /**
+     * An open colour picker's draft values, by token key. Runtime-only, like
+     * the locator and for the same reason: the save path cannot see it, so a
+     * draft reaches `data.json` only by being committed as an override.
+     */
+    private sessionValues = new Map<string, string>();
 
     /** A pending debounced save, so it can be flushed or replaced. */
     private saveTimer = 0;
@@ -166,6 +173,7 @@ export default class NexusThemeStudioPlugin extends Plugin implements StudioServ
         // the view comes back exactly where the user put it when the plugin is
         // enabled again — detaching would reset it to the default dock.
         this.previewVariables = [];
+        this.sessionValues.clear();
         clearTokenOverrides(document.body);
         removeScratchCss(document);
     }
@@ -190,7 +198,10 @@ export default class NexusThemeStudioPlugin extends Plugin implements StudioServ
         const profile = activeProfile(this.settings);
         applyTokenOverrides(
             document.body,
-            withPreview(overrideDeclarations(profile.overrides), this.previewVariables)
+            withPreview(
+                withSession(overrideDeclarations(profile.overrides), this.sessionValues),
+                this.previewVariables
+            )
         );
         applyScratchCss(document, profile.scratchEnabled ? profile.scratchCss : null);
         window.dispatchEvent(new CustomEvent(NEXUS_TOKENS_CHANGED_EVENT));
@@ -214,6 +225,32 @@ export default class NexusThemeStudioPlugin extends Plugin implements StudioServ
         }
         this.previewVariables = next;
         this.applyActiveProfile();
+    }
+
+    /**
+     * Shows a picker's draft for one token, or drops it (null).
+     *
+     * Applied at once — the workspace and, through the tokens-changed event,
+     * the reader follow the picker live — and never saved. Every studio view
+     * re-syncs so its rows show the draft too.
+     */
+    setSessionValue(key: string, value: string | null): void {
+        if (this.unloaded) return;
+        if (value === null) {
+            if (!this.sessionValues.delete(key)) return;
+        } else {
+            if (this.sessionValues.get(key) === value) return;
+            this.sessionValues.set(key, value);
+        }
+        // A draft outranks a hover, as an edit does.
+        this.previewVariables = [];
+        this.applyActiveProfile();
+        this.forEachStudioView((view) => view.sync());
+    }
+
+    /** The draft an open picker is showing for a token, if any. */
+    sessionValue(key: string): string | undefined {
+        return this.sessionValues.get(key);
     }
 
     /** Whether a locator preview is currently showing. */

@@ -121,6 +121,10 @@ describe('the studio is a control plane', () => {
             '--nexus-studio-font-preview',
             '--nexus-studio-probe',
             '--nexus-studio-contrast-ink',
+            // The picker's pure hue and its opaque colour, for the square and
+            // the opacity bar: content, set by colorPicker.ts per draft.
+            '--nexus-studio-cp-hue',
+            '--nexus-studio-cp-opaque',
         ]);
         for (const name of used) {
             if (runtime.has(name)) continue;
