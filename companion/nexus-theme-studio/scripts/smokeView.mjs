@@ -11,6 +11,12 @@
 // Run against an Obsidian started on its OWN profile, never the user's:
 //
 //   Obsidian.exe --user-data-dir=<scratch> --remote-debugging-port=9333
+//                --disable-features=CalculateNativeWinOcclusion
+//
+// The occlusion flag matters on Windows: once other windows cover the scratch
+// window, Chromium marks it hidden and delivers NO input to it — neither CDP's
+// nor `sendInputEvent`'s — so every click-driven check below would fail for a
+// reason that has nothing to do with the studio. Seen live, not assumed.
 //
 // with that profile's obsidian.json registering one throwaway vault that has
 // the Nexus theme, this plugin and Dynamic Action Panel installed. It writes
@@ -98,7 +104,34 @@ for (let i = 0; i < 40; i += 1) {
 }
 cdp.problems.length = 0;
 
+// The instance this runs against is a window nobody is looking at, and
+// Chromium treats a covered window as hidden: measured, a 200ms timer took
+// 488ms there and requestAnimationFrame did not fire at all. That would test
+// the throttling, not the studio. Turning it off for THIS window makes it
+// behave like the visible window a user actually works in.
+await cdp.evaluate(`window.electron.remote.getCurrentWebContents().setBackgroundThrottling(false);`);
+await pause(300);
+
+// DevTools left open by an earlier run docks into the window, narrows the
+// workspace and would make the Inspect checks read that run's state as this
+// one's. Close it and wait until it really is closed.
+await cdp.evaluate(`window.electron.remote.getCurrentWebContents().closeDevTools();`);
+for (let i = 0; i < 30; i += 1) {
+    if (!(await cdp.evaluate(`return window.electron.remote.getCurrentWebContents().isDevToolsOpened();`))) break;
+    await pause(100);
+}
+
+// How many rows there should be, from the theme installed in this vault rather
+// than from a number in this file that the next token makes wrong.
+const expectedRows = await cdp.evaluate(`
+    const css = await app.vault.adapter.read('.obsidian/themes/Nexus/theme.css');
+    const block = css.slice(css.indexOf('>>> NEXUS TOKENS'), css.indexOf('<<< NEXUS TOKENS'));
+    return (block.match(/--nexus-[a-z0-9-]+\\s*:/g) || []).length;
+`);
+const seeded = JSON.parse(await cdp.evaluate(`return await app.vault.adapter.read('.obsidian/plugins/${STUDIO}/data.json');`));
+
 console.log('\nloaded');
+check('the installed theme declares its tokens', expectedRows > 0, String(expectedRows));
 check('the studio plugin loaded', await cdp.evaluate(`return !!app.plugins.plugins['${STUDIO}'];`));
 // Nexus paints in the dark scheme only. In `.obsidian/appearance.json` the
 // COMMUNITY theme is `cssTheme` and `theme` is the base scheme — "obsidian"
@@ -146,7 +179,7 @@ const firstOpen = await cdp.evaluate(`
 check('the command opens exactly one studio', firstOpen.count === 1, JSON.stringify(firstOpen));
 check('in the right dock', firstOpen.inRightDock === true);
 check('titled Nexus Theme Studio', firstOpen.title === 'Nexus Theme Studio');
-check('with a row for every token', firstOpen.rows === 11, String(firstOpen.rows));
+check('with a row for every token', firstOpen.rows === expectedRows, `${firstOpen.rows} of ${expectedRows}`);
 
 await cdp.evaluate(`app.workspace.setActiveLeaf(app.workspace.getLeavesOfType('markdown')[0], { focus: true });`);
 await cdp.evaluate(`app.commands.executeCommandById('${COMMAND}');`);
@@ -176,16 +209,27 @@ const foldState = await cdp.evaluate(`
         hidden: getComputedStyle(g.querySelector('.nexus-studio-group-body')).display === 'none',
     }));
 `);
-check(
-    'a fold stored by the old settings tab does not come back',
-    foldState.every((g) => !g.hidden),
-    JSON.stringify(foldState.filter((g) => g.hidden))
-);
+if ((seeded.version ?? 1) < 2) {
+    check(
+        'a fold stored by the old settings tab does not come back',
+        foldState.every((g) => !g.hidden),
+        JSON.stringify(foldState.filter((g) => g.hidden))
+    );
+} else {
+    // A file the view wrote: its fold is real, and it must come back exactly.
+    const stored = new Set(seeded.collapsedGroups ?? []);
+    check(
+        'the fold the view stored comes back exactly',
+        foldState.every((g) => g.hidden === stored.has(g.key)),
+        JSON.stringify({ stored: [...stored], shown: foldState })
+    );
+}
 
 const fold = await cdp.evaluate(`
     const group = ${panel}.querySelector('.nexus-studio-group[data-group="workspace"]');
     const header = group.querySelector('.nexus-studio-group-header');
     const body = group.querySelector('.nexus-studio-group-body');
+    if (header.getAttribute('aria-expanded') === 'false') header.click();
     header.click();
     const closed = {
         display: getComputedStyle(body).display,
@@ -320,6 +364,191 @@ check(
     (await cdp.evaluate(`return window.__nexusRow === ${rowIdentity};`)) === true
 );
 
+// --- the control plane ---------------------------------------------------------------
+//
+// The rule: the studio does not consume the user-editable presentation tokens
+// for its own UI. Push text and docks to near-black; Obsidian must follow, the
+// studio must not.
+console.log('\nthe studio as a control plane');
+const setToken = (key, value) =>
+    cdp.evaluate(`
+        const r = ${row(key)};
+        r.querySelector('.nexus-studio-value').click();
+        const f = r.querySelector('.nexus-studio-css-input');
+        f.value = ${JSON.stringify(value)};
+        f.dispatchEvent(new Event('input', { bubbles: true }));
+        r.querySelector('.nexus-studio-value').click();
+    `);
+const clearToken = (key) =>
+    cdp.evaluate(`
+        const reset = ${row(key)}.querySelector('.nexus-studio-reset');
+        if (!reset.disabled) reset.click();
+    `);
+const studioLooks = () =>
+    cdp.evaluate(`
+        const label = ${panel}.querySelector('.nexus-studio-row-label');
+        return {
+            text: getComputedStyle(label).color,
+            surface: getComputedStyle(${panel}).backgroundColor,
+            size: getComputedStyle(label).fontSize,
+            font: getComputedStyle(label).fontFamily,
+        };
+    `);
+const obsidianText = `getComputedStyle(document.querySelector('.nav-file-title, .tree-item-self') ?? document.body).color`;
+
+const calm = await studioLooks();
+await setToken('textPrimary', '#111111');
+await setToken('textMuted', '#121212');
+await setToken('workspaceSurface', '#141414');
+await pause(150);
+const dark = await studioLooks();
+const explorerText = await cdp.evaluate(`return ${obsidianText};`);
+check('Obsidian follows a near-black text token', explorerText === 'rgb(18, 18, 18)' || explorerText === 'rgb(17, 17, 17)', explorerText);
+check(
+    'the studio\'s own text and surface do not',
+    dark.text === calm.text && dark.surface === calm.surface,
+    JSON.stringify({ calm, dark })
+);
+
+await cdp.evaluate(`${row('workspaceSurface')}.dispatchEvent(new PointerEvent('pointerenter'));`);
+await pause(350);
+const located = await cdp.evaluate(`
+    return {
+        dock: ${dockColour},
+        studio: getComputedStyle(${panel}).backgroundColor,
+    };
+`);
+await cdp.evaluate(`${row('workspaceSurface')}.dispatchEvent(new PointerEvent('pointerleave'));`);
+check('the locator paints the dock', located.dock === 'rgb(255, 0, 255)', located.dock);
+check('and not the studio lying on it', located.studio === calm.surface, located.studio);
+
+await cdp.evaluate(`${row('textPrimary')}.dispatchEvent(new PointerEvent('pointerenter'));`);
+await pause(350);
+const locatedText = await studioLooks();
+await cdp.evaluate(`${row('textPrimary')}.dispatchEvent(new PointerEvent('pointerleave'));`);
+check('locating the text token leaves the studio\'s text alone', locatedText.text === calm.text, locatedText.text);
+
+await clearToken('textPrimary');
+await clearToken('textMuted');
+await clearToken('workspaceSurface');
+
+// --- typography ------------------------------------------------------------------
+console.log('\ntypography');
+const explorerSize = `getComputedStyle(document.querySelector('.nav-file-title, .tree-item-self')).fontSize`;
+const sizeBefore = await cdp.evaluate(`return ${explorerSize};`);
+await cdp.evaluate(`
+    const slider = ${row('uiFontSize')}.querySelector('.nexus-studio-range');
+    slider.value = '16';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+`);
+await pause(100);
+const sizeAfter = await cdp.evaluate(`return ${explorerSize};`);
+const studioAfterSize = await studioLooks();
+check('the UI text size slider reaches Obsidian live', sizeBefore === '13px' && sizeAfter === '16px', `${sizeBefore} → ${sizeAfter}`);
+check('and not the studio', studioAfterSize.size === calm.size, studioAfterSize.size);
+
+await cdp.evaluate(`
+    const select = ${row('uiFontFamily')}.querySelector('.nexus-studio-font-select');
+    select.value = 'Georgia, "Times New Roman", serif';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+`);
+await pause(100);
+const bodyFont = await cdp.evaluate(`return getComputedStyle(document.body).fontFamily;`);
+const studioAfterFont = await studioLooks();
+check('a font suggestion reaches the interface', /Georgia/.test(bodyFont), bodyFont);
+check('and not the studio', studioAfterFont.font === calm.font, studioAfterFont.font);
+
+await clearToken('uiFontSize');
+await clearToken('uiFontFamily');
+const sizeReset = await cdp.evaluate(`return ${explorerSize};`);
+check('reset returns the interface to 13px', sizeReset === '13px', sizeReset);
+
+// --- contrast -----------------------------------------------------------------------
+console.log('\ncontrast');
+const figure = (pair) =>
+    cdp.evaluate(`
+        const r = ${panel}.querySelector('[data-pair="${pair}"]');
+        return { text: r.querySelector('.nexus-studio-contrast-figure').textContent, cls: r.className };
+    `);
+const fine = await figure('textPrimary:workspaceSurface');
+check('the default text on the docks reads as enough', /✓$/.test(fine.text), fine.text);
+await setToken('textPrimary', '#3a3a3a');
+await pause(50);
+const poor = await figure('textPrimary:workspaceSurface');
+check('text sunk into its surface is flagged at once', /is-too-low|is-large-only/.test(poor.cls), poor.text);
+const textStill = await cdp.evaluate(`return document.body.style.getPropertyValue('--nexus-text-primary');`);
+check('and nothing is changed for the user', textStill === '#3a3a3a', textStill);
+await setToken('textPrimary', 'color-mix(in srgb, #ffffff 90%, #000000)');
+await pause(50);
+const mixed = await figure('textPrimary:workspaceSurface');
+check('a color-mix() is resolved by the browser and measured', /^\d+\.\d:1/.test(mixed.text), mixed.text);
+await clearToken('textPrimary');
+
+// --- the sampler, end to end with a real mouse event ------------------------------------
+console.log('\ntaking a colour');
+const dockPoint = await cdp.evaluate(`
+    const dock = document.querySelector('.workspace-split.mod-left-split .workspace-leaf');
+    const r = dock.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height * 0.85), colour: getComputedStyle(dock).backgroundColor };
+`);
+const clickAt = async (x, y) => {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+};
+await cdp.evaluate(`${row('documentChrome')}.querySelector('.nexus-studio-pipette').click();`);
+await pause(150);
+const shieldUp = await cdp.evaluate(`return !!document.querySelector('.nexus-studio-pick-shield');`);
+check('the pipette lays its crosshair layer', shieldUp === true);
+await clickAt(dockPoint.x, dockPoint.y);
+await pause(600);
+const sampled = await cdp.evaluate(`return document.body.style.getPropertyValue('--nexus-document-chrome');`);
+const toHex = (rgb) => '#' + rgb.match(/\d+/g).slice(0, 3).map((v) => Number(v).toString(16).padStart(2, '0')).join('');
+check('a click on the dock takes exactly its colour', sampled === toHex(dockPoint.colour), `${sampled} vs ${dockPoint.colour}`);
+check('and the layer is gone', (await cdp.evaluate(`return !!document.querySelector('.nexus-studio-pick-shield');`)) === false);
+await clearToken('documentChrome');
+
+await cdp.evaluate(`${row('documentChrome')}.querySelector('.nexus-studio-pipette').click();`);
+await pause(150);
+await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+await pause(200);
+const afterEscape = await cdp.evaluate(`return {
+    inline: document.body.style.getPropertyValue('--nexus-document-chrome'),
+    shield: !!document.querySelector('.nexus-studio-pick-shield'),
+};`);
+check('Escape takes nothing and leaves nothing behind', afterEscape.inline === '' && !afterEscape.shield, JSON.stringify(afterEscape));
+
+// --- Inspect UI, end to end ------------------------------------------------------------
+console.log('\nInspect UI');
+const wcState = `(() => { const wc = window.electron.remote.getCurrentWebContents(); return { attached: wc.debugger.isAttached(), devtools: wc.isDevToolsOpened() }; })()`;
+await cdp.evaluate(`${panel}.querySelector('[data-tool="inspect"]').click();`);
+await pause(400);
+const picking = await cdp.evaluate(`return ${wcState};`);
+check('Inspect UI switches on DevTools\' element picker', picking.attached === true && picking.devtools === false, JSON.stringify(picking));
+await clickAt(dockPoint.x, dockPoint.y);
+await pause(1500);
+const inspected = await cdp.evaluate(`return ${wcState};`);
+check('clicking an element opens DevTools on it and lets go', inspected.devtools === true && inspected.attached === false, JSON.stringify(inspected));
+// Closing DevTools is asynchronous. Wait until it is really closed, or the
+// next check would read the previous step's DevTools as this step's.
+await cdp.evaluate(`window.electron.remote.getCurrentWebContents().closeDevTools();`);
+for (let i = 0; i < 30; i += 1) {
+    if (!(await cdp.evaluate(`return ${wcState};`)).devtools) break;
+    await pause(100);
+}
+const beforeEscape = await cdp.evaluate(`return ${wcState};`);
+
+await cdp.evaluate(`${panel}.querySelector('[data-tool="inspect"]').click();`);
+await pause(400);
+await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+await pause(400);
+const escaped = await cdp.evaluate(`return ${wcState};`);
+check(
+    'Escape switches the picker off without opening DevTools',
+    beforeEscape.devtools === false && escaped.attached === false && escaped.devtools === false,
+    JSON.stringify({ beforeEscape, escaped })
+);
+
 // --- the plugin reloading under an open studio ------------------------------------------
 //
 // Disabling must leave the workspace as it was found: no inline token, no
@@ -360,7 +589,7 @@ const whileOn = await cdp.evaluate(`
     };
 `);
 check('re-enabling restores the one studio where it was', whileOn.leaves === 1 && whileOn.inRightDock, JSON.stringify(whileOn));
-check('rendered once, not twice', whileOn.panels === 1 && whileOn.rows === 11);
+check('rendered once, not twice', whileOn.panels === 1 && whileOn.rows === expectedRows, JSON.stringify(whileOn));
 check('with at most one scratch stylesheet', whileOn.scratch <= 1);
 check('and no locator colour left over from before the reload', whileOn.magenta === false);
 

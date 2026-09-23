@@ -1,6 +1,9 @@
 # OCAP – Status
 
-Last updated: 2026-09-23 (the Theme Studio is now a WORKSPACE VIEW, opened by
+Last updated: 2026-09-23 (the Theme Studio is a CONTROL PLANE that stays
+readable whatever it sets, with UI typography, a contrast assist that never
+writes, and a Discovery area — Inspect UI and a window colour sampler; on top
+of the Theme Studio as a WORKSPACE VIEW, opened by
 one command and docked beside the surfaces it designs, with folding groups that
 actually fold, a compact design row with the raw CSS behind a disclosure, and a
 live check in a real Obsidian; on top of the first interaction pass after real
@@ -18,6 +21,45 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **Nexus Theme Studio: control plane, typography, contrast, Discovery
+  (2026-09-23).** Implemented locally, deployed to the smoke vault only, and
+  checked live in an isolated Obsidian. Not pushed, and not in the productive
+  vault. The normative text is in the `DECISIONS.md` entries from "The studio is
+  a control plane" onward.
+  - **Control plane:** the studio no longer paints itself with the tokens it
+    edits. It uses an internal palette built from Obsidian's base scale, and its
+    context menu is the OS-native menu. Checked live: with text set to the
+    surface colour, the studio stays readable, and the locator never reaches it.
+  - **Typography:** three new tokens: UI font family, UI font size and UI line
+    height. They drive `--font-interface-theme`, the `--font-ui-*` scale and
+    `--line-height-tight`. There is no weight token, because Obsidian has no UI
+    weight hook. The registry gained `controlType`, `range` and `suggestions`.
+  - **Contrast assist:** WCAG ratios for five real text/surface pairs, graded
+    against 4.5:1 and 3:1. It never writes. **Auto contrast was not built**;
+    the reasons and the prerequisite (per-surface text tokens) are in
+    `DECISIONS.md`.
+  - **Discovery:**
+    - **Inspect UI** (button and command) starts DevTools' own element picker
+      through `webContents.debugger`, then `inspectElement`. No shortcut is
+      simulated.
+    - **Take colour** copies the hex value of a pixel.
+  - **Red eyedropper grid:** the cause was traced in source to Electron not
+    registering Chromium's eye-dropper colour mixer (the last link is not
+    verified). The pipette now samples the Obsidian window itself with
+    `capturePage`, and the native sampler is only the fallback. Limit: it sees
+    only its own window.
+  - **Found live and fixed:** after one inspect, Chromium replays the old node
+    on the next `Overlay.enable`, and the picker opened DevTools without a
+    click. Picks now count only once the picker is armed.
+  - **Verified:**
+    - typecheck and lint are clean;
+    - 2017 tests pass in 60 files;
+    - the new behaviour is mutation-checked: the locator guard, the inspect
+      detach and the armed guard;
+    - `smokeView.mjs` passed 61/61 twice against Obsidian 1.13.7. The run used
+      its own profile, started with `--disable-features=CalculateNativeWinOcclusion`,
+      because a covered window receives no input.
 
 - **Nexus Theme Studio as a workspace view (2026-09-23), implemented locally,
   deployed to the smoke vault only, checked live in an isolated Obsidian. Not

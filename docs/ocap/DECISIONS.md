@@ -1962,3 +1962,211 @@ dock, the fold under Obsidian's own stylesheets, the locator repainting a real
 dock, `input` repainting it live, `window.EyeDropper` opening from the view's
 window, the theme note following `css-change`, and a plugin reload with the view
 open leaving nothing behind and nothing doubled.
+
+## 2026-09-23 – The studio is a control plane, and does not paint itself with what it edits
+
+**Rule:** Nexus Theme Studio does not consume the user-editable Nexus
+presentation tokens for its own critical UI.
+
+**Decision:** the studio, its modals and its pick layer carry
+`.nexus-studio` / `.nexus-studio-isolated`. These re-point every Obsidian
+variable that Nexus re-points (backgrounds, borders, text, icons, interface font,
+UI sizes, tight line height) to an internal palette, `--nexus-studio-*`. That
+palette is built only from Obsidian's own `--color-base-*` scale and from
+`--font-default` / `--font-interface-override`. It is not in the token registry,
+cannot be exported, and has no row. The studio's context menu is the OS-native
+menu (`Menu.setUseNativeMenu(true)`, a public API), which no theme CSS reaches.
+
+**Reason:** a user may set the text colour to the surface colour, by accident
+or on the way to another value. They must still be able to read the control
+that undoes it. The same holds for typography: a 30px UI font must not push the
+studio's own controls out of its dock.
+
+**The locator** paints the token, so it paints every surface that uses it. The
+studio is no longer one of those surfaces. Checked live: with text set to
+`#111111` on a `#141414` dock, the studio stays at `rgb(218, 218, 218)` on
+`rgb(33, 33, 33)`, and the magenta locator never reaches the studio.
+
+**Tests hold the rule:**
+
+- Every non-Nexus variable that `theme.css` re-points must also be re-pointed
+  in the studio palette. There is one documented exception.
+- The palette may reference nothing except the base scale and the default fonts.
+- `theme.css` may never declare `--color-base-*`.
+
+## 2026-09-23 – UI typography rides Obsidian's own variables, with no weight
+
+**Decision:** three new tokens form a `Typography` group. Each has a
+`controlType` in the registry; there is no forms engine.
+
+| Token | Obsidian variable it drives | Control |
+| --- | --- | --- |
+| `--nexus-ui-font-family` | `--font-interface-theme`, the theme slot of `--font-interface` | font family: visible value, free text, six suggestions |
+| `--nexus-ui-font-size` (13px) | `--font-ui-small`, with `-smaller`, `-medium` and `-large` scaled 12 : 15 : 20 against 13 | slider, 10–20px, raw CSS behind the readout |
+| `--nexus-ui-line-height` (1.3) | `--line-height-tight`, the UI line height (notes use `--line-height-normal`) | slider, 1–2 |
+
+The size scale applies on desktop only (`:not(.is-mobile)`). On mobile, Obsidian
+derives the UI sizes from `--font-text-size`, and a fixed scale would fight it.
+The user's own interface font (`--font-interface-override`) still wins over the
+theme slot, as Obsidian intends.
+
+**No UI font weight.** Obsidian has no UI weight variable. `--font-weight` is
+the weight of note text, bold is derived from it, and `body` sets no weight. A
+weight token would have needed its own list of selectors, and the theme's token
+model forbids that.
+
+**Validation is per token:**
+
+- lengths: 6–48px, or 0.4–3em/rem;
+- numbers: 0.8–3;
+- a `calc()`, `clamp()`, `min()`, `max()` or `var()` is accepted as written.
+
+An out-of-range stored value is ignored, not clamped.
+
+**Not a font manager:** the suggestions are CSS font stacks and nothing is
+downloaded. A family that is not installed simply falls through to the next
+entry in the stack.
+
+## 2026-09-23 – Contrast assist measures real pairs, and never writes
+
+**Decision:** a `Contrast` section lists the pairs that really meet in Nexus
+(`NEXUS_CONTRAST_PAIRS`):
+
+- primary text on the docks, and on the page;
+- muted text on the docks, and on the page;
+- muted text on the tab strip, where tab titles are drawn
+  (`--tab-text-color-focused` and `--nav-item-color` are both `--text-muted`).
+
+Each row shows the WCAG 2 ratio, rounded down to one decimal:
+
+- ✓ at 4.5:1 or above;
+- ⚠ at 3:1 or above, enough for large text only;
+- ✗ below 3:1.
+
+The section heading counts the rows below 4.5:1.
+
+**The reader panel is excluded.** The reader draws its sidebar text itself. No
+Nexus text token is painted on that surface, so a figure there would describe a
+pair nobody sees.
+
+**How it measures:**
+
+- Relative luminance uses the 0.04045 threshold. Translucent text is first
+  composited over the surface.
+- Some values cannot be read directly by the parser (`var()`, `color-mix()`,
+  `oklch()`). For these, the browser resolves the value in a hidden probe
+  element and the studio reads back the computed colour. This includes
+  Chromium's `color(srgb …)` serialisation.
+- If the surface is itself translucent, or a value does not resolve, the row
+  shows "not measured" rather than a guess.
+
+**Stated in the UI:** it checks only the pairs listed, not every combination on
+screen, and it is not an accessibility audit.
+
+## 2026-09-23 – Auto contrast is not built; Assist is
+
+**Decision:** there is no Manual / Assist / Auto mode. The studio measures and
+flags (Assist, above), and it never changes a value on its own.
+
+**Reasons:**
+
+1. **A text token has no single right answer.** `--nexus-text-primary` is read on
+   the docks and on the page, and those two surfaces can be set far apart. A
+   text colour that clears one surface can fail the other, so "auto" would have
+   to choose which surface loses.
+2. **It would be the first derived token.** Every token today is a value the
+   user owns. A computed token touches the locator, the reader bridge, the row
+   UI, export, reset and the override model, so it is not a small change.
+3. **The light/dark candidate pair has no home.** Nexus is dark-only. A
+   computed "dark text on a light surface" would be a colour that nothing else
+   defines.
+
+**What would make it tractable:** per-surface text tokens, such as text on the
+docks and text on the page, so that each pair has exactly one text token to
+adjust. Auto could then be an explicit "fix this pair" action rather than a
+mode, and it would still never override a value the user set by hand.
+
+## 2026-09-23 – Inspect UI is DevTools' own picker, reached through documented APIs
+
+**Decision:** a Discovery button and an **Inspect UI** command start DevTools'
+element picker from the studio. The flow uses only documented Electron APIs:
+
+1. Attach `webContents.debugger`, a Chrome DevTools Protocol client.
+2. Switch on the protocol's `Overlay` inspect mode. It draws the same hover
+   highlight that DevTools itself draws.
+3. When the user clicks, send the centre of the clicked node's box to
+   `webContents.inspectElement(x, y)`, which opens DevTools on that element.
+4. Detach the client.
+
+Escape, the button again, the view closing and the plugin unloading all switch
+the picker off and detach.
+
+**No shortcut simulation.** If something else already holds the protocol
+client, the fallback is still an API call: a crosshair click, then
+`inspectElement` at that point. Only the hover highlight is lost. If
+`webContents` cannot be reached at all, the button is disabled and says why.
+
+**Found live, fixed:** once `inspectElement` has been used, the next
+`Overlay.enable` replays `Overlay.inspectNodeRequested` for that earlier node.
+It arrives 5ms in, before `setInspectMode` resolves, with no click. Taken at face
+value, it opened DevTools the moment the picker started. Picks now count only
+after the inspect mode is armed. A unit test replays the event, and it is
+mutation-checked.
+
+That the replay comes from Chromium's overlay agent keeping the pending node is
+an inference from the timing. The Chromium source was not opened to confirm it.
+
+## 2026-09-23 – The red eyedropper grid is Electron's, and the studio samples its own window
+
+**Cause, from source:**
+
+- Chromium's `components/eye_dropper/eye_dropper_view.cc` paints the magnifier
+  grid, border and rings from ColorProvider ids.
+- `components/eye_dropper/color_mixer.cc` maps those ids to greys, black and
+  white.
+- Electron's `electron_browser_main_parts.cc` registers the Chrome colour mixers
+  but not the eye-dropper mixer.
+- An unmapped id resolves to `gfx::kPlaceholderColor`, which is `SK_ColorRED`.
+  Chromium documents it as "should never be visible and is red as a visual flag
+  for misbehaving code".
+
+Not verified: the body of Electron's `AddChromeColorMixers`, which would be the
+last link. Nothing in the page can restyle that view.
+
+**Decision:** where it can, the pipette samples the Obsidian window itself:
+
+1. A transparent layer covering the whole window, with a crosshair and a
+   neutral hint, takes one click.
+2. The layer's own paint is waited out: two frames, or at most 150ms in a
+   window whose frames are throttled.
+3. `webContents.capturePage` captures that one pixel, which is decoded without
+   colour conversion.
+
+Escape or a right click cancels. Nothing is written before the click.
+
+For the common case this supersedes the entry "The pipette is the EyeDropper
+API, and its magnifier is not ours". The native `EyeDropper` is now only the
+fallback where `capturePage` is unavailable, and its grid stays as it is.
+
+**Limit:** the capture sampler sees only its own window. It cannot see a
+popped-out window or other applications. That is the price of not building a
+screen-capture platform.
+
+**Take colour** in the Discovery area is the same sampler without a token. It
+copies the hex value to the clipboard.
+
+## 2026-09-23 – The live smoke runs in a window Windows believes is visible
+
+**Decision:** the smoke Obsidian is started with
+`--disable-features=CalculateNativeWinOcclusion`. The smoke script turns off
+background throttling and closes any DevTools a previous run left open.
+
+**Reason, measured:** once other windows covered the scratch window, Chromium
+reported it as hidden and delivered no input at all. That applied to CDP key
+and mouse events and to Electron's `sendInputEvent` alike, although the window
+was visible, not minimised, and focused. Every click-driven check failed for a
+reason unrelated to the studio.
+
+Throttling in the same state stretched a 200ms timer to 488ms and stopped
+animation frames. That is why the sampler waits for frames only up to a 150ms
+ceiling.

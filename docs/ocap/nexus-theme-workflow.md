@@ -21,9 +21,16 @@ discovered **once**.
 
 ### Phase 1 — Discovery
 
-Open DevTools in the real Obsidian (`Ctrl+Shift+I`). Find the element, read the
-rule that actually wins, and note two things: the **selector** and the
-**variable** the rule spends, if any.
+Press **Inspect UI**, in the studio's Discovery area or as a command. The
+pointer becomes DevTools' own element picker, with its usual highlight. Click
+the element and DevTools opens with that element selected. Escape cancels.
+Read the rule that actually wins, and note two things: the **selector** and the
+**variable** the rule spends, if any. (`Ctrl+Shift+I` still opens DevTools
+without a picker.)
+
+**Take colour**, next to it, reads one pixel of the Obsidian window and copies
+its hex value to the clipboard. Use it to answer "which colour is that?"
+without any token.
 
 This is the only phase that needs an inspector, and it happens once per surface.
 
@@ -75,10 +82,12 @@ What each row gives you:
 - **The swatch** repaints the workspace while you are still moving the picker,
   not when you dismiss it. It paints the stored value itself, so translucency
   and `color-mix()` show as they are.
-- **The pipette** samples any pixel on the screen — the panel, a dock, the
-  reader, another application — and drops the colour into the token. It uses the
-  browser's own screen sampler, so the workspace stays visible while you aim.
-  The tinted magnifier is Chromium's and cannot be restyled.
+- **The pipette** turns the pointer into a crosshair over the Obsidian window.
+  One click takes that pixel's exact colour into the token; Escape or a right
+  click takes nothing. It sees only this window: a popped-out window or another
+  application cannot be sampled. Only where the window cannot be captured does
+  it fall back to the browser's screen sampler, whose red-tinted magnifier is
+  Electron's and cannot be restyled.
 - **The opacity slider** appears on the tokens whose value is translucent. The
   stored result is still ordinary CSS: white at 28% is
   `rgba(255, 255, 255, 0.28)`.
@@ -91,6 +100,21 @@ What each row gives you:
   stay there, so you can see which surfaces it controls without setting a colour
   to red and back. It changes nothing, saves nothing, and is gone the moment you
   move away.
+
+**Typography** has three rows: the interface font family (a list of font
+stacks, or any stack typed in), the UI font size (a slider; the smaller and
+larger UI sizes follow in Obsidian's own proportions), and the UI line height.
+There is no UI font weight, because Obsidian has no variable for one. Your own
+*Interface font* in Obsidian's Appearance settings still wins over the theme's.
+
+**Contrast** lists the text-and-surface pairs that really meet in Nexus, each
+with its WCAG ratio against 4.5:1. ✓ means enough, ⚠ means enough for large
+text only, and ✗ means too low. It only measures and never changes a value. It
+is a design aid, not an accessibility audit.
+
+The studio does not paint itself with the tokens it edits. Text the colour of
+its surface, or a 30px UI font, leaves the studio readable, so you can always
+undo it from there.
 
 Fold a group by clicking its heading (or Enter/Space on it) when the list gets
 long; folding hides controls, touches no value, and is remembered across a
@@ -136,8 +160,11 @@ marked productive. There is no flag that points them at the productive vault.
 ## What this deliberately is not
 
 - Not a theme editor for other people's themes.
-- Not a general no-code CSS builder, a DOM picker, or a CSS inspector.
-- Not a theme marketplace, a sync service, or a font or spacing system.
+- Not a general no-code CSS builder, a DOM picker, or a CSS inspector. Inspect UI
+  opens DevTools, which is that tool.
+- Not a theme marketplace, a sync service, or a font manager or spacing system.
+- Not an accessibility audit, and it has no automatic contrast mode (see
+  `DECISIONS.md`).
 - Not a home for the panel's semantic colours. Cell colours and the selection
   colour mean *"this tool is a red one"*; Nexus tokens mean *"this is a
   surface"*. They stay apart, and
