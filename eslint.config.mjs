@@ -1,6 +1,10 @@
 import tseslint from 'typescript-eslint';
 import obsidianmd from 'eslint-plugin-obsidianmd';
 import globals from 'globals';
+// The sentence-case rule's built-in list of product names. Imported rather than
+// copied so that extending it below does not silently drop the defaults — the
+// rule's `brands` option REPLACES the list instead of adding to it.
+import { DEFAULT_BRANDS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/brands.js';
 
 export default tseslint.config(
 	{
@@ -49,6 +53,10 @@ export default tseslint.config(
 			// a literal directory name and not something a Vault API could be
 			// asked about.
 			'obsidianmd/hardcoded-config-path': 'off',
+			// DOM tests run under happy-dom, which is a standard DOM and not
+			// one Obsidian has patched: `createDiv` does not exist there. A
+			// fixture built with the standard call is the only one that runs.
+			'obsidianmd/prefer-create-el': 'off',
 		},
 	},
 	{
@@ -61,6 +69,20 @@ export default tseslint.config(
 		files: ['companion/**/*.ts'],
 		rules: {
 			'obsidianmd/prefer-create-el': 'off',
+		},
+	},
+	{
+		// "Nexus Theme Studio" is a product name, in the same way "Obsidian"
+		// is. The rule would lower-case it to "Nexus theme studio", which is a
+		// different name. Declared as a brand so its casing is kept while the
+		// rest of every string is still checked — narrower than switching the
+		// rule off, and scoped to the one plugin that says it.
+		files: ['companion/nexus-theme-studio/**/*.ts'],
+		rules: {
+			'obsidianmd/ui/sentence-case': [
+				'warn',
+				{ brands: [...DEFAULT_BRANDS, 'Nexus Theme Studio', 'Nexus'] },
+			],
 		},
 	},
 );

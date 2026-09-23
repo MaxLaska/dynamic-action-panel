@@ -25,6 +25,29 @@ export class Notice {
 
 export class WorkspaceLeaf {}
 
+/**
+ * The slice of `ItemView` a workspace view's own code reaches: a leaf, an app,
+ * and a content element inside a container element.
+ *
+ * The elements are created in the constructor, not at module load, so that the
+ * many node-environment tests which merely import something touching
+ * `obsidian` never need a DOM. Only a test that constructs a view — and runs
+ * under happy-dom — pays for one.
+ */
+export class ItemView {
+    app: unknown;
+    leaf: WorkspaceLeaf;
+    containerEl: HTMLElement;
+    contentEl: HTMLElement;
+    constructor(leaf: WorkspaceLeaf) {
+        this.leaf = leaf;
+        this.app = (leaf as { app?: unknown }).app;
+        this.containerEl = document.createElement('div');
+        this.contentEl = document.createElement('div');
+        this.containerEl.appendChild(this.contentEl);
+    }
+}
+
 export class TAbstractFile {
     path = '';
     name = '';
