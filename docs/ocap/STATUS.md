@@ -1,6 +1,9 @@
 # OCAP – Status
 
-Last updated: 2026-09-23 (the colour picker has two memories — RECENT,
+Last updated: 2026-09-23 (Recent follows each finished colour action while the
+picker stays open — interaction commit, session commit and Saved are three
+levels; one format button and a pipette icon; on top of: the colour picker has
+two memories — RECENT,
 filled by commits, and SAVED, kept on purpose and exportable as a palette file;
 on top of: colour is edited in ONE Nexus colour picker —
 drafts until closed, Escape restores, a global palette, Pick from Obsidian by
@@ -26,6 +29,35 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **Nexus Theme Studio: Recent follows each colour action (2026-09-23).**
+  Implemented locally, deployed to the smoke vault only, checked live in an
+  isolated Obsidian. Not pushed, not in the productive vault. Normative:
+  `DECISIONS.md` "Recent records finished colour actions, not picker sessions"
+  and "One format button, and the pipette as an icon".
+  - **Found in use:** Recent changed only when the picker closed.
+  - **Now:** each finished interaction (square or bar released, a field
+    confirmed, a swatch clicked, a pixel taken) goes to the front of Recent at
+    once, with the picker open. Only the Recent row is redrawn, so focus stays
+    put. Escape and Revert revert the token and keep Recent.
+  - **Persistence:** interaction commits go through `updateUiLater`, which
+    applies no theme and writes after a 1.5s debounce. The token keeps its own
+    session and commit path.
+  - **UI:** one cycling format button (HEX → RGB → HSL), and the pipette is an
+    icon beside it.
+  - **Verified:**
+    - typecheck and lint are clean;
+    - 2141 tests pass in 62 files;
+    - 8 mutations were caught: recording on move, no recording on release,
+      keyboard steps each recorded, a Recent click not a use, a Saved click not
+      a use, a sample not a use, Recent on the token path, and cancel wiping
+      Recent;
+    - `smokeView.mjs` passed 109/109 on its last four runs, driving real mouse
+      events on the square and the hue bar.
+  - **Open, and the same class as before:** the smoke's clean-up Delete, run
+    right after the import dialog closed, failed once before it got the same
+    wait-for-the-dialog as the Delete check. That is consistent with focus
+    returning late after a dialog closes, which is still not proven.
 
 - **Nexus Theme Studio: Recent and Saved colours (2026-09-23).** Implemented
   locally, deployed to the smoke vault only, checked live in an isolated

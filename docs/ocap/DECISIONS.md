@@ -2486,3 +2486,73 @@ is built.
 **Settings stay at version 3.** `recentColors` is one more optional field with
 an empty default. A v3 file without it is a file with no recent colours yet,
 and nothing existing is read differently.
+
+## 2026-09-23 – Recent records finished colour actions, not picker sessions (supersedes "Recent means a changed colour, committed")
+
+**Found in use:** Recent changed only when the picker closed and committed. To
+see the colour just tried among the recent ones, the picker had to be closed
+and opened again, which is exactly the friction Recent was meant to remove.
+
+**Decision:** three levels, kept apart.
+
+| Level | What it is | What it writes |
+| --- | --- | --- |
+| INTERACTION COMMIT | one finished colour action, with the picker still open | the colour to the front of Recent, at once, visibly |
+| PICKER SESSION COMMIT | Done, Enter, a click outside; or Escape and Revert as its cancel | the theme token (commit), or nothing (cancel) |
+| SAVED | what the user keeps on purpose | the saved colours, only on `+`, Replace, Delete, Import, Clear |
+
+**The interaction commits:**
+
+- **The square:** on pointer release, a click or a whole drag records ONE
+  colour, its end value. Pointer moves only change the draft. Arrow keys record
+  on key up.
+- **Hue and opacity bars:** `change` records, which fires once for the pointer
+  when the bar is let go. From the keyboard, `change` fires on every step while
+  a key is held, so the key going up records.
+- **Fields** (HEX, RGB, HSL, opacity percent, CSS value): a confirmed value
+  records, meaning `change` (Enter, or leaving the field). Keystrokes do not.
+- **A Recent swatch clicked:** it becomes the draft and moves to the front. No
+  duplicate is created; the canonical-RGBA dedupe is unchanged.
+- **A Saved swatch clicked:** it becomes the draft and goes to the front of
+  Recent. The saved colour itself is untouched.
+- **Pick from Obsidian:** a taken pixel records, and a cancelled pick does not.
+- **Convert to colour** records.
+- **Not an interaction commit:** a format switch, `+`, a Custom CSS value,
+  drafts in progress, and the locator.
+
+**Escape and Revert keep Recent.** They return the TOKEN to its value from
+before the picker, and every colour tried during the session stays in Recent.
+Recent is working history, not theme state.
+
+**Persistence, separate from the token:** an interaction commit goes through
+`updateUiLater`. The settings take the new Recent at once, nothing is re-applied
+to the theme, and the file is written 1.5s after the actions pause
+(`LIBRARY_SAVE_DEBOUNCE_MS`). The debounce is flushed on unload. Tokens keep
+their own path: drafts in the session layer, and one `updateLive` write on
+commit (400ms debounce). A pointer move never writes anything.
+
+**Redrawing:** only the Recent row is redrawn after an interaction commit, so
+the control in use keeps the focus. After a Recent or Saved click, the focus
+follows to the clicked colour.
+
+**No selection model:** the newest Recent colour and the current colour may be
+the same; Recent is not marked as "selected".
+
+## 2026-09-23 – One format button, and the pipette as an icon
+
+**Decision:** the value line is the fields, one format button, and the pipette.
+
+- **The format button** shows the active format and cycles HEX → RGB → HSL →
+  HEX. It is a real `<button>`, so Enter and Space work as for any button. Its
+  tooltip is "Change colour format". Switching writes no value; only
+  `pickerFormat` is remembered.
+- **The pipette** is an icon button (`clickable-icon`, Lucide `pipette`). Its
+  label is "Pick from Obsidian", and its tooltip explains the keyboard aiming.
+  It replaces the wide text button.
+
+Keyboard sampling is unchanged: arrows 1px, Shift+arrows 10px, Enter or Space
+takes, Escape cancels.
+
+**Limit:** the value line is part of the colour controls, so in Custom CSS
+mode, where they are hidden, the pipette is hidden too. *Convert to colour*
+comes first.

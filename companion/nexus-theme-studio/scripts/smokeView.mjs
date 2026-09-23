@@ -348,10 +348,14 @@ const committed = await cdp.evaluate(`
     const hex = ${popover}.querySelector('.nexus-studio-cp-field[data-field="hex"]');
     hex.value = '#405060';
     hex.dispatchEvent(new Event('input', { bubbles: true }));
-    ${popover}.querySelector('.nexus-studio-cp-format[data-format="hsl"]').click();
+    const cycleTo = (format) => {
+        const b = ${popover}.querySelector('.nexus-studio-cp-format');
+        for (let i = 0; i < 3 && b.dataset.format !== format; i += 1) b.click();
+    };
+    cycleTo('hsl');
     const afterFormat = ${inline('--nexus-workspace-surface')};
     const readout = ${popover}.querySelector('.nexus-studio-cp-readout').textContent;
-    ${popover}.querySelector('.nexus-studio-cp-format[data-format="hex"]').click();
+    cycleTo('hex');
     ${popover}.querySelector('.nexus-studio-cp-done').click();
     const r = ${row('workspaceSurface')};
     return { afterFormat, readout, inline: ${inline('--nexus-workspace-surface')}, resetEnabled: !r.querySelector('.nexus-studio-reset').disabled, popover: !!${popover} };
@@ -656,17 +660,6 @@ console.log('\nthe colour library');
 // usual 400ms debounce, so the FILE is checked separately, after it.
 const studioData = () => cdp.evaluate(`return JSON.parse(JSON.stringify(app.plugins.plugins['${STUDIO}'].settings));`);
 const fileData = async () => JSON.parse(await readData());
-const commitColour = async (key, hex) => {
-    await openPicker(key);
-    await cdp.evaluate(`
-        const p = ${popover};
-        const f = p.querySelector('.nexus-studio-cp-field[data-field="hex"]');
-        f.value = ${JSON.stringify(hex)};
-        f.dispatchEvent(new Event('input', { bubbles: true }));
-        p.querySelector('.nexus-studio-cp-done').click();
-    `);
-    await pause(60);
-};
 const recentShown = () =>
     cdp.evaluate(`return Array.from(${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="recent"]')).map((s) => s.style.getPropertyValue('--nexus-studio-swatch'));`);
 const savedShown = () =>
@@ -687,53 +680,153 @@ const runMenu = async (startsWith) => {
     `);
 };
 
-const RED = '#ff0000';
-const GREEN = '#00ff00';
-await commitColour('workspaceSurface', RED);
-check('a commit puts the colour in Recent', (await studioData()).recentColors?.[0] === RED, JSON.stringify((await studioData()).recentColors?.slice(0, 3)));
-await commitColour('workspaceSurface', GREEN);
-await commitColour('workspaceSurface', RED);
-const afterReuse = (await studioData()).recentColors;
-check('used again, a colour moves to the front and is not doubled', afterReuse[0] === RED && afterReuse[1] === GREEN && afterReuse.filter((c) => c === RED).length === 1, JSON.stringify(afterReuse.slice(0, 3)));
-await pause(600);
-check('and Recent reaches data.json once the save debounce has passed', JSON.stringify((await fileData()).recentColors) === JSON.stringify(afterReuse));
+// RECENT records each finished colour action while the picker stays open.
+// Real mouse events on the square and the hue bar; one picker, never closed
+// until the Escape at the end.
+const recentNow = async () => (await studioData()).recentColors;
+const tokenBefore = await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`);
 await openPicker('workspaceSurface');
-const shownFront = await recentShown();
-check('the picker shows Recent newest first', shownFront[0] === RED && shownFront[1] === GREEN, JSON.stringify(shownFront.slice(0, 3)));
-await escape();
+const boxOf = (selector) =>
+    cdp.evaluate(`const r = ${popover}.querySelector('${selector}').getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom };`);
+const mouse = (type, x, y) => cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+const square = await boxOf('.nexus-studio-cp-area');
+
+// 1. A click in the square: one colour, at once, picker still open.
+await mouse('mouseMoved', square.r - 2, square.t + 2);
+await mouse('mousePressed', square.r - 2, square.t + 2);
+await mouse('mouseReleased', square.r - 2, square.t + 2);
 await pause(80);
+const firstDraft = await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`);
+const afterClick = await recentNow();
+check('a click in the square is in Recent at once', afterClick[0] === firstDraft && firstDraft !== tokenBefore, JSON.stringify({ firstDraft, front: afterClick.slice(0, 2) }));
+check('shown in the open picker, without closing it', (await cdp.evaluate(`return !!${popover};`)) && (await recentShown())[0] === firstDraft);
 
-for (let i = 1; i <= 16; i += 1) await commitColour('workspaceSurface', `#10${i.toString(16).padStart(2, '0')}30`);
-const full = (await studioData()).recentColors;
-check('Recent holds 16, and the oldest fell out', full.length === 16 && !full.includes(GREEN) && !full.includes(RED) && full[0] === '#101030', JSON.stringify({ length: full.length, first: full[0], last: full.at(-1) }));
+// 2. A drag in the square, 30 moves: exactly one new entry, its end value.
+const lengthBeforeDrag = afterClick.length;
+await mouse('mousePressed', square.l + 5, square.t + 5);
+for (let i = 1; i <= 30; i += 1) await mouse('mouseMoved', square.l + 5 + i * 3, square.t + 5 + i * 2);
+const midDrag = await recentNow();
+check('no Recent entries while dragging', JSON.stringify(midDrag) === JSON.stringify(afterClick));
+await mouse('mouseReleased', square.l + 95, square.t + 65);
+await pause(80);
+const dragEnd = await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`);
+const afterDrag = await recentNow();
+check('the drag adds one colour, its end value, in front of the click', afterDrag[0] === dragEnd && afterDrag[1] === firstDraft && afterDrag.length === Math.min(16, lengthBeforeDrag + 1), JSON.stringify(afterDrag.slice(0, 3)));
 
-// A recent colour as a starting point: loaded as a draft, varied, committed.
-await openPicker('workspaceSurface');
-const escOnDraft = await cdp.evaluate(`
-    const pick = ${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="recent"]')[3];
-    const chosen = pick.style.getPropertyValue('--nexus-studio-swatch');
-    pick.click();
-    return { chosen, draft: ${inline('--nexus-workspace-surface')} };
+// 3. The hue bar, dragged to green: one entry when it is let go.
+const hueBox = await boxOf('.nexus-studio-cp-hue');
+const hueY = (hueBox.t + hueBox.b) / 2;
+await mouse('mousePressed', hueBox.l + (hueBox.r - hueBox.l) * 0.2, hueY);
+for (let i = 1; i <= 10; i += 1) await mouse('mouseMoved', hueBox.l + (hueBox.r - hueBox.l) * (0.2 + i * 0.0133), hueY);
+check('no Recent entries while the hue bar moves', JSON.stringify(await recentNow()) === JSON.stringify(afterDrag));
+await mouse('mouseReleased', hueBox.l + (hueBox.r - hueBox.l) * 0.333, hueY);
+await pause(80);
+const green = await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`);
+const afterHue = await recentNow();
+check('letting go of the hue bar adds its end colour', afterHue[0] === green && afterHue[1] === dragEnd, JSON.stringify(afterHue.slice(0, 3)));
+
+// 4. A recent colour clicked: the draft, and to the front, picker open.
+await cdp.evaluate(`
+    const all = Array.from(${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="recent"]'));
+    all.find((s) => s.style.getPropertyValue('--nexus-studio-swatch') === ${JSON.stringify(firstDraft)}).click();
 `);
-check('a recent colour loads as a draft', escOnDraft.draft === escOnDraft.chosen, JSON.stringify(escOnDraft));
-await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-area').focus();`);
-await pressKey('ArrowUp', 'ArrowUp', 38, SHIFT);
-const variant = await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`);
-await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-done').click();`);
 await pause(60);
-const afterVariant = (await studioData()).recentColors;
-check('the committed variant goes in front, and the original stays', afterVariant[0] === variant && afterVariant.includes(escOnDraft.chosen) && variant !== escOnDraft.chosen, JSON.stringify({ variant, chosen: escOnDraft.chosen, front: afterVariant.slice(0, 5) }));
+const afterRecentClick = await recentNow();
+check(
+    'a recent colour clicked becomes the draft and moves to the front, once',
+    (await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`)) === firstDraft &&
+        afterRecentClick[0] === firstDraft && afterRecentClick.filter((c) => c === firstDraft).length === 1 &&
+        (await cdp.evaluate(`return !!${popover};`)),
+    JSON.stringify(afterRecentClick.slice(0, 3))
+);
 
-await openPicker('workspaceSurface');
-const recentBeforeEsc = JSON.stringify((await studioData()).recentColors);
+// 5. A saved colour clicked: the draft, into Recent at once, the saved colour unchanged.
+const BLUE = '#0000ff';
 await cdp.evaluate(`
     const f = ${popover}.querySelector('.nexus-studio-cp-field[data-field="hex"]');
-    f.value = '#abcdef';
+    f.value = '${BLUE}';
     f.dispatchEvent(new Event('input', { bubbles: true }));
+    ${popover}.querySelector('.nexus-studio-cp-add').click();
+    const g = ${popover}.querySelector('.nexus-studio-cp-field[data-field="hex"]');
+    g.value = '#777777';
+    g.dispatchEvent(new Event('input', { bubbles: true }));
 `);
+await pause(60);
+const savedBefore = (await studioData()).savedSwatches;
+await cdp.evaluate(`
+    const all = Array.from(${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="saved"]'));
+    all.find((s) => s.style.getPropertyValue('--nexus-studio-swatch') === '${BLUE}').click();
+`);
+await pause(60);
+const afterSavedClick = await recentNow();
+check(
+    'a saved colour clicked is the draft and in Recent at once; Saved is unchanged',
+    (await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`)) === BLUE && afterSavedClick[0] === BLUE &&
+        (await recentShown())[0] === BLUE && JSON.stringify((await studioData()).savedSwatches) === JSON.stringify(savedBefore),
+    JSON.stringify(afterSavedClick.slice(0, 3))
+);
+
+// 6. Pick from Obsidian: the pixel is in Recent as soon as it is taken.
+const notePoint = await cdp.evaluate(`
+    const el = document.querySelector('.workspace-leaf.mod-active .view-content') ?? document.querySelector('.markdown-source-view');
+    const r = el.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width * 0.8), y: Math.round(r.top + r.height * 0.8) };
+`);
+await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-sample').click();`);
+await pause(150);
+await clickAt(notePoint.x, notePoint.y);
+await pause(600);
+const picked = await cdp.evaluate(`return ${popover}?.querySelector('.nexus-studio-cp-field[data-field="hex"]')?.value ?? null;`);
+const afterPick = await recentNow();
+check('a colour taken from Obsidian is in Recent at once, picker back', picked !== null && afterPick[0] === picked && picked !== BLUE, JSON.stringify({ picked, front: afterPick.slice(0, 2) }));
+
+// 7. Fill Recent from the fields, confirmed each time, picker still open.
+for (let i = 1; i <= 16; i += 1) {
+    await cdp.evaluate(`
+        const f = ${popover}.querySelector('.nexus-studio-cp-field[data-field="hex"]');
+        f.value = '#10${i.toString(16).padStart(2, '0')}30';
+        f.dispatchEvent(new Event('input', { bubbles: true }));
+        f.dispatchEvent(new Event('change', { bubbles: true }));
+    `);
+}
+const full = await recentNow();
+check('Recent holds 16, newest left, and the oldest fell out', full.length === 16 && full[0] === '#101030' && !full.includes(BLUE), JSON.stringify({ length: full.length, first: full[0], last: full.at(-1) }));
+
+// 8. The format button: one, cycling, the colour unmoved.
+const formats = await cdp.evaluate(`
+    const p = ${popover};
+    const b = p.querySelector('.nexus-studio-cp-format');
+    const draft = ${inline('--nexus-workspace-surface')};
+    const seen = [];
+    // Three clicks, four readings: back where it started, so the stored
+    // format is left as the run found it.
+    seen.push(b.textContent);
+    for (let i = 0; i < 3; i += 1) { b.click(); seen.push(b.textContent); }
+    return {
+        seen,
+        count: p.querySelectorAll('.nexus-studio-cp-format').length,
+        same: ${inline('--nexus-workspace-surface')} === draft,
+        pipettes: p.querySelectorAll('.nexus-studio-cp-sample').length,
+        pipetteText: p.querySelector('.nexus-studio-cp-sample')?.textContent ?? null,
+        pipetteBeside: p.querySelector('.nexus-studio-cp-sample')?.parentElement === b.parentElement,
+        pipetteWidth: Math.round(p.querySelector('.nexus-studio-cp-sample').getBoundingClientRect().width),
+        wideText: Array.from(p.querySelectorAll('button')).some((x) => x.textContent.includes('Pick from Obsidian')),
+    };
+`);
+const order = ['HEX', 'RGB', 'HSL'];
+const cycles = formats.seen.every((label, i) => i === 0 || order.indexOf(label) === (order.indexOf(formats.seen[i - 1]) + 1) % 3);
+check('one format button, cycling HEX → RGB → HSL → HEX', formats.count === 1 && cycles && formats.seen[3] === order[(order.indexOf(formats.seen[0]) + 3) % 3], JSON.stringify(formats.seen));
+check('and the colour does not move', formats.same === true);
+check('the pipette is one small icon button beside it, no wide text button', formats.pipettes === 1 && formats.pipetteText === '' && formats.pipetteBeside && formats.pipetteWidth <= 40 && !formats.wideText, JSON.stringify(formats));
+
+// 9. Escape: the token goes back; Recent keeps everything that was tried.
+const recentBeforeEsc = JSON.stringify(await recentNow());
 await escape();
-await pause(80);
-check('Escape adds nothing to Recent', JSON.stringify((await studioData()).recentColors) === recentBeforeEsc);
+await pause(100);
+check('Escape returns the token to its value from before the picker', (await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`)) === tokenBefore);
+check('and Recent keeps every colour tried in the session', JSON.stringify(await recentNow()) === recentBeforeEsc);
+await pause(1700);
+check('Recent reaches data.json once the actions pause, with no token commit', JSON.stringify((await fileData()).recentColors) === recentBeforeEsc);
 
 // Saved: kept on purpose, and not rewritten by editing what was loaded from it.
 // A colour of its own per run, so a rerun does not meet the last run's.
@@ -814,6 +907,9 @@ check('with nothing else doubled or lost', afterImport.savedSwatches.length === 
 check('and the import changed no theme value', (await cdp.evaluate(`return ${inline('--nexus-workspace-surface')};`)) === tokenBeforeImport && JSON.stringify(afterImport.profiles) === JSON.stringify(beforeImport.profiles));
 check('the picker shows the imported colour at once', (await savedShown()).includes(loadedDraft));
 // This run's colour goes again, so the palette does not grow run after run.
+// The import dialog has just closed: wait until it is gone, as above.
+for (let i = 0; i < 40 && (await cdp.evaluate(`return !!document.querySelector('.modal-container');`)); i += 1) await pause(50);
+await pause(100);
 await cdp.evaluate(`
     const all = Array.from(${popover}.querySelectorAll('.nexus-studio-cp-swatch[data-kind="saved"]'));
     all.find((s) => s.style.getPropertyValue('--nexus-studio-swatch') === ${JSON.stringify(loadedDraft)})?.focus();

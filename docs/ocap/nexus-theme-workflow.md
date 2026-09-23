@@ -85,19 +85,23 @@ What a colour row gives you: the swatch, a compact readout (`#333333`, and
 - **The square and the hue bar** repaint the workspace while they move. So do
   the opacity bar and every field, and so does choosing a swatch. The reader
   follows too.
-- **HEX · RGB · HSL** switch how the value is shown and typed. Switching changes
-  nothing; what is stored is always `#rrggbb`, or `rgba()` below full opacity.
+- **The format button** beside the fields (it reads `HEX`, `RGB` or `HSL`)
+  cycles how the value is shown and typed. Switching changes nothing; what is
+  stored is always `#rrggbb`, or `rgba()` below full opacity.
 - **Opacity**, where the token has one, is a bar with a checkerboard and a
   percent field.
-- **Pick from Obsidian** turns the pointer into a crosshair over the Obsidian
-  window; the picker steps aside while you aim. Click to take the pixel under
+- **The pipette icon** next to it is Pick from Obsidian: it turns the pointer
+  into a crosshair over the Obsidian window, and the picker steps aside while you aim. Click to take the pixel under
   the pointer. From the keyboard, the arrows move a reticle one pixel (ten with
   Shift) and Enter or Space takes the pixel. Escape stops aiming and keeps the
   picker. It sees only this window, so no popped-out window and no other
   application. There is no red-gridded browser pipette anywhere any more.
-- **Recent** fills itself: every colour you commit to a token lands on the
-  left, at most 16, the oldest dropping off the right. A colour used again moves
-  to the front. Drafts, Escape and unchanged commits add nothing.
+- **Recent** fills itself while you work, with the picker open. Each finished
+  action puts its colour on the left: a click or a drag in the square let go, a
+  bar let go, a value confirmed with Enter, a Recent or Saved swatch clicked, or
+  a pixel taken. It holds at most 16, the oldest dropping off the right, and a
+  colour used again moves to the front. Moving the mouse adds nothing until you
+  let go. Escape puts the token back, but what you tried stays in Recent.
 - **Saved** is what you keep on purpose. `+` saves the current colour, opacity
   included, and never twice. Clicking any swatch, Recent or Saved, loads it as a
   draft; the swatch itself does not change, so you can make a variant and commit
