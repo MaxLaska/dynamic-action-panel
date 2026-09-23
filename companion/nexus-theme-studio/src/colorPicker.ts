@@ -12,7 +12,8 @@
 // WHAT IT HOLDS, and nothing else: a saturation/brightness square and a hue bar;
 // opacity where the token has one; the value as HEX, RGB or HSL (a display
 // choice — switching writes nothing); Pick from Obsidian (sampler.ts, no red
-// grid); the studio's palette; and, behind "CSS value", the raw text for what
+// grid); the colour library — Recent and Saved (colorLibrary.ts; this file
+// only shows it and asks for changes); and, behind "CSS value", the raw text for what
 // the picker cannot show — `color-mix()`, `var()`, `oklch()`. Such a value
 // opens as Custom CSS and is never rewritten unless the user converts it.
 //
@@ -49,11 +50,31 @@ import {
 import { button, docOf, el } from './dom';
 import { isValidValueFor } from './overrides';
 
-/** One entry in a swatch's menu. */
+/** One entry in a swatch's or the palette's menu. */
 export interface PickerMenuItem {
     title: string;
     icon: string;
+    disabled?: boolean;
     run(): void;
+}
+
+/**
+ * The colour library, as the picker sees it. The picker never changes a list
+ * itself: it asks, and re-reads. What the rules are is colorLibrary.ts.
+ */
+export interface PickerLibrary {
+    /** Recently committed colours, newest first. Read-only here. */
+    recent(): readonly string[];
+    /** Deliberately saved colours. */
+    saved(): readonly string[];
+    /** Keeps a colour; answers where it is now (it may already have been there), or -1. */
+    save(value: string): number;
+    remove(index: number): void;
+    replace(index: number, value: string): void;
+    importPalette(): void;
+    exportPalette(): void;
+    copyAsCss(): void;
+    clear(): void;
 }
 
 /** What the picker needs from the panel. */
@@ -75,13 +96,8 @@ export interface ColorPickerHost {
     sample(): Promise<string | null>;
     /** What the browser resolves a CSS value to, for converting Custom CSS. */
     resolve(value: string): string | null;
-    /** The studio's palette. */
-    palette: {
-        list(): readonly string[];
-        add(value: string): void;
-        remove(index: number): void;
-        replace(index: number, value: string): void;
-    };
+    /** Recent and saved colours. */
+    library: PickerLibrary;
     showMenu(evt: MouseEvent, items: PickerMenuItem[]): void;
 }
 
@@ -90,6 +106,8 @@ export interface ColorPickerHandle {
     readonly el: HTMLElement;
     /** Closes, committing or cancelling. Harmless when already closed. */
     close(outcome: 'commit' | 'cancel'): void;
+    /** Re-reads the library, after it changed somewhere else (an import, a clear). */
+    refreshLibrary(): void;
 }
 
 /** What the Custom CSS state is called. */
@@ -225,12 +243,21 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         el(sampleButton, 'span', { text: 'Pick from Obsidian' });
     }
 
-    const paletteBox = el(root, 'div', { cls: 'nexus-studio-cp-palette' });
-    el(paletteBox, 'div', { cls: 'nexus-studio-cp-palette-label', text: 'Swatches' });
-    const grid = el(paletteBox, 'div', {
-        cls: 'nexus-studio-cp-swatches',
-        attr: { role: 'group', 'aria-label': 'Saved swatches' },
+    // Two memories, visibly apart: what was used, and what was kept.
+    const recentBox = el(root, 'div', { cls: 'nexus-studio-cp-palette', attr: { 'data-section': 'recent' } });
+    el(recentBox, 'div', { cls: 'nexus-studio-cp-palette-label', text: 'Recent' });
+    const recentGrid = el(recentBox, 'div', {
+        cls: ['nexus-studio-cp-swatches', 'nexus-studio-cp-recent'],
+        attr: { role: 'group', 'aria-label': 'Recent colours' },
     });
+    const savedBox = el(root, 'div', { cls: 'nexus-studio-cp-palette', attr: { 'data-section': 'saved' } });
+    el(savedBox, 'div', { cls: 'nexus-studio-cp-palette-label', text: 'Saved' });
+    const grid = el(savedBox, 'div', {
+        cls: ['nexus-studio-cp-swatches', 'nexus-studio-cp-saved'],
+        attr: { role: 'group', 'aria-label': 'Saved colours' },
+    });
+    /** The saved colour last loaded into the picker, which the ⋯ menu can replace or delete. */
+    let loadedSaved: number | null = null;
 
     const advancedToggle = button(root, {
         cls: 'nexus-studio-cp-advanced-toggle',
@@ -457,65 +484,126 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         });
     }
 
-    // --- the palette --------------------------------------------------------------------
+    // --- the library ----------------------------------------------------------------------
+    /** Loads a library colour as a draft. The entry itself is never changed by that. */
+    const load = (value: string): void => {
+        const colour = parseRgba(value);
+        // A token without an opacity takes the colour opaque.
+        if (colour) setRgba(withAlpha ? colour : { ...colour, a: 1 });
+    };
+
+    const swatchButton = (parent: HTMLElement, kind: 'recent' | 'saved', value: string, index: number) => {
+        const swatch = button(parent, {
+            cls: 'nexus-studio-cp-swatch',
+            attr: {
+                'data-kind': kind,
+                'data-index': String(index),
+                'aria-label': `Use ${value}`,
+                title:
+                    kind === 'saved'
+                        ? `${value} — click to use · Delete removes · right-click to replace or delete`
+                        : `${value} — click to use`,
+            },
+        });
+        swatch.style.setProperty('--nexus-studio-swatch', value);
+        return swatch;
+    };
+
+    function renderRecent(): void {
+        recentGrid.replaceChildren();
+        const recent = host.library.recent();
+        recentBox.classList.toggle('is-empty', recent.length === 0);
+        if (recent.length === 0) {
+            el(recentGrid, 'span', { cls: 'nexus-studio-cp-empty', text: 'Colours you commit appear here.' });
+            return;
+        }
+        recent.forEach((value, index) => {
+            const swatch = swatchButton(recentGrid, 'recent', value, index);
+            swatch.addEventListener('click', () => {
+                loadedSaved = null;
+                load(value);
+                renderPalette();
+            });
+        });
+    }
+
+    const removeAt = (index: number): void => {
+        host.library.remove(index);
+        if (loadedSaved === index) loadedSaved = null;
+        else if (loadedSaved !== null && loadedSaved > index) loadedSaved -= 1;
+        renderPalette();
+    };
+    const replaceAt = (index: number): void => {
+        if (mode !== 'color') return;
+        host.library.replace(index, rgbaToCss(rgba));
+        renderPalette();
+    };
+
     function renderPalette(): void {
         grid.replaceChildren();
-        host.palette.list().forEach((value, index) => {
-            const swatch = button(grid, {
-                cls: 'nexus-studio-cp-swatch',
-                attr: {
-                    'data-index': String(index),
-                    'aria-label': `Use ${value}`,
-                    title: `${value} — click to use · right-click to replace or delete`,
-                },
-            });
-            swatch.style.setProperty('--nexus-studio-swatch', value);
-            // Using a swatch loads it; the swatch itself is never changed by
-            // that. A token without an opacity takes the colour opaque.
+        host.library.saved().forEach((value, index) => {
+            const swatch = swatchButton(grid, 'saved', value, index);
+            swatch.setAttribute('aria-pressed', loadedSaved === index ? 'true' : 'false');
             swatch.addEventListener('click', () => {
-                const colour = parseRgba(value);
-                if (colour) setRgba(withAlpha ? colour : { ...colour, a: 1 });
+                loadedSaved = index;
+                load(value);
+                renderPalette();
             });
             swatch.addEventListener('contextmenu', (event) => {
                 event.preventDefault();
                 host.showMenu(event, [
-                    {
-                        title: 'Replace with current colour',
-                        icon: 'replace',
-                        run: () => {
-                            if (mode !== 'color') return;
-                            host.palette.replace(index, rgbaToCss(rgba));
-                            renderPalette();
-                        },
-                    },
-                    {
-                        title: 'Delete swatch',
-                        icon: 'trash-2',
-                        run: () => {
-                            host.palette.remove(index);
-                            renderPalette();
-                        },
-                    },
+                    { title: 'Replace with current colour', icon: 'replace', disabled: mode !== 'color', run: () => replaceAt(index) },
+                    { title: 'Delete swatch', icon: 'trash-2', run: () => removeAt(index) },
                 ]);
             });
             swatch.addEventListener('keydown', (event) => {
                 if (event.key !== 'Delete' && event.key !== 'Backspace') return;
                 event.preventDefault();
-                host.palette.remove(index);
-                renderPalette();
+                removeAt(index);
                 grid.querySelector<HTMLButtonElement>('.nexus-studio-cp-swatch, .nexus-studio-cp-add')?.focus();
             });
         });
         const add = button(grid, {
             cls: 'nexus-studio-cp-add',
-            attr: { 'aria-label': 'Save the current colour as a swatch', title: 'Save the current colour as a swatch' },
+            attr: { 'aria-label': 'Save the current colour', title: 'Save the current colour' },
         });
         setIcon(add, 'plus');
         add.disabled = mode !== 'color';
         add.addEventListener('click', () => {
             if (mode !== 'color') return;
-            host.palette.add(rgbaToCss(rgba));
+            const at = host.library.save(rgbaToCss(rgba));
             renderPalette();
+            // Already saved: no second copy, and the one there is shown.
+            const found = grid.querySelector<HTMLButtonElement>(`.nexus-studio-cp-swatch[data-index="${at}"]`);
+            if (found) {
+                found.classList.add('is-found');
+                win.setTimeout(() => found.classList.remove('is-found'), 900);
+            }
+        });
+        // The palette's own actions — no context menu needed for any of them.
+        const more = button(grid, {
+            cls: 'nexus-studio-cp-more',
+            attr: { 'aria-label': 'Saved colours: more', title: 'Replace, delete, import, export' },
+        });
+        setIcon(more, 'more-horizontal');
+        more.addEventListener('click', (event) => {
+            const saved = host.library.saved();
+            const target = loadedSaved !== null ? saved[loadedSaved] : undefined;
+            const items: PickerMenuItem[] = [];
+            if (target !== undefined && loadedSaved !== null) {
+                const index = loadedSaved;
+                items.push(
+                    { title: `Replace ${target} with current colour`, icon: 'replace', disabled: mode !== 'color', run: () => replaceAt(index) },
+                    { title: `Delete ${target}`, icon: 'trash-2', run: () => removeAt(index) }
+                );
+            }
+            items.push(
+                { title: 'Import palette…', icon: 'download', run: () => host.library.importPalette() },
+                { title: 'Export palette…', icon: 'upload', disabled: saved.length === 0, run: () => host.library.exportPalette() },
+                { title: 'Copy as CSS variables', icon: 'copy', disabled: saved.length === 0, run: () => host.library.copyAsCss() },
+                { title: 'Clear saved colours…', icon: 'trash-2', disabled: saved.length === 0, run: () => host.library.clear() }
+            );
+            host.showMenu(event, items);
         });
     }
 
@@ -659,10 +747,17 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         close('commit');
     });
 
+    /** Inside one of Obsidian's dialogs — an import or export the picker itself opened. */
+    const inDialog = (target: EventTarget | null): boolean => {
+        const node = target as (Node & { closest?: (selector: string) => Element | null }) | null;
+        const element = node?.closest ? node : node?.parentElement;
+        return !!element?.closest?.('.modal-container');
+    };
+
     const onDocKey = (event: KeyboardEvent): void => {
         // While sampling, Escape belongs to the sampler: it cancels the pick,
-        // not the picker.
-        if (event.key !== 'Escape' || sampling) return;
+        // not the picker. In a dialog, it closes the dialog.
+        if (event.key !== 'Escape' || sampling || inDialog(event.target)) return;
         event.preventDefault();
         event.stopPropagation();
         close('cancel');
@@ -671,6 +766,7 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         if (sampling) return;
         const target = event.target as Node | null;
         if (target && (root.contains(target) || anchor.contains(target))) return;
+        if (inDialog(target)) return;
         close('commit');
     };
     const onScroll = (): void => place();
@@ -687,6 +783,7 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
 
     // --- open -----------------------------------------------------------------------------
     buildFields();
+    renderRecent();
     renderPalette();
     setAdvanced(mode === 'custom');
     refresh();
@@ -698,5 +795,11 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         token,
         el: root,
         close,
+        refreshLibrary(): void {
+            if (closed) return;
+            loadedSaved = null;
+            renderRecent();
+            renderPalette();
+        },
     };
 }

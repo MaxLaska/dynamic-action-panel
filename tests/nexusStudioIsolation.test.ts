@@ -156,7 +156,10 @@ describe('the studio is a control plane', () => {
         const view = readFileSync('companion/nexus-theme-studio/src/view.ts', 'utf8');
         expect(view).toContain('setUseNativeMenu(true)');
         const modals = readFileSync('companion/nexus-theme-studio/src/modals.ts', 'utf8');
-        expect(modals.match(/addClass\('nexus-studio-isolated'\)/g)).toHaveLength(2);
+        // Every dialog, not a count that the next dialog makes wrong.
+        const dialogs = modals.match(/extends Modal \{/g) ?? [];
+        expect(dialogs.length).toBeGreaterThanOrEqual(4);
+        expect(modals.match(/addClass\('nexus-studio-isolated'\)/g)).toHaveLength(dialogs.length);
     });
 
     it('keeps the probe sentinel in step with the stylesheet', () => {

@@ -23,7 +23,13 @@ export function makeHost(initial: NexusStudioSettings = defaultSettings()) {
         sessions: [] as Array<[string, string | null]>,
         menus: [] as StudioMenuAction[][],
         notices: [] as string[],
+        exports: [] as string[][],
+        confirms: [] as string[],
     };
+    /** What the next confirm dialog answers; tests flip it to say no. */
+    const answers = { confirm: true };
+    /** The import dialog's callback, as if the user pressed Import with this text. */
+    let pendingImport: ((text: string) => void) | null = null;
     let panel: StudioPanel | null = null;
     const host: StudioPanelHost = {
         settings: () => settings,
@@ -63,11 +69,28 @@ export function makeHost(initial: NexusStudioSettings = defaultSettings()) {
         notify: (message) => {
             log.notices.push(message);
         },
+        openPaletteExport: (colors) => {
+            log.exports.push([...colors]);
+        },
+        openPaletteImport: (onImport) => {
+            pendingImport = onImport;
+        },
+        confirm: (title) => {
+            log.confirms.push(title);
+            return Promise.resolve(answers.confirm);
+        },
     };
     return {
         host,
         log,
         session,
+        answers,
+        /** Presses Import in the open import dialog with this text. */
+        importText(text: string): void {
+            const run = pendingImport;
+            pendingImport = null;
+            run?.(text);
+        },
         get settings() {
             return settings;
         },
@@ -101,6 +124,8 @@ export function mount(initial?: NexusStudioSettings) {
         host: fake.host,
         log: fake.log,
         session: fake.session,
+        answers: fake.answers,
+        importText: (text: string) => fake.importText(text),
         get settings() {
             return fake.settings;
         },

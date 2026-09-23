@@ -28,14 +28,9 @@ import {
 import { overrideDeclarations, withPreview, withSession } from '../companion/nexus-theme-studio/src/overrides';
 import {
     FIRST_PROFILE_ID,
-    MAX_SWATCHES,
     STANDARD_PROFILE_ID,
     activeProfile,
-    addSwatch,
     defaultSettings,
-    normalizeSettings,
-    removeSwatch,
-    replaceSwatch,
     setActiveProfile,
     setOverride,
     type NexusStudioSettings,
@@ -570,11 +565,144 @@ describe('Pick from Obsidian lives in the picker', () => {
     });
 });
 
-// --- the palette -----------------------------------------------------------------------
+// --- the colour library in the picker ----------------------------------------------------
 
-describe('the palette', () => {
-    const swatches = () => Array.from(popover()!.querySelectorAll<HTMLButtonElement>('.nexus-studio-cp-swatch'));
+const savedSwatches = () =>
+    Array.from(popover()!.querySelectorAll<HTMLButtonElement>('.nexus-studio-cp-swatch[data-kind="saved"]'));
+const recentSwatches = () =>
+    Array.from(popover()!.querySelectorAll<HTMLButtonElement>('.nexus-studio-cp-swatch[data-kind="recent"]'));
+const commitHex = (ui: ReturnType<typeof mount>, tokenKey: string, hex: string) => {
+    openFor(ui, tokenKey);
+    type(field('hex'), hex);
+    inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
+};
 
+describe('recent colours: what was committed, newest first', () => {
+    it('shows two labelled sections, Recent above Saved', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        const sections = Array.from(popover()!.querySelectorAll<HTMLElement>('.nexus-studio-cp-palette'));
+        expect(sections.map((section) => section.dataset.section)).toEqual(['recent', 'saved']);
+        expect(sections.map((section) => section.querySelector('.nexus-studio-cp-palette-label')!.textContent)).toEqual([
+            'Recent',
+            'Saved',
+        ]);
+        // Empty until something is committed, and it says so.
+        expect(inPicker('.nexus-studio-cp-empty').textContent).toMatch(/commit/);
+        // No + and no ⋯ on Recent: it manages itself.
+        expect(sections[0]!.querySelector('.nexus-studio-cp-add, .nexus-studio-cp-more')).toBeNull();
+    });
+
+    it('records a commit, newest on the left, in the same write as the token', () => {
+        const ui = mount();
+        commitHex(ui, WORKSPACE.key, '#ff0000');
+        expect(ui.settings.recentColors).toEqual(['#ff0000']);
+        expect(ui.log.updateLive).toBe(1);
+        commitHex(ui, WORKSPACE.key, '#00ff00');
+        commitHex(ui, DOCUMENT.key, '#0000ff');
+        expect(ui.settings.recentColors).toEqual(['#0000ff', '#00ff00', '#ff0000']);
+        // A colour used again moves to the front.
+        commitHex(ui, WORKSPACE.key, '#ff0000');
+        expect(ui.settings.recentColors).toEqual(['#ff0000', '#0000ff', '#00ff00']);
+        openFor(ui, DOCUMENT.key);
+        expect(recentSwatches().map((swatch) => swatch.style.getPropertyValue('--nexus-studio-swatch'))).toEqual([
+            '#ff0000',
+            '#0000ff',
+            '#00ff00',
+        ]);
+    });
+
+    it('records nothing while the picker moves', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        type(inPicker<HTMLInputElement>('.nexus-studio-cp-hue'), '120');
+        type(field('hex'), '#123456');
+        key(inPicker('.nexus-studio-cp-area'), 'ArrowUp');
+        expect(ui.settings.recentColors).toEqual([]);
+        expect(ui.log.updateUi).toBe(0);
+    });
+
+    it('records nothing on Escape or Revert', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        type(field('hex'), '#123456');
+        key(document, 'Escape');
+        openFor(ui, WORKSPACE.key);
+        type(field('hex'), '#654321');
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-cancel').click();
+        expect(ui.settings.recentColors).toEqual([]);
+        expect(ui.log.updateLive + ui.log.updateUi).toBe(0);
+    });
+
+    // Decided: recent means a colour the token did not have before.
+    it('records nothing for a commit that changes nothing, even in another spelling', () => {
+        const ui = mount(withSettings((s) => setOverride(s, FIRST_PROFILE_ID, WORKSPACE.key, 'rgb(51, 102, 153)')));
+        // Opened and closed: the same text, no write at all.
+        openFor(ui, WORKSPACE.key);
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
+        expect(ui.log.updateLive).toBe(0);
+        // The same colour typed as hex: the stored spelling is tidied, but the
+        // token did not get a new colour, so nothing was "used".
+        openFor(ui, WORKSPACE.key);
+        type(field('hex'), '#336699');
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
+        expect(override(ui, WORKSPACE.key)).toBe('#336699');
+        expect(ui.settings.recentColors).toEqual([]);
+    });
+
+    it('records nothing for a Custom CSS value: it is not a colour', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-advanced-toggle').click();
+        type(inPicker<HTMLInputElement>('.nexus-studio-cp-css'), 'color-mix(in srgb, #000 50%, #fff)');
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
+        expect(override(ui, WORKSPACE.key)).toBe('color-mix(in srgb, #000 50%, #fff)');
+        expect(ui.settings.recentColors).toEqual([]);
+    });
+
+    it('loads a recent colour as a draft, and the recent entry itself does not change', () => {
+        const ui = mount(withSettings((s) => ({ ...s, recentColors: ['#0000ff', '#ff0000'] })));
+        openFor(ui, WORKSPACE.key);
+        recentSwatches()[0]!.click();
+        expect(ui.session.get(WORKSPACE.key)).toBe('#0000ff');
+        expect(ui.settings.recentColors).toEqual(['#0000ff', '#ff0000']);
+        // A lighter variant, committed: it goes in front, the original stays.
+        key(inPicker('.nexus-studio-cp-area'), 'ArrowLeft', true);
+        const variant = ui.session.get(WORKSPACE.key)!;
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
+        expect(ui.settings.recentColors).toEqual([variant, '#0000ff', '#ff0000']);
+    });
+
+    it('loading a recent colour and cancelling writes nothing anywhere', () => {
+        const ui = mount(withSettings((s) => ({ ...s, recentColors: ['#0000ff'] })));
+        openFor(ui, WORKSPACE.key);
+        recentSwatches()[0]!.click();
+        key(document, 'Escape');
+        expect(override(ui, WORKSPACE.key)).toBeUndefined();
+        expect(ui.log.updateLive + ui.log.updateUi).toBe(0);
+    });
+
+    it('records a colour taken from Obsidian once it is committed, and not when the pick is cancelled', async () => {
+        installCapture([0x12, 0x34, 0x56, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-sample').click();
+        key(document, 'Escape');
+        await new Promise((resolve) => window.setTimeout(resolve, 200));
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
+        expect(ui.settings.recentColors).toEqual([]);
+
+        openFor(ui, WORKSPACE.key);
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-sample').click();
+        key(document, 'Enter');
+        await new Promise((resolve) => window.setTimeout(resolve, 200));
+        expect(ui.settings.recentColors).toEqual([]);
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
+        expect(ui.settings.recentColors).toEqual(['#123456']);
+    });
+});
+
+describe('saved colours: what was kept on purpose', () => {
     it('saves the current colour with +, as studio state and not as a token', () => {
         const ui = mount(withSettings((s) => setOverride(s, FIRST_PROFILE_ID, WORKSPACE.key, '#336699')));
         openFor(ui, WORKSPACE.key);
@@ -582,8 +710,19 @@ describe('the palette', () => {
         expect(ui.settings.savedSwatches).toEqual(['#336699']);
         expect(ui.log.updateUi).toBe(1);
         expect(ui.log.updateLive).toBe(0);
-        expect(swatches()).toHaveLength(1);
-        expect(swatches()[0]!.style.getPropertyValue('--nexus-studio-swatch')).toBe('#336699');
+        expect(savedSwatches()).toHaveLength(1);
+        expect(savedSwatches()[0]!.style.getPropertyValue('--nexus-studio-swatch')).toBe('#336699');
+        // Saving is not using: recent is untouched.
+        expect(ui.settings.recentColors).toEqual([]);
+    });
+
+    it('does not save a colour twice, writes nothing, and shows the one there', () => {
+        const ui = mount(withSettings((s) => ({ ...setOverride(s, FIRST_PROFILE_ID, WORKSPACE.key, '#336699'), savedSwatches: ['#111111', '#336699'] })));
+        openFor(ui, WORKSPACE.key);
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-add').click();
+        expect(ui.settings.savedSwatches).toEqual(['#111111', '#336699']);
+        expect(ui.log.updateUi).toBe(0);
+        expect(savedSwatches()[1]!.classList.contains('is-found')).toBe(true);
     });
 
     it('keeps opacity: a translucent colour is saved translucent', () => {
@@ -594,11 +733,12 @@ describe('the palette', () => {
     });
 
     // Base colour, then a variant, then the variant saved as well.
-    it('loads a swatch into the picker without changing the swatch', () => {
+    it('loads a saved colour without changing it, and a variant can be saved beside it', () => {
         const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#336699'] })));
         openFor(ui, WORKSPACE.key);
-        swatches()[0]!.click();
+        savedSwatches()[0]!.click();
         expect(ui.session.get(WORKSPACE.key)).toBe('#336699');
+        expect(savedSwatches()[0]!.getAttribute('aria-pressed')).toBe('true');
         key(inPicker('.nexus-studio-cp-area'), 'ArrowUp', true);
         const variant = ui.session.get(WORKSPACE.key)!;
         expect(variant).not.toBe('#336699');
@@ -607,68 +747,153 @@ describe('the palette', () => {
         expect(ui.settings.savedSwatches).toEqual(['#336699', variant]);
     });
 
-    it('loads a translucent swatch translucent where the token has opacity, opaque where it has none', () => {
+    it('loads a translucent colour translucent where the token has opacity, opaque where it has none', () => {
         const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['rgba(51, 102, 153, 0.5)'] })));
         openFor(ui, SPLITTER_HOVER.key);
-        swatches()[0]!.click();
+        savedSwatches()[0]!.click();
         expect(ui.session.get(SPLITTER_HOVER.key)).toBe('rgba(51, 102, 153, 0.5)');
         key(document, 'Escape');
         openFor(ui, WORKSPACE.key);
-        swatches()[0]!.click();
+        savedSwatches()[0]!.click();
         expect(ui.session.get(WORKSPACE.key)).toBe('#336699');
     });
 
-    it('replaces and deletes from the swatch menu', () => {
+    // Replace and delete without a context menu: load it, then ⋯.
+    it('replaces and deletes the loaded colour from ⋯, no context menu needed', () => {
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#111111', '#222222'] })));
+        openFor(ui, WORKSPACE.key);
+        savedSwatches()[1]!.click();
+        type(field('hex'), '#abcdef');
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-more').click();
+        const menu = ui.log.menus.at(-1)!;
+        expect(menu.map((item) => item.title)).toEqual([
+            'Replace #222222 with current colour',
+            'Delete #222222',
+            'Import palette…',
+            'Export palette…',
+            'Copy as CSS variables',
+            'Clear saved colours…',
+        ]);
+        menu[0]!.run();
+        expect(ui.settings.savedSwatches).toEqual(['#111111', '#abcdef']);
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-more').click();
+        ui.log.menus.at(-1)![1]!.run();
+        expect(ui.settings.savedSwatches).toEqual(['#111111']);
+        expect(savedSwatches()).toHaveLength(1);
+    });
+
+    it('offers only the palette actions when no saved colour is loaded', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-more').click();
+        const menu = ui.log.menus.at(-1)!;
+        expect(menu.map((item) => item.title)).toEqual([
+            'Import palette…',
+            'Export palette…',
+            'Copy as CSS variables',
+            'Clear saved colours…',
+        ]);
+        // Nothing to export or clear yet.
+        expect(menu.map((item) => item.disabled)).toEqual([false, true, true, true]);
+    });
+
+    it('still replaces and deletes from the swatch context menu', () => {
         const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#111111', '#222222'] })));
         openFor(ui, WORKSPACE.key);
         type(field('hex'), '#abcdef');
-        swatches()[1]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+        savedSwatches()[1]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
         const menu = ui.log.menus.at(-1)!;
         expect(menu.map((item) => item.title)).toEqual(['Replace with current colour', 'Delete swatch']);
         menu[0]!.run();
         expect(ui.settings.savedSwatches).toEqual(['#111111', '#abcdef']);
-        swatches()[0]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+        savedSwatches()[0]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
         ui.log.menus.at(-1)![1]!.run();
         expect(ui.settings.savedSwatches).toEqual(['#abcdef']);
-        expect(swatches()).toHaveLength(1);
     });
 
-    it('deletes a focused swatch with the Delete key', () => {
+    it('deletes a focused saved colour with the Delete key', () => {
         const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#111111', '#222222'] })));
         openFor(ui, WORKSPACE.key);
-        key(swatches()[0]!, 'Delete');
+        key(savedSwatches()[0]!, 'Delete');
         expect(ui.settings.savedSwatches).toEqual(['#222222']);
     });
 
-    it('belongs to the studio: a profile switch keeps it, and a restart keeps it', () => {
-        let settings = addSwatch(defaultSettings(), 'rgba(1, 2, 3, 0.5)');
-        settings = setActiveProfile(settings, STANDARD_PROFILE_ID);
-        settings = setOverride(setActiveProfile(settings, FIRST_PROFILE_ID), FIRST_PROFILE_ID, WORKSPACE.key, '#000');
-        expect(settings.savedSwatches).toEqual(['rgba(1, 2, 3, 0.5)']);
-        expect(normalizeSettings(JSON.parse(JSON.stringify(settings))).savedSwatches).toEqual(['rgba(1, 2, 3, 0.5)']);
-        // Nothing about it lives in a profile.
-        expect(JSON.stringify(settings.profiles)).not.toContain('rgba(1, 2, 3, 0.5)');
+    it('clears only after a yes', async () => {
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#111111'], recentColors: ['#222222'] })));
+        openFor(ui, WORKSPACE.key);
+        ui.answers.confirm = false;
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-more').click();
+        ui.log.menus.at(-1)!.find((item) => item.title.startsWith('Clear'))!.run();
+        await Promise.resolve();
+        expect(ui.log.confirms).toEqual(['Clear saved colours']);
+        expect(ui.settings.savedSwatches).toEqual(['#111111']);
+        ui.answers.confirm = true;
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-more').click();
+        ui.log.menus.at(-1)!.find((item) => item.title.startsWith('Clear'))!.run();
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        expect(ui.settings.savedSwatches).toEqual([]);
+        expect(ui.settings.recentColors).toEqual(['#222222']);
+        expect(savedSwatches()).toHaveLength(0);
+    });
+});
+
+describe('palette export and import from the picker', () => {
+    it('exports the saved colours, and not the recent ones', () => {
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#111111', 'rgba(1, 2, 3, 0.5)'], recentColors: ['#999999'] })));
+        openFor(ui, WORKSPACE.key);
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-more').click();
+        ui.log.menus.at(-1)!.find((item) => item.title.startsWith('Export'))!.run();
+        expect(ui.log.exports).toEqual([['#111111', 'rgba(1, 2, 3, 0.5)']]);
     });
 
-    it('refuses duplicates, non-colours and a palette past its size', () => {
-        let settings = addSwatch(defaultSettings(), '#111111');
-        expect(addSwatch(settings, '#111111')).toBe(settings);
-        expect(addSwatch(settings, 'var(--x)')).toBe(settings);
-        expect(replaceSwatch(settings, 5, '#222222')).toBe(settings);
-        expect(removeSwatch(settings, -1)).toBe(settings);
-        for (let i = 0; i < MAX_SWATCHES + 5; i += 1) {
-            settings = addSwatch(settings, `#${i.toString(16).padStart(6, '0')}`);
-        }
-        expect(settings.savedSwatches).toHaveLength(MAX_SWATCHES);
+    it('imports by merging, shows the new colours at once, and changes no token', () => {
+        const ui = mount(withSettings((s) => ({ ...setOverride(s, FIRST_PROFILE_ID, WORKSPACE.key, '#336699'), savedSwatches: ['#111111'] })));
+        openFor(ui, WORKSPACE.key);
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-more').click();
+        ui.log.menus.at(-1)!.find((item) => item.title.startsWith('Import'))!.run();
+        ui.importText(
+            JSON.stringify({
+                format: 'nexus-color-palette',
+                version: 1,
+                name: 'Imported',
+                colors: [{ value: '#111111' }, { value: 'rgba(255,255,255,0.28)' }, { value: 'nope' }],
+            })
+        );
+        expect(ui.settings.savedSwatches).toEqual(['#111111', 'rgba(255, 255, 255, 0.28)']);
+        expect(ui.log.notices.at(-1)).toBe('"Imported": 1 added, 1 already saved, 1 not a colour, skipped.');
+        expect(savedSwatches()).toHaveLength(2);
+        // The picker, its draft and the token are as they were.
+        expect(popovers()).toHaveLength(1);
+        expect(ui.session.size).toBe(0);
+        expect(override(ui, WORKSPACE.key)).toBe('#336699');
+        expect(ui.log.updateLive).toBe(0);
     });
 
-    it('reads an older file with no palette, and a damaged one, without failing', () => {
-        const v2 = { version: 2, activeProfileId: 'custom', profiles: [], collapsedGroups: [] };
-        expect(normalizeSettings(v2).savedSwatches).toEqual([]);
-        expect(normalizeSettings(v2).pickerFormat).toBe('hex');
-        const damaged = { ...v2, savedSwatches: ['#111111', 3, 'nope', '#111111', 'rgba(0,0,0,0.5)'], pickerFormat: 'cmyk' };
-        expect(normalizeSettings(damaged).savedSwatches).toEqual(['#111111', 'rgba(0,0,0,0.5)']);
-        expect(normalizeSettings(damaged).pickerFormat).toBe('hex');
+    it('refuses a file of the wrong kind or a newer version, and changes nothing', () => {
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#111111'] })));
+        ui.panel.importPalette(JSON.stringify({ format: 'nexus-theme-profile', formatVersion: 1, name: 'p', overrides: {} }));
+        ui.panel.importPalette(JSON.stringify({ format: 'nexus-color-palette', version: 9, colors: [] }));
+        expect(ui.log.notices).toHaveLength(2);
+        expect(ui.log.notices.every((notice) => notice.startsWith('Import refused'))).toBe(true);
+        expect(ui.settings.savedSwatches).toEqual(['#111111']);
+        expect(ui.log.updateUi).toBe(0);
+    });
+
+    // The import dialog is outside the picker; working in it is not "a click outside".
+    it('keeps the picker open while one of its dialogs is in use', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        type(field('hex'), '#445566');
+        const dialog = document.createElement('div');
+        dialog.className = 'modal-container';
+        const input = document.createElement('textarea');
+        dialog.appendChild(input);
+        document.body.appendChild(dialog);
+        input.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+        key(input, 'Escape');
+        expect(popovers()).toHaveLength(1);
+        expect(ui.session.get(WORKSPACE.key)).toBe('#445566');
+        dialog.remove();
     });
 });
 

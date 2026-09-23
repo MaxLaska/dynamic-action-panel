@@ -29,6 +29,7 @@ import {
     type NexusContrastPair,
     type ThemeTokenDefinition,
 } from '../../../theme/nexus/src/tokens';
+import { canonicalColor, paletteAsCssVariables, parsePalette } from './colorLibrary';
 import { openColorPicker, type ColorPickerHandle } from './colorPicker';
 import { parseColorValue } from './colorValue';
 import {
@@ -46,6 +47,9 @@ import { canSample, sampleColor, type SampleSession } from './sampler';
 import {
     activeProfile,
     addSwatch,
+    clearSwatches,
+    importSwatches,
+    recordRecent,
     removeSwatch,
     replaceSwatch,
     setPickerFormat,
@@ -96,6 +100,12 @@ export interface StudioPanelHost {
     promptName(title: string, initial: string): Promise<string | null>;
     /** Opens the import/export dialog. */
     openTransfer(mode: 'export' | 'import', profile: NexusProfile, onImport: (text: string) => void): void;
+    /** Opens the palette export dialog: a name, the JSON, Copy. */
+    openPaletteExport(colors: readonly string[]): void;
+    /** Opens the palette import dialog: paste or choose a file. */
+    openPaletteImport(onImport: (text: string) => void): void;
+    /** Asks a yes/no question; true only for an explicit yes. */
+    confirm(title: string, message: string, action: string): Promise<boolean>;
     /** Shows a menu of actions at a pointer event. */
     showMenu(evt: MouseEvent, actions: StudioMenuAction[]): void;
     /** A transient message to the user. */
@@ -513,10 +523,47 @@ export class StudioPanel {
      * nothing and keeps the rule simple: nothing on screen is trusted to still
      * be true after a write.
      */
-    private write(token: ThemeTokenDefinition, value: string | null): void {
+    private write(
+        token: ThemeTokenDefinition,
+        value: string | null,
+        also?: (next: NexusStudioSettings) => NexusStudioSettings
+    ): void {
         const settings = this.host.settings();
-        this.host.updateLive(setOverride(settings, this.current().id, token.key, value));
+        const next = setOverride(settings, this.current().id, token.key, value);
+        this.host.updateLive(also ? also(next) : next);
         this.sync();
+    }
+
+    /** A library change: saved at once as studio state, or not at all when nothing changed. */
+    private updateLibrary(next: NexusStudioSettings): void {
+        if (next !== this.host.settings()) void this.host.updateUi(next);
+    }
+
+    /**
+     * Reads a palette file into the saved colours: merged, never replacing,
+     * and nothing but the palette changes — no token, no profile, no theme.
+     */
+    importPalette(text: string): void {
+        const parsed = parsePalette(text);
+        if (!parsed.ok) {
+            this.host.notify(`Import refused: ${parsed.reason}`);
+            return;
+        }
+        const { settings, result } = importSwatches(this.host.settings(), parsed.colors);
+        this.updateLibrary(settings);
+        this.picker?.refreshLibrary();
+        const parts = [`${result.added} added`];
+        if (result.alreadySaved > 0) parts.push(`${result.alreadySaved} already saved`);
+        if (parsed.invalid > 0) parts.push(`${parsed.invalid} not a colour, skipped`);
+        if (result.overflow > 0) parts.push(`${result.overflow} did not fit`);
+        this.host.notify(`"${parsed.name}": ${parts.join(', ')}.`);
+    }
+
+    private copy(text: string, done: string): void {
+        void this.win.navigator.clipboard?.writeText(text).then(
+            () => this.host.notify(done),
+            () => this.host.notify('Could not reach the clipboard.')
+        );
     }
 
     /**
@@ -569,7 +616,14 @@ export class StudioPanel {
             preview: (value) => this.host.setSessionValue(token.key, value),
             finish: (outcome, value) => {
                 this.picker = null;
-                if (outcome === 'commit' && value !== initialValue) this.write(token, value);
+                if (outcome === 'commit' && value !== initialValue) {
+                    // One write for both: the token and, when a colour really
+                    // changed, the recent colours. A Custom CSS value, or a
+                    // colour spelled differently but the same, is not "used".
+                    const changedColour =
+                        canonicalColor(value) !== null && canonicalColor(value) !== canonicalColor(initialValue);
+                    this.write(token, value, changedColour ? (next) => recordRecent(next, value) : undefined);
+                }
                 this.host.setSessionValue(token.key, null);
                 if (!this.disposed) this.sync();
             },
@@ -579,11 +633,34 @@ export class StudioPanel {
                 const resolved = this.resolveColour(value);
                 return parseColorValue(resolved) ? resolved : null;
             },
-            palette: {
-                list: () => settings().savedSwatches,
-                add: (value) => void this.host.updateUi(addSwatch(settings(), value)),
-                remove: (index) => void this.host.updateUi(removeSwatch(settings(), index)),
-                replace: (index, value) => void this.host.updateUi(replaceSwatch(settings(), index, value)),
+            library: {
+                recent: () => settings().recentColors,
+                saved: () => settings().savedSwatches,
+                save: (value) => {
+                    const next = addSwatch(settings(), value);
+                    // Saved only when something changed: a duplicate `+` writes nothing.
+                    if (next !== settings()) void this.host.updateUi(next);
+                    const colour = canonicalColor(value);
+                    return colour ? settings().savedSwatches.indexOf(colour) : -1;
+                },
+                remove: (index) => this.updateLibrary(removeSwatch(settings(), index)),
+                replace: (index, value) => this.updateLibrary(replaceSwatch(settings(), index, value)),
+                importPalette: () => this.host.openPaletteImport((text) => this.importPalette(text)),
+                exportPalette: () => this.host.openPaletteExport(settings().savedSwatches),
+                copyAsCss: () => this.copy(paletteAsCssVariables(settings().savedSwatches), 'CSS variables copied.'),
+                clear: () => {
+                    void this.host
+                        .confirm(
+                            'Clear saved colours',
+                            `Remove all ${settings().savedSwatches.length} saved colours? Recent colours and every theme value stay as they are. Export the palette first to keep a copy.`,
+                            'Clear'
+                        )
+                        .then((yes) => {
+                            if (!yes) return;
+                            this.updateLibrary(clearSwatches(settings()));
+                            this.picker?.refreshLibrary();
+                        });
+                },
             },
             showMenu: (evt, items) =>
                 this.host.showMenu(
@@ -592,7 +669,7 @@ export class StudioPanel {
                         id: `swatch-${index}`,
                         title: item.title,
                         icon: item.icon,
-                        disabled: false,
+                        disabled: item.disabled ?? false,
                         run: () => item.run(),
                     }))
                 ),

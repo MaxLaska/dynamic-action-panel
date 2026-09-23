@@ -878,7 +878,8 @@
 
 /* A saved colour over the checkerboard, so a translucent one looks it. */
 .nexus-studio-popover .nexus-studio-cp-swatch,
-.nexus-studio-popover .nexus-studio-cp-add {
+.nexus-studio-popover .nexus-studio-cp-add,
+.nexus-studio-popover .nexus-studio-cp-more {
     width: 22px;
     height: 22px;
     padding: 0;
@@ -893,7 +894,8 @@
         var(--nexus-studio-checker);
 }
 
-.nexus-studio-popover .nexus-studio-cp-add {
+.nexus-studio-popover .nexus-studio-cp-add,
+.nexus-studio-popover .nexus-studio-cp-more {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -904,6 +906,31 @@
 
 .nexus-studio-popover .nexus-studio-cp-add:disabled {
     opacity: 0.4;
+}
+
+/* Recent and Saved: two memories, one label each, and a gap between. */
+.nexus-studio-cp-palette + .nexus-studio-cp-palette {
+    margin-top: var(--size-4-1);
+}
+
+.nexus-studio-cp-empty {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    color: var(--nexus-studio-text-faint);
+}
+
+/* The saved colour loaded into the picker: what ⋯ can replace or delete. */
+.nexus-studio-popover .nexus-studio-cp-swatch[aria-pressed='true'] {
+    box-shadow:
+        inset 0 0 0 1px var(--nexus-studio-border),
+        0 0 0 2px var(--nexus-studio-focus);
+}
+
+/* `+` on a colour already saved: no second copy, the one there says so. */
+.nexus-studio-popover .nexus-studio-cp-swatch.is-found {
+    box-shadow:
+        inset 0 0 0 1px var(--nexus-studio-border),
+        0 0 0 2px var(--nexus-studio-text);
 }
 
 .nexus-studio-popover .nexus-studio-cp-advanced-toggle {

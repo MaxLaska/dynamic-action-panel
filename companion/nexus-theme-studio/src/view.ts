@@ -16,7 +16,13 @@
 
 import { ItemView, Menu, Notice, type WorkspaceLeaf } from 'obsidian';
 
-import { TransferModal, promptForName } from './modals';
+import {
+    PaletteExportModal,
+    PaletteImportModal,
+    TransferModal,
+    confirmAction,
+    promptForName,
+} from './modals';
 import type { NexusStudioSettings } from './profiles';
 import { StudioPanel, type StudioPanelHost } from './studioPanel';
 
@@ -127,6 +133,13 @@ export class NexusStudioView extends ItemView {
             openTransfer: (mode, profile, onImport) => {
                 new TransferModal(this.app, mode, profile, onImport).open();
             },
+            openPaletteExport: (colors) => {
+                new PaletteExportModal(this.app, colors).open();
+            },
+            openPaletteImport: (onImport) => {
+                new PaletteImportModal(this.app, onImport).open();
+            },
+            confirm: (title, message, action) => confirmAction(this.app, title, message, action),
             showMenu: (evt, actions) => {
                 // A NATIVE menu, drawn by the operating system: the one kind of
                 // menu no theme token can reach. The studio's own controls must
