@@ -17,6 +17,16 @@
 // the picker cannot show — `color-mix()`, `var()`, `oklch()`. Such a value
 // opens as Custom CSS and is never rewritten unless the user converts it.
 //
+// THREE LEVELS, kept apart:
+//
+//   INTERACTION COMMIT — one finished colour action: a click or drag in the
+//     square released, a bar let go, a field confirmed, a swatch chosen, a
+//     pixel taken. It records the colour in RECENT at once (`library.use`),
+//     while the picker stays open. Never per pointer move.
+//   PICKER SESSION COMMIT — Done, Enter, a click outside: the token keeps the
+//     draft. Escape or Revert: it does not. Recent is untouched either way.
+//   SAVED — only what the user keeps on purpose.
+//
 // A SESSION, not a form. Every change is a DRAFT: applied to the whole
 // workspace at once (and the reader, through the same token path as any other
 // value) but not written to the profile. Done, Enter or a click outside
@@ -29,7 +39,7 @@
 // swatch, so a narrow dock does not clip it; it carries the studio's control
 // plane palette, so the colours being edited never style the picker itself.
 
-import { setIcon } from 'obsidian';
+import { setIcon, setTooltip } from 'obsidian';
 
 import type { ThemeTokenDefinition } from '../../../theme/nexus/src/tokens';
 import {
@@ -63,8 +73,13 @@ export interface PickerMenuItem {
  * itself: it asks, and re-reads. What the rules are is colorLibrary.ts.
  */
 export interface PickerLibrary {
-    /** Recently committed colours, newest first. Read-only here. */
+    /** Recently used colours, newest first. */
     recent(): readonly string[];
+    /**
+     * One colour interaction has finished with this colour: it goes to the
+     * front of Recent. Not a token write, and not undone by Escape.
+     */
+    use(value: string): void;
     /** Deliberately saved colours. */
     saved(): readonly string[];
     /** Keeps a colour; answers where it is now (it may already have been there), or -1. */
@@ -209,38 +224,29 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         el(line, 'span', { cls: 'nexus-studio-cp-unit', text: '%' });
     }
 
-    const formats = el(visual, 'div', {
-        cls: 'nexus-studio-cp-formats',
-        attr: { role: 'group', 'aria-label': 'Format' },
-    });
-    const formatButtons = new Map<ColorFormat, HTMLButtonElement>();
-    for (const option of COLOR_FORMATS) {
-        const chip = button(formats, {
-            cls: 'nexus-studio-cp-format',
-            text: option.toUpperCase(),
-            attr: { 'data-format': option },
-        });
-        formatButtons.set(option, chip);
-        on(chip, 'click', () => {
-            // A display choice: the fields change, the value does not.
-            format = option;
-            host.setFormat(option);
-            buildFields();
-            refresh();
-        });
-    }
-    const fields = el(visual, 'div', { cls: 'nexus-studio-cp-fields' });
+    // The value line: the fields, one format button that cycles, and the pipette.
+    const valuebar = el(visual, 'div', { cls: 'nexus-studio-cp-valuebar' });
+    const fields = el(valuebar, 'div', { cls: 'nexus-studio-cp-fields' });
     let fieldDetaches: Detach[] = [];
     const fieldInputs = new Map<string, HTMLInputElement>();
+    const formatButton = button(valuebar, { cls: 'nexus-studio-cp-format' });
+    setTooltip(formatButton, 'Change colour format');
+    on(formatButton, 'click', () => {
+        // HEX → RGB → HSL → HEX. A display choice: the fields change, the value does not.
+        format = COLOR_FORMATS[(COLOR_FORMATS.indexOf(format) + 1) % COLOR_FORMATS.length] ?? 'hex';
+        host.setFormat(format);
+        buildFields();
+        refresh();
+    });
 
     let sampleButton: HTMLButtonElement | null = null;
     if (host.canSample) {
-        sampleButton = button(root, {
-            cls: 'nexus-studio-cp-sample',
-            attr: { 'aria-label': 'Pick from Obsidian — click a point, or aim with the arrows and press Enter' },
+        sampleButton = button(valuebar, {
+            cls: ['clickable-icon', 'nexus-studio-cp-sample'],
+            attr: { 'aria-label': 'Pick from Obsidian' },
         });
-        setIcon(el(sampleButton, 'span', { cls: 'nexus-studio-cp-sample-icon' }), 'pipette');
-        el(sampleButton, 'span', { text: 'Pick from Obsidian' });
+        setIcon(sampleButton, 'pipette');
+        setTooltip(sampleButton, 'Pick from Obsidian — click a point, or aim with the arrows and press Enter');
     }
 
     // Two memories, visibly apart: what was used, and what was kept.
@@ -321,6 +327,39 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         refresh();
     };
 
+    // --- interaction commits ------------------------------------------------------------
+    /**
+     * The end of ONE colour interaction: the colour now in the picker has been
+     * used. Recent is updated at once and shown at once; only the Recent row is
+     * redrawn, so the focus stays where it is. A Custom CSS value is not a
+     * colour and is not recorded.
+     */
+    const markUsed = (): void => {
+        if (closed || mode !== 'color') return;
+        host.library.use(rgbaToCss(rgba));
+        renderRecent();
+    };
+
+    /**
+     * A native range input: it streams `input` while moving, and its end is
+     * `change` for the pointer. From the keyboard, `change` fires on every
+     * step while a key is held, so the end there is the key going up.
+     */
+    const commitOnRelease = (input: HTMLInputElement): void => {
+        let keyHeld = false;
+        on(input, 'keydown', () => {
+            keyHeld = true;
+        });
+        on(input, 'keyup', () => {
+            if (!keyHeld) return;
+            keyHeld = false;
+            markUsed();
+        });
+        on(input, 'change', () => {
+            if (!keyHeld) markUsed();
+        });
+    };
+
     // --- the square ---------------------------------------------------------------------
     const fromPointer = (event: PointerEvent): void => {
         const box = area.getBoundingClientRect();
@@ -344,9 +383,15 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         if (!dragging) return;
         dragging = false;
         area.releasePointerCapture?.(event.pointerId);
+        // One click or one whole drag is one colour: its end value.
+        if (event.type === 'pointerup') markUsed();
     };
     on(area, 'pointerup', endDrag);
     on(area, 'pointercancel', endDrag);
+    // Arrows: each key press moves the draft; letting go is the decision.
+    on(area, 'keyup', (event) => {
+        if (event.key.startsWith('Arrow')) markUsed();
+    });
     on(area, 'keydown', (event) => {
         const step = event.shiftKey ? PICKER_STEP_LARGE : 1;
         const moves: Record<string, [number, number]> = {
@@ -365,9 +410,11 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
     // Native range inputs: arrows, Page Up/Down, Home/End and focus rings come
     // with them, and `input` streams while they are dragged.
     on(hue, 'input', () => setHsva({ ...hsva, h: Number(hue.value) }));
+    commitOnRelease(hue);
     if (alphaRange) {
         const range = alphaRange;
         on(range, 'input', () => setHsva({ ...hsva, a: Number(range.value) / 100 }));
+        commitOnRelease(range);
     }
     if (alphaNumber) {
         const number = alphaNumber;
@@ -377,6 +424,8 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
             number.toggleAttribute('aria-invalid', !valid);
             if (valid) setHsva({ ...hsva, a: percent / 100 });
         });
+        // A typed value is decided when it is confirmed: Enter or leaving the field.
+        on(number, 'change', () => markUsed());
     }
 
     // --- the fields ---------------------------------------------------------------------
@@ -413,7 +462,12 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         fields.setAttribute('data-format', format);
         const listen = (input: HTMLInputElement, handler: () => void): void => {
             input.addEventListener('input', handler);
-            fieldDetaches.push(() => input.removeEventListener('input', handler));
+            // Confirmed (Enter or leaving the field): one used colour.
+            input.addEventListener('change', markUsed);
+            fieldDetaches.push(() => {
+                input.removeEventListener('input', handler);
+                input.removeEventListener('change', markUsed);
+            });
         };
         if (format === 'hex') {
             const input = field('hex', 'Hex', 'text');
@@ -473,7 +527,9 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
                     if (closed || !picked) return;
                     const taken = parseRgba(picked);
                     // A pixel has no opacity of its own; the draft keeps the one it had.
-                    if (taken) setRgba({ ...taken, a: mode === 'color' ? rgba.a : 1 });
+                    if (!taken) return;
+                    setRgba({ ...taken, a: mode === 'color' ? rgba.a : 1 });
+                    markUsed();
                 })
                 .finally(() => {
                     sampling = false;
@@ -514,7 +570,7 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         const recent = host.library.recent();
         recentBox.classList.toggle('is-empty', recent.length === 0);
         if (recent.length === 0) {
-            el(recentGrid, 'span', { cls: 'nexus-studio-cp-empty', text: 'Colours you commit appear here.' });
+            el(recentGrid, 'span', { cls: 'nexus-studio-cp-empty', text: 'Colours you use appear here.' });
             return;
         }
         recent.forEach((value, index) => {
@@ -522,7 +578,10 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
             swatch.addEventListener('click', () => {
                 loadedSaved = null;
                 load(value);
+                // Using it again is a use: it moves to the front, now.
+                markUsed();
                 renderPalette();
+                recentGrid.querySelector<HTMLButtonElement>('.nexus-studio-cp-swatch')?.focus();
             });
         });
     }
@@ -547,7 +606,10 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
             swatch.addEventListener('click', () => {
                 loadedSaved = index;
                 load(value);
+                // The saved colour is used, not changed: Recent records it.
+                markUsed();
                 renderPalette();
+                grid.querySelector<HTMLButtonElement>(`.nexus-studio-cp-swatch[data-index="${index}"]`)?.focus();
             });
             swatch.addEventListener('contextmenu', (event) => {
                 event.preventDefault();
@@ -634,6 +696,7 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         show(text);
         refresh();
     });
+    on(cssInput, 'change', () => markUsed());
     on(convert, 'click', () => {
         const resolved = host.resolve(current);
         const colour = resolved ? parseRgba(resolved) : null;
@@ -642,6 +705,7 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
             return;
         }
         setRgba(withAlpha ? colour : { ...colour, a: 1 });
+        markUsed();
         area.focus();
     });
 
@@ -671,9 +735,10 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         if (alphaRange && focused !== alphaRange) alphaRange.value = String(percent);
         if (alphaNumber && focused !== alphaNumber) alphaNumber.value = String(percent);
 
-        for (const [option, chip] of formatButtons) {
-            chip.setAttribute('aria-pressed', option === format ? 'true' : 'false');
-        }
+        const label = format.toUpperCase();
+        formatButton.textContent = label;
+        formatButton.setAttribute('data-format', format);
+        formatButton.setAttribute('aria-label', `Colour format: ${label}. Change colour format`);
         const hsl = rgbaToHsla(rgba);
         const values: Record<string, string> = {
             hex: opaque,
@@ -744,6 +809,8 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         // Enter on a button presses the button; anywhere else it means "done".
         if (target?.tagName === 'BUTTON') return;
         event.preventDefault();
+        // A value typed and confirmed with Enter was used, even as the picker closes.
+        if (target?.tagName === 'INPUT') markUsed();
         close('commit');
     });
 

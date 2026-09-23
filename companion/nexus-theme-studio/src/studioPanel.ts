@@ -90,6 +90,11 @@ export interface StudioPanelHost {
     updateLive(next: NexusStudioSettings): void;
     /** A change to the studio's own UI state: persisted, theme untouched. */
     updateUi(next: NexusStudioSettings): Promise<void>;
+    /**
+     * A frequent library change (a recent colour): taken at once, persisted on
+     * a debounce, theme untouched. Not a token write.
+     */
+    updateUiLater(next: NexusStudioSettings): void;
     /** Paints the given custom properties in the locator colour; [] stops. */
     setPreview(variables: readonly string[]): void;
     /** Shows an open picker's draft for a token, or drops it (null). Never saved. */
@@ -523,14 +528,9 @@ export class StudioPanel {
      * nothing and keeps the rule simple: nothing on screen is trusted to still
      * be true after a write.
      */
-    private write(
-        token: ThemeTokenDefinition,
-        value: string | null,
-        also?: (next: NexusStudioSettings) => NexusStudioSettings
-    ): void {
+    private write(token: ThemeTokenDefinition, value: string | null): void {
         const settings = this.host.settings();
-        const next = setOverride(settings, this.current().id, token.key, value);
-        this.host.updateLive(also ? also(next) : next);
+        this.host.updateLive(setOverride(settings, this.current().id, token.key, value));
         this.sync();
     }
 
@@ -614,16 +614,13 @@ export class StudioPanel {
             format: settings().pickerFormat,
             setFormat: (format) => void this.host.updateUi(setPickerFormat(settings(), format)),
             preview: (value) => this.host.setSessionValue(token.key, value),
+            // The PICKER SESSION: the token keeps the draft, or does not.
+            // Recent is not touched here — it was written, interaction by
+            // interaction, while the picker was open, and stays whatever the
+            // session's outcome.
             finish: (outcome, value) => {
                 this.picker = null;
-                if (outcome === 'commit' && value !== initialValue) {
-                    // One write for both: the token and, when a colour really
-                    // changed, the recent colours. A Custom CSS value, or a
-                    // colour spelled differently but the same, is not "used".
-                    const changedColour =
-                        canonicalColor(value) !== null && canonicalColor(value) !== canonicalColor(initialValue);
-                    this.write(token, value, changedColour ? (next) => recordRecent(next, value) : undefined);
-                }
+                if (outcome === 'commit' && value !== initialValue) this.write(token, value);
                 this.host.setSessionValue(token.key, null);
                 if (!this.disposed) this.sync();
             },
@@ -635,6 +632,11 @@ export class StudioPanel {
             },
             library: {
                 recent: () => settings().recentColors,
+                // An INTERACTION COMMIT: library state only, saved on a debounce.
+                use: (value) => {
+                    const next = recordRecent(settings(), value);
+                    if (next !== settings()) this.host.updateUiLater(next);
+                },
                 saved: () => settings().savedSwatches,
                 save: (value) => {
                     const next = addSwatch(settings(), value);

@@ -49,6 +49,7 @@ export interface StudioServices {
     update(next: NexusStudioSettings): Promise<void>;
     updateLive(next: NexusStudioSettings): void;
     updateUi(next: NexusStudioSettings): Promise<void>;
+    updateUiLater(next: NexusStudioSettings): void;
     setPreview(variables: readonly string[]): void;
     setSessionValue(key: string, value: string | null): void;
     sessionValue(key: string): string | undefined;
@@ -126,6 +127,7 @@ export class NexusStudioView extends ItemView {
             update: (next) => services.update(next),
             updateLive: (next) => services.updateLive(next),
             updateUi: (next) => services.updateUi(next),
+            updateUiLater: (next) => services.updateUiLater(next),
             setPreview: (variables) => services.setPreview(variables),
             setSessionValue: (key, value) => services.setSessionValue(key, value),
             sessionValue: (key) => services.sessionValue(key),

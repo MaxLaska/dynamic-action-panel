@@ -610,6 +610,30 @@ describe('a drag repaints every frame but is written once', () => {
         expect(body).toContain('this.applyActiveProfile()');
     });
 
+    // Recent changes with every finished colour action: shown at once, written
+    // once the actions pause, and never a theme change.
+    it('saves the colour library on its own, longer debounce, and re-applies nothing', () => {
+        const later = main.slice(main.indexOf('updateUiLater(next: NexusStudioSettings): void'));
+        const body = later.slice(0, later.indexOf('\n    }'));
+        expect(body).toContain('LIBRARY_SAVE_DEBOUNCE_MS');
+        expect(body).toContain('setTimeout');
+        expect(body).not.toContain('await this.saveData');
+        expect(body).not.toContain('adopt(');
+        expect(body).not.toContain('applyActiveProfile');
+        const constant = /const LIBRARY_SAVE_DEBOUNCE_MS = (\d+);/.exec(main);
+        expect(Number(constant?.[1])).toBeGreaterThan(400);
+    });
+
+    it('records a used colour on the library path, never on the token path', () => {
+        const use = panel.slice(panel.indexOf('use: (value) =>'));
+        const body = use.slice(0, use.indexOf('},'));
+        expect(body).toContain('recordRecent(');
+        expect(body).toContain('updateUiLater(');
+        expect(body).not.toContain('updateLive(');
+        const finish = panel.slice(panel.indexOf('finish: (outcome, value) =>'));
+        expect(finish.slice(0, finish.indexOf('},'))).not.toContain('recordRecent');
+    });
+
     it('uses the deferred path for the token controls', () => {
         const write = panel.slice(panel.indexOf('private write('));
         expect(write.slice(0, write.indexOf('\n    }'))).toContain('updateLive(');

@@ -796,25 +796,35 @@
     color: var(--nexus-studio-text-muted);
 }
 
-.nexus-studio-cp-formats {
+/* The value line: fields, then one format button that cycles, then the
+ * pipette as an icon. The fields take what is left; the two buttons sit at the
+ * height of the inputs, not of the labels under them. */
+.nexus-studio-cp-valuebar {
     display: flex;
-    gap: 2px;
+    align-items: flex-start;
+    gap: var(--size-4-1);
+}
+
+.nexus-studio-cp-valuebar > .nexus-studio-cp-fields {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .nexus-studio-popover .nexus-studio-cp-format {
-    flex: 1 1 0;
-    height: auto;
-    padding: 2px 0;
+    flex: 0 0 auto;
+    min-width: 4.5ch;
+    height: var(--input-height, 30px);
+    padding: 0 var(--size-4-1);
+    font-family: var(--font-monospace);
     font-size: 11px;
     letter-spacing: 0.04em;
     background-color: transparent;
     box-shadow: inset 0 0 0 1px var(--nexus-studio-border);
-    color: var(--nexus-studio-text-muted);
+    color: var(--nexus-studio-text);
 }
 
-.nexus-studio-popover .nexus-studio-cp-format[aria-pressed='true'] {
+.nexus-studio-popover .nexus-studio-cp-format:hover {
     background-color: var(--nexus-studio-hover);
-    color: var(--nexus-studio-text);
 }
 
 .nexus-studio-cp-fields {
@@ -849,17 +859,14 @@
 }
 
 .nexus-studio-popover .nexus-studio-cp-sample {
-    display: flex;
+    flex: 0 0 auto;
+    height: var(--input-height, 30px);
+    width: var(--input-height, 30px);
+    padding: 0;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: var(--size-4-1);
-    height: auto;
-    padding: 4px var(--size-4-2);
-}
-
-.nexus-studio-cp-sample-icon {
-    display: inline-flex;
-    --icon-size: var(--icon-xs);
+    --icon-size: var(--icon-s);
 }
 
 .nexus-studio-cp-palette-label {

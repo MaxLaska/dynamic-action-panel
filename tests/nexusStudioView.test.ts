@@ -74,6 +74,7 @@ describe('the studio is a workspace view', () => {
             update: () => Promise.resolve(),
             updateLive: () => undefined,
             updateUi: () => Promise.resolve(),
+            updateUiLater: () => undefined,
             setPreview: (variables) => {
                 previews.push([...variables]);
             },

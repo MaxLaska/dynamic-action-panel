@@ -48,6 +48,11 @@ const popovers = () => document.querySelectorAll<HTMLElement>('.nexus-studio-pop
 const popover = () => document.querySelector<HTMLElement>('.nexus-studio-popover');
 const inPicker = <T extends Element>(selector: string) => popover()!.querySelector<T>(selector)!;
 const field = (name: string) => inPicker<HTMLInputElement>(`.nexus-studio-cp-field[data-field="${name}"]`);
+const formatButton = () => inPicker<HTMLButtonElement>('.nexus-studio-cp-format');
+/** Clicks the one format button until it shows `format`. */
+const cycleTo = (format: string) => {
+    for (let i = 0; i < 3 && formatButton().dataset.format !== format; i += 1) formatButton().click();
+};
 
 function openFor(ui: ReturnType<typeof mount>, key: string): HTMLElement {
     ui.inRow<HTMLButtonElement>(key, '.nexus-studio-swatch').click();
@@ -276,7 +281,7 @@ describe('everything in the picker is live, and a draft', () => {
         expect(ui.session.get(WORKSPACE.key)).toBe('#112233');
 
         const before = ui.log.sessions.length;
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-format[data-format="rgb"]').click();
+        cycleTo('rgb');
         expect(ui.log.sessions.length).toBe(before);
         expect(ui.session.get(WORKSPACE.key)).toBe('#112233');
         expect(inPicker('.nexus-studio-cp-readout').textContent).toBe('rgb(17, 34, 51)');
@@ -284,7 +289,7 @@ describe('everything in the picker is live, and a draft', () => {
         type(field('g'), '255');
         expect(ui.session.get(WORKSPACE.key)).toBe('#11ff33');
 
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-format[data-format="hsl"]').click();
+        cycleTo('hsl');
         expect(ui.session.get(WORKSPACE.key)).toBe('#11ff33');
         type(field('h'), '0');
         type(field('s'), '0');
@@ -301,7 +306,7 @@ describe('everything in the picker is live, and a draft', () => {
         const before = ui.log.sessions.length;
         type(field('hex'), '#12');
         expect(field('hex').hasAttribute('aria-invalid')).toBe(true);
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-format[data-format="rgb"]').click();
+        cycleTo('rgb');
         type(field('r'), '300');
         expect(field('r').hasAttribute('aria-invalid')).toBe(true);
         expect(ui.log.sessions.length).toBe(before);
@@ -310,10 +315,10 @@ describe('everything in the picker is live, and a draft', () => {
     it('opens in the format used last', () => {
         const ui = start();
         openFor(ui, WORKSPACE.key);
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-format[data-format="hsl"]').click();
+        cycleTo('hsl');
         key(document, 'Escape');
         openFor(ui, WORKSPACE.key);
-        expect(inPicker('.nexus-studio-cp-format[aria-pressed="true"]').getAttribute('data-format')).toBe('hsl');
+        expect(formatButton().dataset.format).toBe('hsl');
         expect(field('h').value).toBe('210');
     });
 
@@ -571,14 +576,20 @@ const savedSwatches = () =>
     Array.from(popover()!.querySelectorAll<HTMLButtonElement>('.nexus-studio-cp-swatch[data-kind="saved"]'));
 const recentSwatches = () =>
     Array.from(popover()!.querySelectorAll<HTMLButtonElement>('.nexus-studio-cp-swatch[data-kind="recent"]'));
-const commitHex = (ui: ReturnType<typeof mount>, tokenKey: string, hex: string) => {
-    openFor(ui, tokenKey);
-    type(field('hex'), hex);
-    inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
-};
 
-describe('recent colours: what was committed, newest first', () => {
-    it('shows two labelled sections, Recent above Saved', () => {
+/** Gives the square a size, so a pointer position means a colour. happy-dom has no layout. */
+function sizeSquare(): HTMLElement {
+    const area = inPicker<HTMLElement>('.nexus-studio-cp-area');
+    vi.spyOn(area, 'getBoundingClientRect').mockReturnValue({
+        left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, x: 0, y: 0, toJSON: () => ({}),
+    });
+    return area;
+}
+const pointer = (target: Element, type: string, x: number, y: number) =>
+    target.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, bubbles: true }));
+
+describe('Recent records each finished colour action, while the picker stays open', () => {
+    it('shows two labelled sections, Recent above Saved, Recent with no controls of its own', () => {
         const ui = mount();
         openFor(ui, WORKSPACE.key);
         const sections = Array.from(popover()!.querySelectorAll<HTMLElement>('.nexus-studio-cp-palette'));
@@ -587,118 +598,274 @@ describe('recent colours: what was committed, newest first', () => {
             'Recent',
             'Saved',
         ]);
-        // Empty until something is committed, and it says so.
-        expect(inPicker('.nexus-studio-cp-empty').textContent).toMatch(/commit/);
-        // No + and no ⋯ on Recent: it manages itself.
+        expect(inPicker('.nexus-studio-cp-empty').textContent).toMatch(/use/);
         expect(sections[0]!.querySelector('.nexus-studio-cp-add, .nexus-studio-cp-more')).toBeNull();
     });
 
-    it('records a commit, newest on the left, in the same write as the token', () => {
-        const ui = mount();
-        commitHex(ui, WORKSPACE.key, '#ff0000');
-        expect(ui.settings.recentColors).toEqual(['#ff0000']);
-        expect(ui.log.updateLive).toBe(1);
-        commitHex(ui, WORKSPACE.key, '#00ff00');
-        commitHex(ui, DOCUMENT.key, '#0000ff');
-        expect(ui.settings.recentColors).toEqual(['#0000ff', '#00ff00', '#ff0000']);
-        // A colour used again moves to the front.
-        commitHex(ui, WORKSPACE.key, '#ff0000');
-        expect(ui.settings.recentColors).toEqual(['#ff0000', '#0000ff', '#00ff00']);
-        openFor(ui, DOCUMENT.key);
-        expect(recentSwatches().map((swatch) => swatch.style.getPropertyValue('--nexus-studio-swatch'))).toEqual([
-            '#ff0000',
-            '#0000ff',
-            '#00ff00',
-        ]);
-    });
-
-    it('records nothing while the picker moves', () => {
+    it('a click in the square is one colour, recorded on release, with the picker still open', () => {
         const ui = mount();
         openFor(ui, WORKSPACE.key);
-        type(inPicker<HTMLInputElement>('.nexus-studio-cp-hue'), '120');
-        type(field('hex'), '#123456');
-        key(inPicker('.nexus-studio-cp-area'), 'ArrowUp');
+        const area = sizeSquare();
+        pointer(area, 'pointerdown', 100, 0);
         expect(ui.settings.recentColors).toEqual([]);
-        expect(ui.log.updateUi).toBe(0);
-    });
-
-    it('records nothing on Escape or Revert', () => {
-        const ui = mount();
-        openFor(ui, WORKSPACE.key);
-        type(field('hex'), '#123456');
-        key(document, 'Escape');
-        openFor(ui, WORKSPACE.key);
-        type(field('hex'), '#654321');
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-cancel').click();
-        expect(ui.settings.recentColors).toEqual([]);
-        expect(ui.log.updateLive + ui.log.updateUi).toBe(0);
-    });
-
-    // Decided: recent means a colour the token did not have before.
-    it('records nothing for a commit that changes nothing, even in another spelling', () => {
-        const ui = mount(withSettings((s) => setOverride(s, FIRST_PROFILE_ID, WORKSPACE.key, 'rgb(51, 102, 153)')));
-        // Opened and closed: the same text, no write at all.
-        openFor(ui, WORKSPACE.key);
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
+        pointer(area, 'pointerup', 100, 0);
+        const used = ui.session.get(WORKSPACE.key)!;
+        expect(ui.settings.recentColors).toEqual([used]);
+        expect(popovers()).toHaveLength(1);
+        // Shown at once, without reopening.
+        expect(recentSwatches().map((swatch) => swatch.style.getPropertyValue('--nexus-studio-swatch'))).toEqual([used]);
+        // Library state, not a token write.
         expect(ui.log.updateLive).toBe(0);
-        // The same colour typed as hex: the stored spelling is tidied, but the
-        // token did not get a new colour, so nothing was "used".
-        openFor(ui, WORKSPACE.key);
-        type(field('hex'), '#336699');
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
-        expect(override(ui, WORKSPACE.key)).toBe('#336699');
-        expect(ui.settings.recentColors).toEqual([]);
+        expect(ui.log.updateUiLater).toBe(1);
     });
 
-    it('records nothing for a Custom CSS value: it is not a colour', () => {
+    it('a drag of any length is one colour: its end value, not one per move', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        const area = sizeSquare();
+        pointer(area, 'pointerdown', 10, 10);
+        for (let x = 10; x <= 90; x += 2) pointer(area, 'pointermove', x, 50);
+        expect(ui.settings.recentColors).toEqual([]);
+        pointer(area, 'pointerup', 90, 50);
+        expect(ui.settings.recentColors).toEqual([ui.session.get(WORKSPACE.key)]);
+        expect(ui.log.updateUiLater).toBe(1);
+    });
+
+    it('a hue or opacity drag is one colour, recorded when it is let go', () => {
+        const ui = mount();
+        openFor(ui, SPLITTER_HOVER.key);
+        const hue = inPicker<HTMLInputElement>('.nexus-studio-cp-hue');
+        const alpha = inPicker<HTMLInputElement>('.nexus-studio-cp-alpha');
+        for (const value of ['10', '50', '120']) type(hue, value);
+        expect(ui.settings.recentColors).toEqual([]);
+        fire(hue, 'change');
+        expect(ui.settings.recentColors).toHaveLength(1);
+        for (const value of ['40', '50', '60']) type(alpha, value);
+        fire(alpha, 'change');
+        expect(ui.settings.recentColors[0]).toBe(ui.session.get(SPLITTER_HOVER.key));
+        expect(ui.settings.recentColors[0]).toMatch(/0\.6\)$/);
+        expect(ui.settings.recentColors).toHaveLength(2);
+    });
+
+    // A key held down fires a change per step; the decision is the key going up.
+    it('from the keyboard, records when the key is released, not on every step', () => {
+        const ui = mount(withSettings((s) => setOverride(s, FIRST_PROFILE_ID, WORKSPACE.key, '#808080')));
+        openFor(ui, WORKSPACE.key);
+        const hue = inPicker<HTMLInputElement>('.nexus-studio-cp-hue');
+        key(hue, 'ArrowRight');
+        for (const value of ['1', '2', '3']) {
+            type(hue, value);
+            fire(hue, 'change');
+        }
+        expect(ui.settings.recentColors).toEqual([]);
+        hue.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true }));
+        expect(ui.settings.recentColors).toHaveLength(1);
+        const area = inPicker<HTMLElement>('.nexus-studio-cp-area');
+        key(area, 'ArrowUp', true);
+        key(area, 'ArrowUp', true);
+        expect(ui.settings.recentColors).toHaveLength(1);
+        area.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowUp', bubbles: true }));
+        expect(ui.settings.recentColors).toHaveLength(2);
+    });
+
+    it('a typed value counts when it is confirmed, not per keystroke', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        type(field('hex'), '#1');
+        type(field('hex'), '#12');
+        type(field('hex'), '#123456');
+        expect(ui.settings.recentColors).toEqual([]);
+        fire(field('hex'), 'change');
+        expect(ui.settings.recentColors).toEqual(['#123456']);
+    });
+
+    it('a Custom CSS value is not a colour, and is not recorded', () => {
         const ui = mount();
         openFor(ui, WORKSPACE.key);
         inPicker<HTMLButtonElement>('.nexus-studio-cp-advanced-toggle').click();
-        type(inPicker<HTMLInputElement>('.nexus-studio-cp-css'), 'color-mix(in srgb, #000 50%, #fff)');
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
-        expect(override(ui, WORKSPACE.key)).toBe('color-mix(in srgb, #000 50%, #fff)');
+        const css = inPicker<HTMLInputElement>('.nexus-studio-cp-css');
+        type(css, 'color-mix(in srgb, #000 50%, #fff)');
+        fire(css, 'change');
         expect(ui.settings.recentColors).toEqual([]);
     });
 
-    it('loads a recent colour as a draft, and the recent entry itself does not change', () => {
-        const ui = mount(withSettings((s) => ({ ...s, recentColors: ['#0000ff', '#ff0000'] })));
+    it('a format switch is not a colour action', () => {
+        const ui = mount();
         openFor(ui, WORKSPACE.key);
-        recentSwatches()[0]!.click();
+        formatButton().click();
+        formatButton().click();
+        expect(ui.settings.recentColors).toEqual([]);
+    });
+
+    // Recent is working history, not theme state.
+    it.each([
+        ['Escape', () => key(document, 'Escape')],
+        ['Revert', () => inPicker<HTMLButtonElement>('.nexus-studio-cp-cancel').click()],
+    ])('%s returns the token to where it was, and Recent keeps what was tried', (_label, cancel) => {
+        const ui = mount(withSettings((s) => setOverride(s, FIRST_PROFILE_ID, WORKSPACE.key, '#336699')));
+        openFor(ui, WORKSPACE.key);
+        for (const hex of ['#ff0000', '#0000ff', '#00ff00']) {
+            type(field('hex'), hex);
+            fire(field('hex'), 'change');
+        }
+        expect(ui.settings.recentColors).toEqual(['#00ff00', '#0000ff', '#ff0000']);
+        cancel();
+        expect(popovers()).toHaveLength(0);
+        expect(override(ui, WORKSPACE.key)).toBe('#336699');
+        expect(ui.log.updateLive).toBe(0);
+        expect(ui.settings.recentColors).toEqual(['#00ff00', '#0000ff', '#ff0000']);
+    });
+
+    it.each([
+        ['Done', () => inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click()],
+        ['a click outside', () => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))],
+    ])('%s keeps the token, and Recent is what the actions made — the session adds nothing', (_label, commit) => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        type(field('hex'), '#ff0000');
+        fire(field('hex'), 'change');
+        type(field('hex'), '#445566');
+        commit();
+        expect(override(ui, WORKSPACE.key)).toBe('#445566');
+        // The last value was typed but never confirmed: it is the token, not a used colour.
+        expect(ui.settings.recentColors).toEqual(['#ff0000']);
+    });
+
+    it('Enter in a field confirms the value and closes: both happen', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        type(field('hex'), '#445566');
+        key(field('hex'), 'Enter');
+        expect(override(ui, WORKSPACE.key)).toBe('#445566');
+        expect(ui.settings.recentColors).toEqual(['#445566']);
+    });
+
+    it('a recent colour, clicked, becomes the draft and moves to the front — no duplicate, picker open', () => {
+        const ui = mount(withSettings((s) => ({ ...s, recentColors: ['#0000ff', '#ff0000', '#00ff00'] })));
+        openFor(ui, WORKSPACE.key);
+        recentSwatches()[2]!.click();
+        expect(ui.session.get(WORKSPACE.key)).toBe('#00ff00');
+        expect(ui.settings.recentColors).toEqual(['#00ff00', '#0000ff', '#ff0000']);
+        expect(recentSwatches().map((swatch) => swatch.style.getPropertyValue('--nexus-studio-swatch'))).toEqual([
+            '#00ff00',
+            '#0000ff',
+            '#ff0000',
+        ]);
+        expect(popovers()).toHaveLength(1);
+        // The focus follows the colour to its new place instead of falling out of the picker.
+        expect(document.activeElement).toBe(recentSwatches()[0]);
+    });
+
+    it('a full Recent drops its oldest when a new colour is used', () => {
+        const recent = Array.from({ length: 16 }, (_, i) => `#0000${i.toString(16).padStart(2, '0')}`);
+        const ui = mount(withSettings((s) => ({ ...s, recentColors: recent })));
+        openFor(ui, WORKSPACE.key);
+        type(field('hex'), '#ff0000');
+        fire(field('hex'), 'change');
+        expect(ui.settings.recentColors).toHaveLength(16);
+        expect(ui.settings.recentColors[0]).toBe('#ff0000');
+        expect(ui.settings.recentColors).not.toContain('#00000f');
+    });
+
+    it('recognises the same colour in another spelling, alpha included', () => {
+        const ui = mount(withSettings((s) => ({ ...s, recentColors: ['#ff0000', '#ffffff'] })));
+        openFor(ui, SPLITTER_HOVER.key);
+        inPicker<HTMLButtonElement>('.nexus-studio-cp-advanced-toggle').click();
+        const css = inPicker<HTMLInputElement>('.nexus-studio-cp-css');
+        type(css, 'rgba(255, 255, 255, 1)');
+        fire(css, 'change');
+        expect(ui.settings.recentColors).toEqual(['#ffffff', '#ff0000']);
+        type(css, 'rgba(255,255,255,0.5)');
+        fire(css, 'change');
+        expect(ui.settings.recentColors).toEqual(['rgba(255, 255, 255, 0.5)', '#ffffff', '#ff0000']);
+    });
+
+    it('a saved colour, clicked, is used: Recent updates at once, the saved colour does not change', () => {
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#0000ff'], recentColors: ['#ff0000'] })));
+        openFor(ui, WORKSPACE.key);
+        savedSwatches()[0]!.click();
         expect(ui.session.get(WORKSPACE.key)).toBe('#0000ff');
         expect(ui.settings.recentColors).toEqual(['#0000ff', '#ff0000']);
-        // A lighter variant, committed: it goes in front, the original stays.
-        key(inPicker('.nexus-studio-cp-area'), 'ArrowLeft', true);
-        const variant = ui.session.get(WORKSPACE.key)!;
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
-        expect(ui.settings.recentColors).toEqual([variant, '#0000ff', '#ff0000']);
+        expect(recentSwatches()[0]!.style.getPropertyValue('--nexus-studio-swatch')).toBe('#0000ff');
+        expect(ui.settings.savedSwatches).toEqual(['#0000ff']);
+        expect(popovers()).toHaveLength(1);
+        expect(document.activeElement).toBe(savedSwatches()[0]);
     });
 
-    it('loading a recent colour and cancelling writes nothing anywhere', () => {
-        const ui = mount(withSettings((s) => ({ ...s, recentColors: ['#0000ff'] })));
-        openFor(ui, WORKSPACE.key);
-        recentSwatches()[0]!.click();
-        key(document, 'Escape');
-        expect(override(ui, WORKSPACE.key)).toBeUndefined();
-        expect(ui.log.updateLive + ui.log.updateUi).toBe(0);
-    });
-
-    it('records a colour taken from Obsidian once it is committed, and not when the pick is cancelled', async () => {
+    it('a pixel taken from Obsidian is used at once; a cancelled pick adds nothing', async () => {
         installCapture([0x12, 0x34, 0x56, 255]);
         const ui = mount();
         openFor(ui, WORKSPACE.key);
         inPicker<HTMLButtonElement>('.nexus-studio-cp-sample').click();
         key(document, 'Escape');
         await new Promise((resolve) => window.setTimeout(resolve, 200));
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
         expect(ui.settings.recentColors).toEqual([]);
 
-        openFor(ui, WORKSPACE.key);
         inPicker<HTMLButtonElement>('.nexus-studio-cp-sample').click();
         key(document, 'Enter');
         await new Promise((resolve) => window.setTimeout(resolve, 200));
-        expect(ui.settings.recentColors).toEqual([]);
-        inPicker<HTMLButtonElement>('.nexus-studio-cp-done').click();
         expect(ui.settings.recentColors).toEqual(['#123456']);
+        expect(popovers()).toHaveLength(1);
+        expect(ui.log.updateLive).toBe(0);
+    });
+
+    // Redrawing Recent must not take the focus out of the control being used.
+    it('updating Recent redraws only Recent: the square keeps the focus, nothing doubles', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        const area = sizeSquare();
+        area.focus();
+        for (let i = 0; i < 3; i += 1) {
+            pointer(area, 'pointerdown', 20 * i, 20);
+            pointer(area, 'pointerup', 20 * i, 20);
+        }
+        expect(document.activeElement).toBe(area);
+        expect(popover()!.querySelector('.nexus-studio-cp-area')).toBe(area);
+        expect(popover()!.querySelectorAll('.nexus-studio-cp-palette[data-section="recent"]')).toHaveLength(1);
+        // A second pointerup with no drag in progress records nothing.
+        const before = ui.log.updateUiLater;
+        pointer(area, 'pointerup', 50, 50);
+        expect(ui.log.updateUiLater).toBe(before);
+    });
+});
+
+describe('the value line: one format button and a pipette icon', () => {
+    it('cycles HEX → RGB → HSL → HEX with one button, and the colour does not move', () => {
+        const ui = mount(withSettings((s) => setOverride(s, FIRST_PROFILE_ID, WORKSPACE.key, '#336699')));
+        openFor(ui, WORKSPACE.key);
+        expect(popover()!.querySelectorAll('.nexus-studio-cp-format')).toHaveLength(1);
+        const seen: string[] = [];
+        for (let i = 0; i < 4; i += 1) {
+            seen.push(formatButton().textContent ?? '');
+            formatButton().click();
+        }
+        expect(seen).toEqual(['HEX', 'RGB', 'HSL', 'HEX']);
+        expect(ui.session.size).toBe(0);
+        expect(ui.log.updateLive).toBe(0);
+        expect(formatButton().getAttribute('aria-label')).toBe('Colour format: RGB. Change colour format');
+        expect(ui.settings.pickerFormat).toBe('rgb');
+    });
+
+    it('is a real button, so Enter and Space work as for any button', () => {
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        expect(formatButton().tagName).toBe('BUTTON');
+        expect(formatButton().getAttribute('type')).toBe('button');
+        // Enter on a button presses it; the picker does not treat it as "done".
+        key(formatButton(), 'Enter');
+        expect(popovers()).toHaveLength(1);
+    });
+
+    it('offers Pick from Obsidian as a small icon button beside it, with no text', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        const pipette = inPicker<HTMLButtonElement>('.nexus-studio-cp-sample');
+        expect(pipette.classList.contains('clickable-icon')).toBe(true);
+        expect(pipette.textContent).toBe('');
+        expect(pipette.getAttribute('aria-label')).toBe('Pick from Obsidian');
+        expect(pipette.parentElement).toBe(formatButton().parentElement);
+        expect(popover()!.querySelectorAll('.nexus-studio-cp-sample')).toHaveLength(1);
     });
 });
 

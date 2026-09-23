@@ -19,6 +19,7 @@ export function makeHost(initial: NexusStudioSettings = defaultSettings()) {
         update: 0,
         updateLive: 0,
         updateUi: 0,
+        updateUiLater: 0,
         previews: [] as string[][],
         sessions: [] as Array<[string, string | null]>,
         menus: [] as StudioMenuAction[][],
@@ -50,6 +51,10 @@ export function makeHost(initial: NexusStudioSettings = defaultSettings()) {
             log.updateUi += 1;
             panel?.syncCollapse();
             return Promise.resolve();
+        },
+        updateUiLater: (next) => {
+            settings = next;
+            log.updateUiLater += 1;
         },
         setPreview: (variables) => {
             log.previews.push([...variables]);

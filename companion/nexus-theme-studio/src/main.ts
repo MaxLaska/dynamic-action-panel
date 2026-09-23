@@ -63,6 +63,15 @@ interface InternalApp {
  */
 const SAVE_DEBOUNCE_MS = 400;
 
+/**
+ * How long a colour-library change waits before it is written.
+ *
+ * Every finished colour action puts a colour in Recent — a click, a drag let
+ * go, a swatch chosen — and a designer makes dozens a minute. Each is shown at
+ * once; the file is written once the actions pause. `onunload` flushes.
+ */
+const LIBRARY_SAVE_DEBOUNCE_MS = 1500;
+
 export default class NexusThemeStudioPlugin extends Plugin implements StudioServices {
     settings: NexusStudioSettings = defaultSettings();
 
@@ -296,6 +305,20 @@ export default class NexusThemeStudioPlugin extends Plugin implements StudioServ
         window.clearTimeout(this.saveTimer);
         this.saveTimer = 0;
         await this.saveData(this.settings);
+    }
+
+    /**
+     * A change to the colour library that comes often — a recent colour. Taken
+     * now, saved on a longer debounce, and nothing re-applied: a recent colour
+     * is not a theme change and never touches a token.
+     */
+    updateUiLater(next: NexusStudioSettings): void {
+        this.settings = next;
+        window.clearTimeout(this.saveTimer);
+        this.saveTimer = window.setTimeout(() => {
+            this.saveTimer = 0;
+            void this.saveData(this.settings);
+        }, LIBRARY_SAVE_DEBOUNCE_MS);
     }
 
     /** The half both colour write paths share: take the settings, and show them. */
