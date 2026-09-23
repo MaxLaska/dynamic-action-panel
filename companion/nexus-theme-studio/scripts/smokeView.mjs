@@ -634,8 +634,29 @@ const loupeAt = (x, y) =>
             northEast: r.left > ${x} && r.bottom < ${y},
             inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
             clear: !(${x} >= r.left && ${x} <= r.right && ${y} >= r.top && ${y} <= r.bottom),
+            // The centre relative to the hot spot: on the pipette's 45° axis,
+            // dx = -dy, and far enough out to clear the drawn pipette.
+            dx: (r.left + r.right) / 2 - ${x},
+            dy: (r.top + r.bottom) / 2 - ${y},
         };
     `);
+// A right-button press and release with a real mouse, and what the page saw.
+const rightClickAt = async (x, y) => {
+    await cdp.evaluate(`
+        // Watched at the window in the CAPTURE phase — before the picker, which
+        // stops the event — and read once the event has been fully dispatched.
+        window.__menuSeen = [];
+        if (!window.__menuWatch) {
+            window.__menuWatch = true;
+            window.addEventListener('contextmenu', (e) => window.__menuSeen.push(e), true);
+        }
+    `);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'right', clickCount: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'right', clickCount: 1 });
+    await pause(150);
+    return cdp.evaluate(`return { menuEvents: window.__menuSeen.map((e) => e.defaultPrevented), domMenus: document.querySelectorAll('.menu').length };`);
+};
 
 await openPicker('documentChrome');
 // A draft that is NOT the dock's colour first: taking a pixel equal to the
@@ -720,6 +741,11 @@ await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: centre.x, y:
 await pause(60);
 const loupeCentre = await loupeAt(centre.x, centre.y);
 check('the loupe sits north-east of the cursor, clear of the hot spot', !!loupeCentre && loupeCentre.northEast && loupeCentre.clear, JSON.stringify(loupeCentre));
+check(
+    'the pipette points at the middle of the loupe: its centre is on the 45° axis, beyond the pipette',
+    !!loupeCentre && Math.abs(loupeCentre.dx + loupeCentre.dy) <= 1.5 && Math.hypot(loupeCentre.dx, loupeCentre.dy) > 17 + 24,
+    JSON.stringify({ dx: loupeCentre?.dx, dy: loupeCentre?.dy })
+);
 await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: centre.x + 40, y: centre.y - 30 });
 await pause(60);
 const loupeMoved = await loupeAt(centre.x + 40, centre.y - 30);
@@ -741,6 +767,23 @@ await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Alt', code:
 await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18 });
 check('Alt does not switch off a switched-on sampler', (await toolState()).pressed === 'true');
 check('and the cursor stays the pipette after Alt is let go', isPipette(await cursorAt(noteSpot.x, noteSpot.y)));
+
+// Right-click: the mouse's way out of the permanent pipette, and nothing else.
+const beforeRight = { recent: await recentList(), draft: await chromeDraft(), hex: (await toolState()).hex };
+const right = await rightClickAt(dockPoint.x, dockPoint.y);
+await pause(300);
+const afterRight = await toolState();
+const rightCursor = await cursorAt(noteSpot.x, noteSpot.y);
+check('a right-click switches the pipette off at once, and the picker stays', afterRight.pressed === 'false' && !afterRight.shield && afterRight.open && afterRight.visible === 'visible', JSON.stringify(afterRight));
+check('no loupe, and the ordinary cursor is back', !(await cdp.evaluate(`return !!document.querySelector('.nexus-studio-sample-loupe');`)) && !PIPETTE.test(rightCursor.window ?? '') && !PIPETTE.test(rightCursor.picker ?? ''), JSON.stringify(rightCursor));
+check(
+    'it was not a sample: draft, current colour and Recent are unchanged',
+    (await chromeDraft()) === beforeRight.draft && afterRight.hex === beforeRight.hex && JSON.stringify(await recentList()) === JSON.stringify(beforeRight.recent)
+);
+check('and no context menu: the menu event was cancelled, no menu drawn', right.menuEvents.length >= 1 && right.menuEvents.every((prevented) => prevented) && right.domMenus === 0, JSON.stringify(right));
+// On again, for the Escape order below.
+await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-sample').click();`);
+await pause(80);
 
 // One Escape ends one thing: first the tool…
 await escape();
@@ -779,6 +822,20 @@ check('Alt let go: the ordinary cursor is back', !PIPETTE.test(altLetCursor.wind
 check('Alt held switches the sampler on; letting go switches it off', altHeld.pressed === 'true' && altHeld.shield && altLet.pressed === 'false' && !altLet.shield, JSON.stringify({ altHeld, altLet }));
 check('and the window keeps the focus after Alt', (await cdp.evaluate(`return document.hasFocus();`)) === true);
 
+// With only Alt held, a right-click changes nothing lasting; Alt up is the way out.
+await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18, modifiers: 1 });
+await pause(60);
+const altRight = await rightClickAt(noteSpot.x, noteSpot.y);
+const duringAltRight = await toolState();
+await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Alt', code: 'AltLeft', windowsVirtualKeyCode: 18 });
+await pause(60);
+const afterAltRight = await toolState();
+check(
+    'Alt held: a right-click leaves the temporary sampler on, shows no menu, and Alt up ends it',
+    duringAltRight.shield && altRight.menuEvents.length >= 1 && altRight.menuEvents.every((prevented) => prevented) && !afterAltRight.shield && afterAltRight.pressed === 'false',
+    JSON.stringify({ duringAltRight, altRight, afterAltRight })
+);
+
 // …and only then the picker session.
 await escape();
 await pause(100);
@@ -809,6 +866,25 @@ await cdp.evaluate(`
     const host = view.panel.host;
     host.showMenu = (evt, items) => { window.__smokeMenu = items; };
 `);
+// In the ordinary picker a right-click on a saved colour still opens its menu.
+const ordinarySaved = await cdp.evaluate(`
+    await new Promise((r) => setTimeout(r, 0));
+    return !!document.querySelector('.nexus-studio-popover');
+`);
+if (!ordinarySaved) await openPicker('workspaceSurface');
+const savedRect = await cdp.evaluate(`
+    const s = ${popover}.querySelector('.nexus-studio-cp-swatch[data-kind="saved"]');
+    if (!s) return null;
+    const r = s.getBoundingClientRect();
+    return { x: Math.round((r.left + r.right) / 2), y: Math.round((r.top + r.bottom) / 2) };
+`);
+await cdp.evaluate(`window.__smokeMenu = null;`);
+if (savedRect) await rightClickAt(savedRect.x, savedRect.y);
+const savedMenu = await cdp.evaluate(`return (window.__smokeMenu || []).map((i) => i.title);`);
+check('with the pipette off, a right-click on a saved colour opens its menu as before', JSON.stringify(savedMenu) === JSON.stringify(['Replace with current colour', 'Delete swatch']), JSON.stringify(savedMenu));
+await escape();
+await pause(80);
+
 const runMenu = async (startsWith) => {
     await cdp.evaluate(`${popover}.querySelector('.nexus-studio-cp-more').click();`);
     await pause(50);

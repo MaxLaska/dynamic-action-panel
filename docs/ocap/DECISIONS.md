@@ -2745,3 +2745,50 @@ export dialog and the picker stays open.
   - It was south-east before. Its content, size and the capture throttle are
     unchanged.
 
+## 2026-09-23 – The loupe on the pipette's axis; right-click leaves the permanent pipette
+
+**The loupe is placed from the drawing.** `PIPETTE_CURSOR` in `sampler.ts`
+holds the pipette cursor's own geometry:
+
+- a 24-unit drawing shown at 20px;
+- its glass tip, the hot spot, at (2, 22);
+- its far end (the bulb, white outline included) at about (23, 1);
+- a shaft that runs at 45° (`l9-9`).
+
+A test holds these numbers to the SVG in styles.css.
+
+The loupe's CENTRE is on that axis beyond the pipette's far end: it sits
+`LOUPE_GAP` (8px) past the end, plus the loupe's radius (`loupeCentre`). The
+line of the pipette runs through the middle of the circle, and the circle is
+north-east with the hot spot free. In practice the centre is 35px right of and
+35px above the tip.
+
+- **Interpretation, stated:** the drawing's glass tip points south-west, and
+  it is the hot spot. "The tip points at the loupe, which is north-east" is
+  therefore met by the pipette's AXIS, which runs through the loupe's centre
+  from the bulb end. Mirroring the drawing, so that the glass tip itself points
+  north-east, would change the accepted swatch cursor and was not done.
+- **At the edges** the loupe slides inside only as far as needed. Along the top
+  edge it keeps its x on the axis and slides down; along the right edge it
+  keeps its y and slides left. Only in the top-right corner, where it would
+  cover the tip, does it go below.
+
+The capture throttle and the loupe's content are unchanged.
+
+**Right-click is the mouse's way out of the PERMANENT pipette.** It is
+equivalent to the pipette button again, or to Escape: the tool goes (layer,
+loupe and cursor at once), and the picker, its draft, the current colour and
+Recent stay. It is never a sample, and no context menu follows. The
+`contextmenu` of that click is cancelled, and a guard lets at most that one
+event through the cancel, for 800ms.
+
+- **While sampling in any form, no context menu opens.**
+- **Alt held only:** a right-click changes nothing lasting; Alt going up is
+  the way out.
+- **Permanent and Alt held:** the permanent part ends, sampling goes on while
+  Alt is held, and Alt up ends it.
+- **In the ordinary picker** every context menu is untouched, Saved's
+  included.
+- **Unchanged:** the Escape order (drag, then tool, then session), the
+  pipette button and the tool states.
+

@@ -133,7 +133,8 @@ export function sampleColor(win: Window, decode: PixelDecoder = decodeFirstPixel
 // taken on `pointerdown` and the click that would follow is swallowed, so a
 // swatch sampled is not also clicked.
 //
-// THE LOUPE. A small ring north-east of the cursor (see `loupePosition`): its
+// THE LOUPE. A small ring on the pipette's axis, north-east of the cursor, so
+// the pipette points at its middle (see `loupeCentre`): its
 // centre is the colour under the hot spot, its ring the picker's current colour. The centre is a real pixel,
 // read with the same one-pixel capture as a sample — at most one capture in
 // flight and at most one every CANDIDATE_INTERVAL_MS, so a moving mouse costs a
@@ -147,13 +148,47 @@ export const CANDIDATE_INTERVAL_MS = 80;
 export const LOUPE_SIZE = 34;
 
 /**
- * Where the loupe goes relative to the hot spot: NORTH-EAST. The pipette cursor
- * runs from its tip (the hot spot) up and to the right for 18px, so the loupe
- * starts just right of the cursor's body and ends just above the tip — close
- * enough to belong to it, never on the tip or the pixel.
+ * The pipette cursor, as styles.css draws it (`--nexus-studio-pipette-cursor`):
+ * a 24-unit drawing shown at 20px, its glass tip at (2, 22) — the hot spot —
+ * and its shaft running at 45° up and to the right to the bulb, whose far edge,
+ * white outline included, is at about (23, 1). The loupe is placed from these
+ * numbers, not from offsets of its own; a test holds them to the stylesheet.
  */
-export const LOUPE_DX = 20;
-export const LOUPE_DY = 4;
+export const PIPETTE_CURSOR = {
+    px: 20,
+    units: 24,
+    tip: { x: 2, y: 22 },
+    far: { x: 22.97, y: 1.03 },
+} as const;
+
+/** Between the pipette's far end and the loupe's rim, along the axis. */
+export const LOUPE_GAP = 8;
+
+/** The unit vector along the pipette, from its tip towards its far end. */
+export function pipetteAxis(): { x: number; y: number } {
+    const dx = PIPETTE_CURSOR.far.x - PIPETTE_CURSOR.tip.x;
+    const dy = PIPETTE_CURSOR.far.y - PIPETTE_CURSOR.tip.y;
+    const length = Math.hypot(dx, dy);
+    return { x: dx / length, y: dy / length };
+}
+
+/** How far the pipette reaches from its hot spot along its axis, in px. */
+export function pipetteReach(): number {
+    const scale = PIPETTE_CURSOR.px / PIPETTE_CURSOR.units;
+    return Math.hypot(PIPETTE_CURSOR.far.x - PIPETTE_CURSOR.tip.x, PIPETTE_CURSOR.far.y - PIPETTE_CURSOR.tip.y) * scale;
+}
+
+/**
+ * Where the loupe's CENTRE goes for a hot spot at (x, y): on the line the
+ * pipette draws, beyond its far end — so the pipette points straight at the
+ * middle of the circle, with LOUPE_GAP between the pipette and the rim. North-
+ * east, because that is where the pipette points.
+ */
+export function loupeCentre(x: number, y: number): { x: number; y: number } {
+    const axis = pipetteAxis();
+    const distance = pipetteReach() + LOUPE_GAP + LOUPE_SIZE / 2;
+    return { x: x + axis.x * distance, y: y + axis.y * distance };
+}
 
 /** Kept from the window's edges. */
 const LOUPE_EDGE = 2;
@@ -161,20 +196,21 @@ const LOUPE_EDGE = 2;
 /**
  * The loupe's top-left for a hot spot at (x, y) in a w × h window.
  *
- * North-east whenever it fits. At an edge it is slid back inside, only as far
- * as needed — along the top it slides down, along the right it slides left —
- * so it follows the cursor without jumping. Only if sliding would put it over
- * the hot spot itself (the top-right corner) does it move to the other side of
- * the tip, below it.
+ * On the pipette's axis whenever it fits (`loupeCentre`). At an edge it is slid
+ * back inside only as far as needed — along the top it slides down, along the
+ * right it slides left — so it follows the cursor without jumping and stays as
+ * close to the axis as the window allows. Only if sliding would put it over the
+ * hot spot itself (the top-right corner) does it move below the tip.
  */
 export function loupePosition(x: number, y: number, w: number, h: number): { left: number; top: number } {
     const size = LOUPE_SIZE;
+    const centre = loupeCentre(x, y);
     const maxLeft = Math.max(LOUPE_EDGE, w - size - LOUPE_EDGE);
     const maxTop = Math.max(LOUPE_EDGE, h - size - LOUPE_EDGE);
-    const left = Math.min(Math.max(LOUPE_EDGE, x + LOUPE_DX), maxLeft);
-    let top = Math.min(Math.max(LOUPE_EDGE, y - LOUPE_DY - size), maxTop);
+    const left = Math.min(Math.max(LOUPE_EDGE, centre.x - size / 2), maxLeft);
+    let top = Math.min(Math.max(LOUPE_EDGE, centre.y - size / 2), maxTop);
     const covers = (t: number): boolean => x >= left && x <= left + size && y >= t && y <= t + size;
-    if (covers(top)) top = Math.min(Math.max(LOUPE_EDGE, y + LOUPE_DX), maxTop);
+    if (covers(top)) top = Math.min(Math.max(LOUPE_EDGE, y + LOUPE_GAP * 2), maxTop);
     return { left, top };
 }
 
@@ -187,6 +223,12 @@ export interface SamplingModeOptions {
     onEnd(): void;
     /** The colour the loupe's ring shows: the picker's current one. */
     reference(): string;
+    /**
+     * A right-button press while the mode is on. It is never a sample and never
+     * reaches the page; what it means is the caller's (the picker: switch a
+     * permanent pipette off).
+     */
+    onSecondary?(): void;
     decode?: PixelDecoder;
 }
 
@@ -300,6 +342,15 @@ export function startSamplingMode(win: Window, options: SamplingModeOptions): Sa
     };
 
     const onPointerDown = (event: PointerEvent): void => {
+        if (event.button === 2) {
+            // Right button: not a sample, and not the page's. A dialog keeps its own.
+            const element = event.target as Element | null;
+            if (element && typeof element.closest === 'function' && element.closest('.modal-container')) return;
+            event.preventDefault();
+            event.stopPropagation();
+            options.onSecondary?.();
+            return;
+        }
         if (event.button !== 0 || live(event.target)) return;
         event.preventDefault();
         event.stopPropagation();

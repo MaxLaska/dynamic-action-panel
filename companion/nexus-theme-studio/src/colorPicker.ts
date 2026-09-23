@@ -240,6 +240,11 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
      */
     let tool: SamplingMode | null = null;
     let toolKind: 'persistent' | 'temporary' | null = null;
+    /** Whether Alt is down now, so a right-click can hand a permanent pipette back to Alt. */
+    let altHeld = false;
+    /** The context menu that follows a right-click the sampler has already answered. */
+    let eatContextMenu = false;
+    let eatTimer = 0;
     const sampling = (): boolean => tool !== null;
     const withAlpha = token.supportsAlpha === true || (initial !== null && initial.a < 1);
 
@@ -635,6 +640,24 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
                 setToolState();
             },
             reference: () => current,
+            // Right-click is the mouse's way out of a PERMANENT pipette — like the
+            // pipette button again, or Escape: the tool goes, the picker, its
+            // draft and Recent stay. Sampling that exists only because Alt is
+            // held has nothing permanent to end; Alt going up is its way out.
+            // With both, the permanent part ends and Alt keeps it until let go.
+            onSecondary: () => {
+                eatContextMenu = true;
+                win.clearTimeout(eatTimer);
+                // The menu follows the press, or not at all; never eat a later one.
+                eatTimer = win.setTimeout(() => (eatContextMenu = false), 800);
+                if (toolKind !== 'persistent') return;
+                if (altHeld) {
+                    toolKind = 'temporary';
+                    setToolState();
+                    return;
+                }
+                stopSampling();
+            },
         });
         toolKind = tool ? kind : null;
         setToolState();
@@ -1121,6 +1144,7 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
     const onAltDown = (event: KeyboardEvent): void => {
         if (inDialog(event.target) || dialogOpen()) return;
         if (event.key === 'Alt') {
+            altHeld = true;
             if (event.repeat || toolKind === 'persistent' || tool || !host.canSample || mode !== 'color') return;
             // Keeps Alt from reaching the window menu while it is a tool.
             event.preventDefault();
@@ -1130,16 +1154,32 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
         if (event.altKey && toolKind === 'temporary') stopSampling();
     };
     const onAltUp = (event: KeyboardEvent): void => {
+        if (event.key === 'Alt') altHeld = false;
         if (event.key !== 'Alt' || toolKind !== 'temporary') return;
         event.preventDefault();
         stopSampling();
     };
     // Alt released outside the window never arrives: losing focus ends it.
     const onBlur = (): void => {
+        altHeld = false;
         if (toolKind === 'temporary') stopSampling();
         cancelDrag();
     };
 
+    /**
+     * No context menu while the sampler is on, and none for the right-click
+     * that switched it off: that click was the tool's, and only the tool's.
+     * In the ordinary picker every context menu (Saved's too) is untouched.
+     */
+    const onContextMenu = (event: MouseEvent): void => {
+        if (!eatContextMenu && !sampling()) return;
+        eatContextMenu = false;
+        win.clearTimeout(eatTimer);
+        event.preventDefault();
+        event.stopPropagation();
+    };
+
+    doc.addEventListener('contextmenu', onContextMenu, true);
     doc.addEventListener('keydown', onDocKey, true);
     doc.addEventListener('keydown', onAltDown, true);
     doc.addEventListener('keyup', onAltUp, true);
@@ -1152,6 +1192,8 @@ export function openColorPicker(anchor: HTMLElement, host: ColorPickerHost): Col
     win.addEventListener('resize', onScroll);
     win.addEventListener('blur', onBlur);
     detaches.push(() => {
+        win.clearTimeout(eatTimer);
+        doc.removeEventListener('contextmenu', onContextMenu, true);
         doc.removeEventListener('keydown', onDocKey, true);
         doc.removeEventListener('keydown', onAltDown, true);
         doc.removeEventListener('keyup', onAltUp, true);

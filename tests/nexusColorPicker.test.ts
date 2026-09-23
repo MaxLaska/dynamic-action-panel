@@ -21,10 +21,13 @@ import {
 } from '../companion/nexus-theme-studio/src/colorPicker';
 import {
     CANDIDATE_INTERVAL_MS,
-    LOUPE_DX,
-    LOUPE_DY,
+    LOUPE_GAP,
     LOUPE_SIZE,
+    PIPETTE_CURSOR,
+    loupeCentre,
     loupePosition,
+    pipetteAxis,
+    pipetteReach,
 } from '../companion/nexus-theme-studio/src/sampler';
 import {
     describeColor,
@@ -1363,50 +1366,87 @@ describe('the pipette cursor is on exactly while the sampler is', () => {
     });
 });
 
-describe('the loupe sits north-east of the hot spot', () => {
+describe('the loupe sits on the pipette\'s axis, north-east of the hot spot', () => {
     const W = 1000;
     const H = 800;
+    const R = LOUPE_SIZE / 2;
     const box = (x: number, y: number) => {
         const at = loupePosition(x, y, W, H);
-        return { ...at, right: at.left + LOUPE_SIZE, bottom: at.top + LOUPE_SIZE };
+        return { ...at, right: at.left + LOUPE_SIZE, bottom: at.top + LOUPE_SIZE, cx: at.left + R, cy: at.top + R };
     };
     const coversHotSpot = (x: number, y: number) => {
         const b = box(x, y);
         return x >= b.left && x <= b.right && y >= b.top && y <= b.bottom;
     };
 
-    it('is to the right of and above the hot spot, clear of the pipette\'s tip', () => {
+    // The numbers the placement is built from are the drawing's own.
+    it('takes the pipette\'s geometry from the cursor the stylesheet draws', () => {
+        const css = readFileSync('companion/nexus-theme-studio/styles.css', 'utf8');
+        const m = /--nexus-studio-pipette-cursor: url\("data:image\/svg\+xml,([^"]+)"\) (\d+) (\d+);/.exec(css)!;
+        const svg = decodeURIComponent(m[1]!);
+        expect(svg).toContain(`width='${PIPETTE_CURSOR.px}' height='${PIPETTE_CURSOR.px}' viewBox='0 0 ${PIPETTE_CURSOR.units} ${PIPETTE_CURSOR.units}'`);
+        // The glass tip the drawing starts from…
+        expect(svg).toContain(`d='m${PIPETTE_CURSOR.tip.x} ${PIPETTE_CURSOR.tip.y} `);
+        // …is the cursor's hot spot…
+        const scale = PIPETTE_CURSOR.px / PIPETTE_CURSOR.units;
+        expect([Number(m[2]), Number(m[3])]).toEqual([Math.round(PIPETTE_CURSOR.tip.x * scale), Math.round(PIPETTE_CURSOR.tip.y * scale)]);
+        // …and the shaft runs at 45°: `l9-9`.
+        expect(svg).toContain('l9-9');
+        const axis = pipetteAxis();
+        expect(axis.x).toBeCloseTo(Math.SQRT1_2, 3);
+        expect(axis.y).toBeCloseTo(-Math.SQRT1_2, 3);
+    });
+
+    it('puts the centre on the pipette\'s axis, so the pipette points at the middle of the circle', () => {
         const b = box(500, 400);
-        expect(b.left).toBe(500 + LOUPE_DX);
-        expect(b.bottom).toBe(400 - LOUPE_DY);
+        const centre = loupeCentre(500, 400);
+        expect(b.cx).toBeCloseTo(centre.x, 6);
+        expect(b.cy).toBeCloseTo(centre.y, 6);
+        // On the 45° line through the hot spot.
+        expect(b.cx - 500).toBeCloseTo(400 - b.cy, 6);
+    });
+
+    it('keeps a small gap between the pipette\'s far end and the rim', () => {
+        const distance = Math.hypot(box(500, 400).cx - 500, box(500, 400).cy - 400);
+        const gap = distance - R - pipetteReach();
+        expect(gap).toBeCloseTo(LOUPE_GAP, 6);
+        expect(gap).toBeGreaterThanOrEqual(6);
+        expect(gap).toBeLessThanOrEqual(10);
+    });
+
+    it('is north-east, and covers neither the hot spot nor the pipette', () => {
+        const b = box(500, 400);
         expect(b.left).toBeGreaterThan(500);
         expect(b.bottom).toBeLessThan(400);
         expect(coversHotSpot(500, 400)).toBe(false);
+        // The circle stays clear of the drawn pipette (its reach, from the hot spot).
+        expect(Math.hypot(b.cx - 500, b.cy - 400) - R).toBeGreaterThan(pipetteReach());
     });
 
-    it('follows the cursor north-east, not south-east, anywhere with room', () => {
-        for (const [x, y] of [[60, 60], [300, 700], [900, 500], [40, 790]] as const) {
+    it('follows the cursor on the same axis anywhere with room', () => {
+        for (const [x, y] of [[80, 90], [300, 700], [900, 500], [40, 790]] as const) {
             const b = box(x, y);
+            expect(b.cx - x).toBeCloseTo(y - b.cy, 6);
             expect(b.left).toBeGreaterThan(x);
             expect(b.bottom).toBeLessThan(y);
         }
     });
 
-    it('slides down along the top edge, still to the right and clear of the tip', () => {
-        const b = box(500, 10);
+    it('slides down along the top edge, only as far as needed, still to the right and clear of the tip', () => {
+        const b = box(500, 20);
         expect(b.top).toBe(2);
-        expect(b.left).toBe(520);
-        expect(coversHotSpot(500, 10)).toBe(false);
+        expect(b.cx).toBeCloseTo(loupeCentre(500, 20).x, 6);
+        expect(coversHotSpot(500, 20)).toBe(false);
     });
 
-    it('slides left along the right edge, still above the tip', () => {
-        const b = box(990, 400);
+    it('slides left along the right edge, only as far as needed, still above the tip', () => {
+        const b = box(985, 400);
         expect(b.right).toBe(W - 2);
-        expect(b.bottom).toBe(396);
-        expect(coversHotSpot(990, 400)).toBe(false);
+        expect(b.cy).toBeCloseTo(loupeCentre(985, 400).y, 6);
+        expect(coversHotSpot(985, 400)).toBe(false);
     });
 
-    it('slides only as far as needed: no jump as the cursor nears the right edge', () => {
+    it('slides without jumps as the cursor nears the right edge', () => {
         let previous = box(900, 400).left;
         for (let x = 901; x <= 999; x += 1) {
             const left = box(x, 400).left;
@@ -1415,7 +1455,7 @@ describe('the loupe sits north-east of the hot spot', () => {
         }
     });
 
-    it('in the top-right corner, where north-east would cover the tip, moves below it', () => {
+    it('in the top-right corner, where the axis would cover the tip, moves below it', () => {
         const b = box(990, 10);
         expect(coversHotSpot(990, 10)).toBe(false);
         expect(b.right).toBeLessThanOrEqual(W - 2);
@@ -1430,11 +1470,141 @@ describe('the loupe sits north-east of the hot spot', () => {
         await new Promise((resolve) => window.setTimeout(resolve, CANDIDATE_INTERVAL_MS * 2));
         const loupe = document.querySelector<HTMLElement>('.nexus-studio-sample-loupe')!;
         const expected = loupePosition(300, 300, window.innerWidth, window.innerHeight);
-        expect(loupe.style.left).toBe(`${expected.left}px`);
-        expect(loupe.style.top).toBe(`${expected.top}px`);
+        expect(loupe.style.left).toBe(`${Math.round(expected.left)}px`);
+        expect(loupe.style.top).toBe(`${Math.round(expected.top)}px`);
         expect(expected.top + LOUPE_SIZE).toBeLessThan(300);
         expect(loupe.querySelector<HTMLElement>('.nexus-studio-sample-candidate')!.style.getPropertyValue('--nexus-studio-loupe-candidate')).toBe('#405060');
         expect(loupe.style.getPropertyValue('--nexus-studio-loupe-ring')).not.toBe('');
+    });
+});
+
+describe('a right-click switches a permanent pipette off, and does nothing else', () => {
+    const rightClick = (target: Element) => {
+        const down = new MouseEvent('pointerdown', { clientX: 50, clientY: 50, bubbles: true, cancelable: true, button: 2 });
+        target.dispatchEvent(down);
+        const menu = new MouseEvent('contextmenu', { clientX: 50, clientY: 50, bubbles: true, cancelable: true, button: 2 });
+        // The menu event goes to whatever is under the pointer by then: the
+        // sampling layer has gone, so it is what was below it.
+        (target.isConnected ? target : document.body).dispatchEvent(menu);
+        return { down, menu };
+    };
+    const altDown = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt', altKey: true, bubbles: true, cancelable: true }));
+    const altUp = () => document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Alt', bubbles: true, cancelable: true }));
+    const toolOn = () => ({
+        pressed: pipette().getAttribute('aria-pressed'),
+        layer: !!document.querySelector('.nexus-studio-pick-shield.is-persistent'),
+        loupe: !!document.querySelector('.nexus-studio-sample-loupe'),
+        mode: !!document.querySelector('.nexus-studio-popover.is-sampling-mode'),
+    });
+    const OFF = { pressed: 'false', layer: false, loupe: false, mode: false };
+
+    it('ends the tool at once — layer, loupe, cursor — and keeps the picker, its draft and Recent', async () => {
+        const pixel = installCapture([1, 1, 1, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        press(shield()!);
+        await settle();
+        pixel.set([2, 2, 2, 255]);
+        press(shield()!);
+        await settle();
+        const draft = ui.session.get(WORKSPACE.key);
+        const recent = [...ui.settings.recentColors];
+        const hex = field('hex').value;
+        shield()!.dispatchEvent(new MouseEvent('pointermove', { clientX: 60, clientY: 60, bubbles: true }));
+        const { down, menu } = rightClick(shield()!);
+        expect(toolOn()).toEqual(OFF);
+        expect(popovers()).toHaveLength(1);
+        // Not a sample, not a colour change, not a menu.
+        await settle();
+        expect(ui.session.get(WORKSPACE.key)).toBe(draft);
+        expect(field('hex').value).toBe(hex);
+        expect(ui.settings.recentColors).toEqual(recent);
+        expect(down.defaultPrevented).toBe(true);
+        expect(menu.defaultPrevented).toBe(true);
+        expect(ui.log.menus).toHaveLength(0);
+        expect(ui.log.updateLive).toBe(0);
+    });
+
+    it('on a saved swatch, ends the tool and opens no swatch menu', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#123456'] })));
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        rightClick(savedSwatches()[0]!);
+        expect(toolOn()).toEqual(OFF);
+        expect(ui.log.menus).toHaveLength(0);
+        expect(ui.settings.savedSwatches).toEqual(['#123456']);
+    });
+
+    it('leaves the Saved menu alone in the ordinary picker', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#123456'] })));
+        openFor(ui, WORKSPACE.key);
+        const { menu } = rightClick(savedSwatches()[0]!);
+        expect(ui.log.menus).toHaveLength(1);
+        expect(ui.log.menus[0]!.map((item) => item.title)).toEqual(['Replace with current colour', 'Delete swatch']);
+        expect(menu.defaultPrevented).toBe(true); // the swatch's own handler, as before
+        expect(toolOn()).toEqual(OFF);
+    });
+
+    it('does not eat a later menu when no menu followed the exit', async () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount(withSettings((s) => ({ ...s, savedSwatches: ['#123456'] })));
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        shield()!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 2 }));
+        await new Promise((resolve) => window.setTimeout(resolve, 900));
+        savedSwatches()[0]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+        expect(ui.log.menus).toHaveLength(1);
+    });
+
+    it('with only Alt held, changes nothing lasting: Alt going up is the way out', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        altDown();
+        const { menu } = rightClick(shield()!);
+        // Still sampling, and still only because of Alt; no menu while it is on.
+        expect(toolOn().layer).toBe(true);
+        expect(menu.defaultPrevented).toBe(true);
+        altUp();
+        expect(toolOn()).toEqual(OFF);
+        expect(ui.settings.recentColors).toEqual([]);
+    });
+
+    it('with a permanent pipette and Alt held, ends the permanent part; Alt up ends the rest', () => {
+        installCapture([0, 0, 0, 255]);
+        openFor(mount(), WORKSPACE.key);
+        pipette().click();
+        altDown();
+        rightClick(shield()!);
+        // Alt is still down: sampling goes on, now only because of Alt.
+        expect(toolOn().layer).toBe(true);
+        altUp();
+        expect(toolOn()).toEqual(OFF);
+    });
+
+    it('is not a sample, even over the picker\'s own swatches', async () => {
+        installCapture([9, 9, 9, 255]);
+        const ui = mount(withSettings((s) => ({ ...s, recentColors: ['#abcdef'] })));
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        rightClick(recentSwatches()[0]!);
+        await settle();
+        expect(ui.settings.recentColors).toEqual(['#abcdef']);
+        expect(ui.session.size).toBe(0);
+    });
+
+    it('leaves the Escape order as it was: the tool, then the session', () => {
+        installCapture([0, 0, 0, 255]);
+        const ui = mount();
+        openFor(ui, WORKSPACE.key);
+        pipette().click();
+        rightClick(shield()!);
+        key(document, 'Escape');
+        expect(popovers()).toHaveLength(0);
+        expect(ui.log.updateLive).toBe(0);
     });
 });
 

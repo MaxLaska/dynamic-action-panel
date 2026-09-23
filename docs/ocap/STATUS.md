@@ -1,7 +1,8 @@
 # OCAP – Status
 
-Last updated: 2026-09-23 (while sampling the cursor is the pipette and the loupe
-sits north-east; on top of: the pipette is a tool that stays on, swatches drag —
+Last updated: 2026-09-23 (the loupe sits on the pipette's axis, and a right-click
+leaves the permanent pipette; on top of: while sampling the cursor is the
+pipette and the loupe sits north-east; on top of: the pipette is a tool that stays on, swatches drag —
 Recent to Saved copies, Saved reorders — and one Escape ends one thing; on
 top of: Recent follows each finished colour action while the
 picker stays open — interaction commit, session commit and Saved are three
@@ -32,6 +33,26 @@ button is superseded; implemented locally and live-smoke-tested, awaiting the
 user's judgement in use)
 
 ## Newest work first
+
+- **Nexus Theme Studio: the loupe on the pipette's axis, right-click exit
+  (2026-09-23).** A polish pass. It is deployed to the smoke vault only, not
+  pushed, and not in the productive vault.
+  - **Loupe:** its centre is placed from the cursor drawing's own geometry, on
+    the pipette's 45° axis. It sits 8px past the pipette's far end, 35px right
+    of and 35px above the tip. It slides inside at the edges.
+  - **Right-click in the permanent pipette:** tool off, and nothing else. No
+    sample and no context menu; the picker, draft and Recent stay. With Alt
+    only, it changes nothing lasting. In the ordinary picker, menus are
+    unchanged.
+  - **Stated interpretation:** the drawing's glass tip (the hot spot) points
+    south-west. The axis, not the glass tip, points at the loupe. See
+    `DECISIONS.md`.
+  - **Verified:**
+    - typecheck and lint are clean;
+    - 2224 tests pass in 62 files;
+    - 6 of 6 mutations caught;
+    - `smokeView.mjs` passed 147/147 on four runs, with a real right-click
+      over CDP and the menu event checked at window capture.
 
 - **Nexus Theme Studio: pipette cursor and north-east loupe (2026-09-23).** A
   small polish pass. It is deployed to the smoke vault only, not pushed, and

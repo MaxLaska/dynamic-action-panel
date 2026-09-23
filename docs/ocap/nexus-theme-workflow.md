@@ -97,8 +97,8 @@ What a colour row gives you: the swatch, a compact readout (`#333333`, and
   pipette, and a small loupe above and to the right of it shows the colour under
   the tip, ringed by the current one. From the keyboard, the arrows
   move a reticle one pixel (ten with Shift) and Enter or Space takes the pixel.
-  Hold **Alt** to sample only while it is held. Click the pipette again, or press
-  Escape, to stop; the picker stays open. It sees only this window, so no
+  Hold **Alt** to sample only while it is held. Click the pipette again, press
+  Escape, or right-click to stop; the picker stays open. It sees only this window, so no
   popped-out window and no other application, and there is no red-gridded
   browser pipette anywhere.
 - **Recent** fills itself while you work, with the picker open. Each finished
